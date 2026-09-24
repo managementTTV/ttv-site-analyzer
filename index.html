@@ -2904,9 +2904,10 @@ function calcBUA(){
   buaSec.style.display=county==='Mecklenburg'?'':'none';
   if(county!=='Mecklenburg')return;
   const w=pv('lot-w'),d=pv('lot-d');
-  // Use poly lot area if in irregular mode, otherwise rect mode fields
+  // BUA limit is on total LOT area — poly mode uses the lot polygon (or manual sf),
+  // never buildableArea (that's the setback envelope)
   const lotSFManual = lotMode==='poly'
-    ? (pv('lot-sf-poly') || buildableArea || 0)
+    ? (getParentLot().area || 0)
     : (pv('lot-sf') || (w*d));
   const lotSF=lotSFManual;if(!lotSF)return;
   const buaLimit=Math.min(lotSF*0.24,5000);
@@ -5084,7 +5085,7 @@ const APP_VERSION='8.1', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
  {v:'8.1',date:'Sep 2026',name:'Irregular lots: buildable area now respects setbacks',items:[
    'Fixed: on irregular (polygon) lots, including every lot filled by the County GIS auto-fill, the Buildable Envelope card reported the whole lot area as buildable. The dashed setback outline on the diagram was right; the number was not.',
-   'The buildable figure now equals the area inside that dashed outline, so the plan fit check, the BUA / watershed check and the PDF report\u2019s Buildable Area line all use the real envelope. Example: 2723 Dellinger Dr went from 7,170 sf (the whole lot) to 3,327 sf.',
+   'The buildable figure now equals the area inside that dashed outline, so the plan fit check and the PDF report\u2019s Buildable Area line use the real envelope. The BUA / watershed limit is still 24% of the whole lot, as before. Example: 2723 Dellinger Dr went from 7,170 sf (the whole lot) to 3,327 sf.',
    'Rectangular lots are unchanged.']},
  {v:'8.0',date:'Sep 2026',name:'A brighter, simpler calculator \u2014 two screens instead of seven steps',items:[
    'The seven-step wizard is now two screens. Site Intelligence covers the parcel: address, zoning, lot, buildable envelope and which plans fit, with no money on it. The Underwrite covers the money, with no geometry on it.',
