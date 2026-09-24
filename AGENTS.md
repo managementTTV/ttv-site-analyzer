@@ -14,9 +14,16 @@ in the repo, version it with the code.
 ## Repo context (read before reviewing)
 
 - **What it is:** an internal new-construction underwriting tool for Tide & Timber's
-  Charlotte/Carolinas deals. A 7-step wizard: address → zoning → lot → buildable area →
-  site costs → plan/build cost → financing → worst/base/best exit, plus feasibility
-  screens and PDF/Excel/offer-letter exports.
+  Charlotte/Carolinas deals. Since v8.0, two screens: **Site Intelligence** (address → zoning →
+  lot → buildable area & plan fit; geometry only, no money) and **The Underwrite** (hero numbers,
+  live levers and the worst/base/best board first, then collapsible Plan & build / Lot factor /
+  Financing / Sales comps inputs; money only, no geometry), plus PDF/Excel/offer-letter exports.
+- **UI vs. math (v8.0).** The two-screen layout is presentation only. Sections keep their old
+  `page-1`…`page-7` ids (comps are `page-8`) and every input keeps its id, so `goTo(n)` and all
+  calculators still address them by step number. Flag any v8 UI change that edits a calculation
+  function, renames an input id, or moves an input outside `.page` (serialize/restore and
+  `markAllManual()` select `.page input[id]`). Hero tiles and section summaries are display-only,
+  filled from `getReportData()` in `updateHero()`.
 - **Architecture:** a **single, fully client-side `index.html`** (UI + all logic + all
   plan data, ~4,900 lines) + three serverless functions in `api/`: `gis.js` (Charlotte/Meck
   GIS + county assessor proxy), `comps.js` (county new-build comps) and `permits.js` (the

@@ -6,7 +6,8 @@
 <title>TTV Site Analyzer — Tide & Timber Ventures</title>
 <link rel="icon" type="image/png" href="assets/ttv-emblem.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --navy:#102538;--navy-mid:#172f47;--navy-light:#22466a;--cream:#f5f0e7;
@@ -21,7 +22,7 @@
   --radius:10px;--radius-sm:6px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--text);min-height:100vh;font-size:14px;line-height:1.5}
+body{font-family:var(--f-body);background:var(--navy);color:var(--text);min-height:100vh;font-size:14px;line-height:1.5}
 /* ── ambient brand background ── */
 .bg-art{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
 .bg-art::before{content:'';position:absolute;inset:0;background:radial-gradient(1200px 700px at 85% -8%,rgba(94,128,149,0.14),transparent 60%),radial-gradient(1000px 700px at 5% 108%,rgba(100,131,112,0.14),transparent 60%)}
@@ -46,18 +47,13 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .hdr-brand{display:flex;align-items:center;gap:10px}
 .hdr-logo{width:42px;height:42px;background:var(--cream);border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:3px;box-shadow:0 0 0 1px rgba(245,240,231,0.22),0 3px 10px rgba(0,0,0,0.28)}
 .hdr-logo img{width:100%;height:100%;object-fit:contain}
-.hdr-title{font-family:'DM Serif Display',serif;font-size:19px;color:var(--cream);letter-spacing:.005em;line-height:1.1}
+.hdr-title{font-family:var(--f-head);font-weight:700;font-size:19px;color:var(--cream);letter-spacing:.005em;line-height:1.1}
 .hdr-sub{font-size:10.5px;color:var(--text-mid);margin-top:2px;letter-spacing:.01em}
-.hdr-badge{font-family:'DM Mono',monospace;font-size:10px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.35);padding:3px 8px;border-radius:20px}
+.hdr-badge{font-family:var(--f-num);font-size:10px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.35);padding:3px 8px;border-radius:20px}
 
-.step-nav{display:flex;align-items:stretch;background:var(--navy-mid);border-bottom:1px solid var(--border)}
-.step-btn{flex:1;padding:10px 6px;text-align:center;cursor:pointer;border:none;background:transparent;color:var(--text-dim);font-family:'DM Sans',sans-serif;font-size:10px;font-weight:500;letter-spacing:0.03em;transition:all 0.2s;border-bottom:2px solid transparent;position:relative}
+.step-btn{flex:1;padding:10px 6px;text-align:center;cursor:pointer;border:none;background:transparent;color:var(--text-dim);font-family:var(--f-body);font-size:10px;font-weight:500;letter-spacing:0.03em;transition:all 0.2s;border-bottom:2px solid transparent;position:relative}
 .step-btn:hover{color:var(--text-mid);background:rgba(255,255,255,0.03)}
 .step-btn.active{color:var(--teal-light);border-bottom-color:var(--teal);background:rgba(94,128,149,0.06)}
-.step-btn.done{color:var(--text-mid)}
-.step-btn.done::after{content:'✓';position:absolute;top:6px;right:8px;font-size:9px;color:var(--green)}
-.step-num{display:block;font-family:'DM Mono',monospace;font-size:14px;color:inherit;margin-bottom:1px}
-.step-btn.active .step-num{color:var(--teal-light)}
 
 .page{display:none;max-width:1100px;margin:0 auto;padding:28px 24px 60px}
 .page.active{display:block}
@@ -70,15 +66,15 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .field{margin-bottom:14px}
 .field:last-child{margin-bottom:0}
 .field label{display:block;font-size:11px;color:var(--text-mid);margin-bottom:5px;font-weight:500}
-.field input,.field select{width:100%;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;padding:8px 10px;outline:none;transition:border-color 0.15s}
+.field input,.field select{width:100%;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:var(--radius-sm);color:var(--text);font-family:var(--f-num);font-size:13px;padding:8px 10px;outline:none;transition:border-color 0.15s}
 .field input:focus,.field select:focus{border-color:var(--teal);background:rgba(94,128,149,0.08)}
 .field input[readonly]{opacity:0.6;cursor:default}
 .field input[type=number]{appearance:textfield;-moz-appearance:textfield}
 .field input[type=number]::-webkit-outer-spin-button,.field input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .field select option{background:var(--navy-mid)}
 .input-wrap{position:relative;display:flex;align-items:center}
-.input-wrap .pfx{position:absolute;left:10px;font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim);pointer-events:none}
-.input-wrap .sfx{position:absolute;right:10px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);pointer-events:none}
+.input-wrap .pfx{position:absolute;left:10px;font-family:var(--f-num);font-size:12px;color:var(--text-dim);pointer-events:none}
+.input-wrap .sfx{position:absolute;right:10px;font-family:var(--f-num);font-size:11px;color:var(--text-dim);pointer-events:none}
 .input-wrap input{padding-left:20px}
 .input-wrap input.sfx-pad{padding-right:32px}
 .fr2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -104,16 +100,16 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .link-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)}
 .link-row:last-child{border-bottom:none}
 .link-row-label{font-size:11px;color:var(--text-mid)}
-.link-btn{font-size:10px;font-family:'DM Mono',monospace;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.25);padding:3px 8px;border-radius:4px;text-decoration:none;white-space:nowrap}
+.link-btn{font-size:10px;font-family:var(--f-num);color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.25);padding:3px 8px;border-radius:4px;text-decoration:none;white-space:nowrap}
 .link-btn:hover{background:rgba(94,128,149,0.25)}
 
 .area-display{background:linear-gradient(135deg,rgba(94,128,149,0.1),rgba(16,37,56,0.5));border:1px solid rgba(94,128,149,0.25);border-radius:var(--radius);padding:20px;margin-top:16px}
-.area-big{font-family:'DM Serif Display',serif;font-size:42px;color:var(--teal-light);line-height:1}
+.area-big{font-family:var(--f-head);font-weight:700;font-size:42px;color:var(--teal-light);line-height:1}
 .area-unit{font-size:14px;color:var(--text-mid);margin-top:4px}
-.area-dims{font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim);margin-top:8px}
+.area-dims{font-family:var(--f-num);font-size:12px;color:var(--text-dim);margin-top:8px}
 .area-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px}
 .area-item{text-align:center;padding:10px;background:rgba(255,255,255,0.04);border-radius:6px}
-.area-item-val{font-family:'DM Mono',monospace;font-size:15px;color:var(--text)}
+.area-item-val{font-family:var(--f-num);font-size:15px;color:var(--text)}
 .area-item-lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-top:3px}
 
 .bua-block{border:1px solid var(--border-bright);border-radius:var(--radius-sm);padding:14px;margin-top:12px;background:rgba(255,255,255,0.02)}
@@ -137,7 +133,7 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .fit-card.fit-no{border-color:rgba(239,93,87,0.35);background:var(--red-dim)}
 .fit-name{font-size:12px;font-weight:600;margin-bottom:4px}
 .fit-ok .fit-name{color:var(--green)}.fit-warn .fit-name{color:var(--amber)}.fit-no .fit-name{color:var(--red)}
-.fit-detail{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);line-height:1.6}
+.fit-detail{font-family:var(--f-num);font-size:10px;color:var(--text-dim);line-height:1.6}
 .fit-badge{font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:2px 6px;border-radius:3px;display:inline-block;margin-top:4px}
 .fit-ok .fit-badge{background:rgba(70,192,138,0.2);color:var(--green)}
 .fit-warn .fit-badge{background:rgba(240,169,60,0.15);color:var(--amber)}
@@ -147,17 +143,17 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .fit-card.selected{outline:2px solid var(--cream);outline-offset:2px;box-shadow:0 0 0 4px rgba(245,240,231,0.16)}
 .fit-card.fit-no{cursor:default}
 .fit-card.fit-no:hover{transform:none;box-shadow:none}
-.fit-collapse-btn{width:100%;text-align:left;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text-dim);font-family:'DM Sans',sans-serif;font-size:11px;cursor:pointer;margin-top:10px;display:flex;align-items:center;justify-content:space-between}
+.fit-collapse-btn{width:100%;text-align:left;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text-dim);font-family:var(--f-body);font-size:11px;cursor:pointer;margin-top:10px;display:flex;align-items:center;justify-content:space-between}
 .fit-collapse-btn:hover{background:rgba(255,255,255,0.06);color:var(--text-mid)}
 .fit-collapse-section{display:none;margin-top:6px}
 .fit-collapse-section.open{display:block}
 
 .lf-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
 .lf-row:last-child{border-bottom:none}
-.lf-lbl{color:var(--text-mid)}.lf-val{font-family:'DM Mono',monospace;color:var(--text)}
+.lf-lbl{color:var(--text-mid)}.lf-val{font-family:var(--f-num);color:var(--text)}
 .lf-total{display:flex;justify-content:space-between;padding:10px 0 0;margin-top:4px;border-top:1px solid var(--border-bright)}
 .lf-total-lbl{font-size:12px;font-weight:600;color:var(--text-mid)}
-.lf-total-val{font-family:'DM Mono',monospace;font-size:16px;color:var(--amber)}
+.lf-total-val{font-family:var(--f-num);font-size:16px;color:var(--amber)}
 
 .row-tree-block{background:rgba(240,169,60,0.05);border:1px solid rgba(240,169,60,0.2);border-radius:var(--radius-sm);padding:14px;margin-top:10px}
 /* LOT MODE TOGGLE */
@@ -167,14 +163,14 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .lot-editor-wrap canvas{display:block;width:100%;height:auto}
 .lot-editor-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm)}
 .lot-editor-toolbar label{font-size:11px;color:var(--text-mid);white-space:nowrap}
-.lot-editor-toolbar input[type=number]{width:80px;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:4px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;padding:5px 8px;outline:none}
+.lot-editor-toolbar input[type=number]{width:80px;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:4px;color:var(--text);font-family:var(--f-num);font-size:13px;padding:5px 8px;outline:none}
 .lot-editor-toolbar input[type=number]:focus{border-color:var(--teal)}
 .lot-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .lot-stat-box{text-align:center;padding:10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:var(--radius-sm)}
-.lot-stat-val{font-family:'DM Mono',monospace;font-size:16px;color:var(--teal-light)}
+.lot-stat-val{font-family:var(--f-num);font-size:16px;color:var(--teal-light)}
 .lot-stat-lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-top:3px}
 .hint-text{font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5}
-.lot-mode-btn{flex:1;padding:9px 12px;text-align:center;cursor:pointer;font-size:12px;font-weight:500;background:transparent;color:var(--text-dim);border:none;font-family:'DM Sans',sans-serif;transition:all 0.15s}
+.lot-mode-btn{flex:1;padding:9px 12px;text-align:center;cursor:pointer;font-size:12px;font-weight:500;background:transparent;color:var(--text-dim);border:none;font-family:var(--f-body);transition:all 0.15s}
 .lot-mode-btn.active{background:var(--teal);color:#fff}
 .lot-mode-btn:hover:not(.active){background:var(--card-hover);color:var(--text-mid)}
 
@@ -182,20 +178,20 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .sides-list{margin-top:10px}
 .side-row{display:grid;grid-template-columns:28px 1fr 90px 36px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)}
 .side-row:last-child{border-bottom:none}
-.side-num{font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim);text-align:center}
-.side-input{background:var(--input-bg);border:1px solid var(--border-bright);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;padding:6px 8px;outline:none;width:100%}
+.side-num{font-family:var(--f-num);font-size:11px;color:var(--text-dim);text-align:center}
+.side-input{background:var(--input-bg);border:1px solid var(--border-bright);border-radius:var(--radius-sm);color:var(--text);font-family:var(--f-num);font-size:13px;padding:6px 8px;outline:none;width:100%}
 .side-input:focus{border-color:var(--teal)}
 .angle-wrap{display:flex;align-items:center;gap:4px}
-.angle-badge{font-family:'DM Mono',monospace;font-size:10px;color:var(--teal);background:var(--teal-dim);padding:2px 6px;border-radius:3px;cursor:pointer;border:1px solid rgba(94,128,149,0.25);white-space:nowrap}
+.angle-badge{font-family:var(--f-num);font-size:10px;color:var(--teal);background:var(--teal-dim);padding:2px 6px;border-radius:3px;cursor:pointer;border:1px solid rgba(94,128,149,0.25);white-space:nowrap}
 .angle-badge:hover{background:rgba(94,128,149,0.25)}
 .side-del{width:28px;height:28px;background:transparent;border:1px solid var(--border-bright);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
 .side-del:hover{border-color:var(--red);color:var(--red)}
-.add-side-btn{width:100%;padding:8px;background:transparent;border:1px dashed var(--border-bright);border-radius:var(--radius-sm);color:var(--text-dim);cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;margin-top:8px;transition:all 0.15s}
+.add-side-btn{width:100%;padding:8px;background:transparent;border:1px dashed var(--border-bright);border-radius:var(--radius-sm);color:var(--text-dim);cursor:pointer;font-size:12px;font-family:var(--f-body);margin-top:8px;transition:all 0.15s}
 .add-side-btn:hover{border-color:var(--teal);color:var(--teal)}
 .lot-poly-preview{width:100%;height:160px;background:rgba(0,0,0,0.2);border-radius:var(--radius-sm);border:1px solid var(--border);margin-top:10px}
 .angle-override-row{display:grid;grid-template-columns:28px 1fr 90px 36px;gap:8px;align-items:center;padding:4px 0 8px;display:none}
 .angle-override-row.open{display:grid}
-.angle-override-row input{background:var(--input-bg);border:1px solid rgba(94,128,149,0.4);border-radius:var(--radius-sm);color:var(--teal);font-family:'DM Mono',monospace;font-size:12px;padding:4px 8px;outline:none;width:100%}
+.angle-override-row input{background:var(--input-bg);border:1px solid rgba(94,128,149,0.4);border-radius:var(--radius-sm);color:var(--teal);font-family:var(--f-num);font-size:12px;padding:4px 8px;outline:none;width:100%}
 
 /* PLAN OVERLAY / DRAG TOOL */
 .plan-overlay-section{margin-top:16px;padding:14px;background:rgba(240,169,60,0.05);border:1px solid rgba(240,169,60,0.2);border-radius:var(--radius-sm)}
@@ -203,13 +199,13 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .overlay-canvas-wrap{position:relative;border-radius:var(--radius-sm);overflow:hidden;cursor:grab;background:#0d1a26;border:1px solid var(--border-bright)}
 .overlay-canvas-wrap:active{cursor:grabbing}
 .rotation-controls{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
-.rot-preset{padding:5px 10px;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:4px;color:var(--text-mid);font-family:'DM Mono',monospace;font-size:11px;cursor:pointer}
+.rot-preset{padding:5px 10px;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:4px;color:var(--text-mid);font-family:var(--f-num);font-size:11px;cursor:pointer}
 .rot-preset:hover{border-color:var(--teal);color:var(--teal)}
 .rot-slider{flex:1;min-width:120px}
-.rot-val{font-family:'DM Mono',monospace;font-size:12px;color:var(--amber);min-width:40px;text-align:right}
+.rot-val{font-family:var(--f-num);font-size:12px;color:var(--amber);min-width:40px;text-align:right}
 .overlay-stats{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
 .overlay-stat{font-size:11px;color:var(--text-dim)}
-.overlay-stat span{color:var(--text);font-family:'DM Mono',monospace}
+.overlay-stat span{color:var(--text);font-family:var(--f-num)}
 .overlay-fit-ok{color:var(--green)}
 .overlay-fit-warn{color:var(--red)}
 
@@ -221,26 +217,18 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .sb-card-title{font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:14px}
 .sb-stat{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px}
 .sb-stat:last-child{border-bottom:none}
-.sb-stat-lbl{color:var(--text-mid)}.sb-stat-val{font-family:'DM Mono',monospace;color:var(--text)}
-.sb-big{font-family:'DM Serif Display',serif;font-size:26px;color:var(--amber);text-align:center;padding:10px 0 3px}
+.sb-stat-lbl{color:var(--text-mid)}.sb-stat-val{font-family:var(--f-num);color:var(--text)}
+.sb-big{font-family:var(--f-head);font-weight:700;font-size:26px;color:var(--amber);text-align:center;padding:10px 0 3px}
 .sb-big-lbl{font-size:10px;color:var(--text-dim);text-align:center;text-transform:uppercase;letter-spacing:0.06em}
 
 /* FINANCING TAB */
-.loan-summary{background:linear-gradient(135deg,rgba(94,128,149,0.08),rgba(16,37,56,0.6));border:1px solid rgba(94,128,149,0.25);border-radius:var(--radius);padding:20px;margin-bottom:20px}
-.loan-summary-title{font-family:'DM Serif Display',serif;font-size:18px;color:var(--teal-light);margin-bottom:14px}
-.loan-stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.loan-stat{text-align:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:var(--radius-sm);border:1px solid var(--border)}
-.loan-stat-val{font-family:'DM Serif Display',serif;font-size:20px;color:var(--text);line-height:1}
-.loan-stat-lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-top:4px}
-.loan-stat.highlight .loan-stat-val{color:var(--amber)}
-.loan-stat.cash .loan-stat-val{color:var(--green)}
 
 .holding-table{width:100%;border-collapse:collapse;margin-top:8px}
 .holding-table tr{border-bottom:1px solid var(--border)}
 .holding-table tr:last-child{border-bottom:none}
 .holding-table td{padding:7px 0;font-size:12px}
 .holding-table td:first-child{color:var(--text-mid)}
-.holding-table td:last-child{font-family:'DM Mono',monospace;color:var(--text);text-align:right}
+.holding-table td:last-child{font-family:var(--f-num);color:var(--text);text-align:right}
 .holding-table .total-row td{color:var(--amber);font-weight:600;border-top:1px solid var(--border-bright);padding-top:10px}
 
 .scenario-holding-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px}
@@ -250,7 +238,7 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .sh-card.best{background:rgba(70,192,138,0.05);border-color:rgba(70,192,138,0.2)}
 .sh-tag{font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:10px;display:block}
 .worst .sh-tag{color:var(--red)}.base .sh-tag{color:var(--teal-light)}.best .sh-tag{color:var(--green)}
-.sh-total{font-family:'DM Serif Display',serif;font-size:22px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.sh-total{font-family:var(--f-head);font-weight:700;font-size:22px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
 .worst .sh-total{color:var(--red)}.base .sh-total{color:var(--teal-light)}.best .sh-total{color:var(--green)}
 
 .upg-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
@@ -262,27 +250,17 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .upg-chk svg{display:none}.upg-item.on .upg-chk svg{display:block}
 .upg-name{font-size:11px;color:var(--text-mid);flex:1;line-height:1.3}
 .upg-item.on .upg-name{color:var(--text)}
-.upg-cost{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim)}
+.upg-cost{font-family:var(--f-num);font-size:10px;color:var(--text-dim)}
 .upg-total-bar{display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:10px;border-top:1px solid var(--border-bright)}
 
 .topo-btn{font-size:11px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.25);padding:6px 12px;border-radius:var(--radius-sm);text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin:3px}
 .topo-btn:hover{background:rgba(94,128,149,0.25)}
 
 /* EXIT & OFFER */
-.land-lever{background:linear-gradient(135deg,rgba(240,169,60,0.08),rgba(16,37,56,0.6));border:1px solid rgba(240,169,60,0.3);border-radius:var(--radius);padding:24px;margin-bottom:20px}
-.land-lever-title{font-family:'DM Serif Display',serif;font-size:18px;color:var(--amber);margin-bottom:6px}
-.land-lever-sub{font-size:11px;color:var(--text-dim);margin-bottom:18px}
 .land-input-big{position:relative;display:flex;align-items:center}
-.land-input-big .pfx{position:absolute;left:14px;font-family:'DM Mono',monospace;font-size:22px;color:var(--amber);pointer-events:none}
-.land-input-big input{font-family:'DM Mono',monospace;font-size:28px;color:var(--amber);background:rgba(240,169,60,0.08);border:1px solid rgba(240,169,60,0.3);border-radius:var(--radius-sm);padding:12px 16px 12px 38px;width:100%;outline:none}
+.land-input-big .pfx{position:absolute;left:14px;font-family:var(--f-num);font-size:22px;color:var(--amber);pointer-events:none}
+.land-input-big input{font-family:var(--f-num);font-size:28px;color:var(--amber);background:rgba(240,169,60,0.08);border:1px solid rgba(240,169,60,0.3);border-radius:var(--radius-sm);padding:12px 16px 12px 38px;width:100%;outline:none}
 .land-input-big input:focus{border-color:var(--amber)}
-.max-offer-bar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px}
-.max-offer-card{text-align:center;padding:14px;border-radius:var(--radius-sm);background:rgba(255,255,255,0.04);border:1px solid var(--border-bright)}
-.max-offer-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px}
-.max-offer-val{font-family:'DM Serif Display',serif;font-size:20px;color:var(--teal-light)}
-.max-offer-sub{font-size:10px;color:var(--text-dim);margin-top:2px}
-.max-offer-card.amber .max-offer-val{color:var(--amber)}
-.max-offer-card.green .max-offer-val{color:var(--green)}
 
 .sc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 .sc-card{border-radius:var(--radius);padding:18px;border:1px solid var(--border)}
@@ -295,17 +273,17 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .best .sc-tag{background:var(--green-dim);color:var(--green);border:1px solid rgba(70,192,138,0.3)}
 .sc-line{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px}
 .sc-line:last-of-type{border-bottom:none}
-.sc-line-lbl{color:var(--text-mid)}.sc-line-val{font-family:'DM Mono',monospace;color:var(--text)}
+.sc-line-lbl{color:var(--text-mid)}.sc-line-val{font-family:var(--f-num);color:var(--text)}
 .sc-line-val.hi{color:var(--amber);font-size:12px}
 .sc-profit{margin-top:12px;padding:12px;border-radius:var(--radius-sm);text-align:center}
 .worst .sc-profit{background:var(--red-dim)}.base .sc-profit{background:var(--teal-dim)}.best .sc-profit{background:var(--green-dim)}
 .profit-lbl{font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-mid);margin-bottom:3px}
-.profit-val{font-family:'DM Serif Display',serif;font-size:24px}
+.profit-val{font-family:var(--f-head);font-weight:700;font-size:24px}
 .worst .profit-val{color:var(--red)}.base .profit-val{color:var(--teal-light)}.best .profit-val{color:var(--green)}
 .profit-sub{font-size:9px;color:var(--text-dim);margin-top:2px}
 
 .nav-btns{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
-.btn{padding:9px 20px;border-radius:var(--radius-sm);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all 0.15s}
+.btn{padding:9px 20px;border-radius:var(--radius-sm);font-family:var(--f-body);font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all 0.15s}
 .btn-primary{background:var(--teal);color:#fff}.btn-primary:hover{background:var(--teal-light)}
 .btn-ghost{background:transparent;color:var(--text-mid);border:1px solid var(--border-bright)}.btn-ghost:hover{color:var(--text)}
 
@@ -315,12 +293,10 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 /* ── PRINT / PDF EXPORT ──────────────────────────────────────────────── */
 @media print {
   body { background: #fff !important; color: #1a2535 !important; font-size: 11pt; }
-  .hdr, .step-nav, .nav-btns, #plan-overlay-controls, .fit-collapse-btn,
+  .hdr, .screen-nav, .nav-btns, #plan-overlay-controls, .fit-collapse-btn,
   .lot-editor-wrap, .lot-editor-toolbar, .lot-stats, .hint-text,
   button, .tog, .btn, .bua-fill { display: none !important; }
   .page { display: block !important; page-break-after: avoid; }
-  .page:not(#page-7):not(#page-1):not(#page-3):not(#page-5):not(#page-6) { display: none !important; }
-  #page-7 { display: block !important; }
   .card { border: 1px solid #d0d7e2 !important; background: #fff !important;
           box-shadow: none !important; break-inside: avoid; }
   canvas { max-width: 100% !important; }
@@ -342,14 +318,12 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 /* deal pulse (bottom dock, steps 4–7) */
 .deal-pulse{position:fixed;left:0;right:0;bottom:0;z-index:300;display:none;align-items:center;gap:20px;padding:9px 22px;background:linear-gradient(180deg,rgba(13,26,38,0.95),rgba(10,20,30,0.98));backdrop-filter:blur(10px);border-top:1px solid var(--border-bright);overflow-x:auto;-webkit-overflow-scrolling:touch}
 .deal-pulse::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--teal),var(--brand-green) 45%,transparent 85%)}
-body[data-step="4"] .deal-pulse,body[data-step="5"] .deal-pulse,body[data-step="6"] .deal-pulse,body[data-step="7"] .deal-pulse{display:flex}
-body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,body[data-step="7"] .page{padding-bottom:108px}
 .dp-item{display:flex;flex-direction:column;min-width:max-content}
 .dp-lbl{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);white-space:nowrap}
-.dp-val{font-family:'DM Mono',monospace;font-size:14px;color:var(--text);margin-top:1px;white-space:nowrap}
+.dp-val{font-family:var(--f-num);font-size:14px;color:var(--text);margin-top:1px;white-space:nowrap}
 .dp-val.pos{color:var(--green)}.dp-val.neg{color:var(--red)}.dp-val.amb{color:var(--amber)}
 .dp-sub{font-size:9px;color:var(--text-dim)}
-.dp-go{margin-left:auto;font-size:11px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.3);border-radius:5px;padding:5px 11px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif}
+.dp-go{margin-left:auto;font-size:11px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.3);border-radius:5px;padding:5px 11px;cursor:pointer;white-space:nowrap;font-family:var(--f-body)}
 .dp-go:hover{background:rgba(94,128,149,0.28)}
 
 /* toasts */
@@ -364,7 +338,7 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
 .resume-bar{display:none;align-items:center;gap:12px;padding:8px 24px;background:rgba(240,169,60,0.08);border-bottom:1px solid rgba(240,169,60,0.3);font-size:12px;color:var(--text-mid);flex-wrap:wrap}
 .resume-bar.show{display:flex}
 .resume-bar b{color:var(--amber);font-weight:600}
-.resume-btn{font-size:11px;border-radius:5px;padding:4px 12px;cursor:pointer;border:1px solid rgba(240,169,60,0.45);background:rgba(240,169,60,0.14);color:var(--amber);font-family:'DM Sans',sans-serif}
+.resume-btn{font-size:11px;border-radius:5px;padding:4px 12px;cursor:pointer;border:1px solid rgba(240,169,60,0.45);background:rgba(240,169,60,0.14);color:var(--amber);font-family:var(--f-body)}
 .resume-btn:hover{background:rgba(240,169,60,0.26)}
 .resume-btn.ghost{border-color:var(--border-bright);background:transparent;color:var(--text-dim)}
 .resume-btn.ghost:hover{color:var(--text-mid)}
@@ -380,7 +354,7 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
 /* ── responsive ── */
 @media (max-width:900px){
   .page{padding:22px 16px 60px}
-  .fr4,.loan-stat-grid{grid-template-columns:1fr 1fr}
+  .fr4{grid-template-columns:1fr 1fr}
   .sc-grid,.scenario-holding-grid{grid-template-columns:1fr 1fr}
   .cmp-pickers{grid-template-columns:1fr 1fr}
 }
@@ -389,16 +363,11 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
   .hdr-title{font-size:16px}
   .hdr-sub{display:none}
   .hdr-logo{width:36px;height:36px}
-  .step-nav{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-  .step-nav::-webkit-scrollbar{display:none}
   .step-btn{flex:0 0 auto;min-width:92px;padding:10px 10px;font-size:10px}
   .fr3,.fr4{grid-template-columns:1fr 1fr}
-  .sc-grid,.scenario-holding-grid,.max-offer-bar,.upg-grid,.cmp-pickers{grid-template-columns:1fr}
+  .sc-grid,.scenario-holding-grid,.upg-grid,.cmp-pickers{grid-template-columns:1fr}
   .area-big{font-size:32px}
-  .land-input-big input{font-size:22px}
-  .land-input-big .pfx{font-size:17px}
   .profit-val{font-size:21px}
-  .loan-stat-val{font-size:17px}
   .card{padding:16px 14px}
   .nav-btns{flex-wrap:wrap}
   .nav-btns .btn{flex:1 1 auto;min-width:150px}
@@ -409,7 +378,7 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
   .toast-wrap{left:12px;right:12px;max-width:none}
 }
 @media (max-width:420px){
-  .fr2,.fr3,.fr4,.loan-stat-grid,.area-grid,.lot-stats{grid-template-columns:1fr 1fr}
+  .fr2,.fr3,.fr4,.area-grid,.lot-stats{grid-template-columns:1fr 1fr}
   .fr2,.fr3{grid-template-columns:1fr}
 }
 
@@ -419,13 +388,13 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
 .rn-panel{background:linear-gradient(180deg,var(--navy-mid),#13283d);border:1px solid rgba(94,128,149,0.4);border-radius:14px;max-width:560px;width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.55);animation:pageIn .22s ease}
 .rn-head{display:flex;align-items:center;gap:12px;padding:18px 22px 14px;border-bottom:1px solid var(--border-bright)}
 .rn-head img{width:36px;height:36px;border-radius:8px;background:var(--cream);padding:2px}
-.rn-title{font-family:'DM Serif Display',serif;font-size:20px;color:var(--cream);line-height:1.1}
+.rn-title{font-family:var(--f-head);font-weight:700;font-size:20px;color:var(--cream);line-height:1.1}
 .rn-sub{font-size:10.5px;color:var(--text-dim);margin-top:2px}
 .rn-body{padding:6px 22px 8px;overflow-y:auto}
 .rn-entry{padding:14px 0;border-bottom:1px solid var(--border)}
 .rn-entry:last-child{border-bottom:none}
 .rn-vrow{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.rn-chip{font-family:'DM Mono',monospace;font-size:10px;color:var(--teal-light);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.35);padding:2px 9px;border-radius:20px}
+.rn-chip{font-family:var(--f-num);font-size:10px;color:var(--teal-light);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.35);padding:2px 9px;border-radius:20px}
 .rn-entry:first-child .rn-chip{color:#0e2418;background:var(--green);border-color:var(--green)}
 .rn-name{font-size:13px;font-weight:600;color:var(--text)}
 .rn-date{font-size:10px;color:var(--text-dim);margin-left:auto}
@@ -443,23 +412,23 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
 .cmp-pickers select{width:100%;background:var(--navy);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;font-family:inherit}
 .cmp-table{width:100%;border-collapse:collapse;min-width:560px}
 .cmp-table th,.cmp-table td{padding:8px 10px;text-align:right;font-size:12px;border-bottom:1px solid var(--border)}
-.cmp-table th:first-child,.cmp-table td:first-child{text-align:left;color:var(--text-mid);font-family:'DM Sans',sans-serif}
-.cmp-table thead th{font-family:'DM Serif Display',serif;font-size:14px;color:var(--teal-light);text-align:center;vertical-align:top}
-.cmp-table td{font-family:'DM Mono',monospace;color:var(--text)}
-.cmp-sect td{color:var(--amber);font-weight:600;font-family:'DM Sans',sans-serif;text-transform:uppercase;letter-spacing:0.05em;font-size:10px;padding-top:14px;border-bottom:1px solid var(--border-bright);text-align:left}
+.cmp-table th:first-child,.cmp-table td:first-child{text-align:left;color:var(--text-mid);font-family:var(--f-body)}
+.cmp-table thead th{font-family:var(--f-head);font-weight:700;font-size:14px;color:var(--teal-light);text-align:center;vertical-align:top}
+.cmp-table td{font-family:var(--f-num);color:var(--text)}
+.cmp-sect td{color:var(--amber);font-weight:600;font-family:var(--f-body);text-transform:uppercase;letter-spacing:0.05em;font-size:10px;padding-top:14px;border-bottom:1px solid var(--border-bright);text-align:left}
 .cmp-win-col{background:var(--teal-dim)}
 .cmp-winbadge{display:block;background:var(--teal);color:#04201c;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;margin-top:5px;letter-spacing:0.04em}
-.cmp-arv-input{width:66px;background:var(--input-bg);color:var(--text);border:1px solid var(--border-bright);border-radius:4px;padding:3px 5px;font-size:11px;font-family:'DM Mono',monospace;text-align:right}
+.cmp-arv-input{width:66px;background:var(--input-bg);color:var(--text);border:1px solid var(--border-bright);border-radius:4px;padding:3px 5px;font-size:11px;font-family:var(--f-num);text-align:right}
 .cmp-neg{color:var(--red)}
 
 /* Sales comps (#8) */
 .comps-summary{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--text-mid)}
-.comps-summary b{color:var(--teal-light);font-family:'DM Mono',monospace;font-size:14px}
+.comps-summary b{color:var(--teal-light);font-family:var(--f-num);font-size:14px}
 .comps-table{width:100%;border-collapse:collapse;min-width:1040px}
 .comps-table th{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-mid);text-align:left;padding:6px 8px;border-bottom:1px solid var(--border-bright);font-weight:600}
 .comps-table td{padding:5px 6px;border-bottom:1px solid var(--border)}
 .comps-table input{width:100%;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:5px 6px;font-size:12px;font-family:inherit}
-.comps-table .ppsf{font-family:'DM Mono',monospace;font-size:12px;color:var(--teal-light);white-space:nowrap}
+.comps-table .ppsf{font-family:var(--f-num);font-size:12px;color:var(--teal-light);white-space:nowrap}
 .comps-table .comp-rm{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px 6px}
 .comps-table .comp-rm:hover{color:var(--red)}
 .comp-link{color:var(--teal-light);text-decoration:none}
@@ -473,9 +442,249 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
 .fit-rank .rk.on{background:var(--teal);border-color:var(--teal);color:#04201c}
 .shortlist{font-size:12px;color:var(--text-mid);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.2);border-radius:8px;padding:8px 12px}
 .shortlist b{color:var(--teal-light)}
+
+/* ════════════════════════════════════════════════════════════════════════
+   V8 — BRIGHT TWO-SCREEN THEME (Aug-2026 redesign, on the TTV brand kit)
+   Paper Cream #F5F0E7 · Deep Navy #102538 · Slate Blue #5E8095 · Pine Green #648370
+   Montserrat (Bold headings / Medium body). Presentation only: no math lives here.
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --paper:#F5F0E7;--paper-2:#FBF8F1;--ink:#102538;--slate:#5E8095;--pine:#648370;
+  --navy:#ffffff;--navy-mid:#ffffff;--navy-light:#e9e2d4;
+  --teal:#5E8095;--teal-light:#3b5f75;--teal-dim:rgba(94,128,149,0.12);
+  --amber:#9a5f17;--amber-dim:rgba(176,116,40,0.10);
+  --red:#b03f37;--red-dim:rgba(176,63,55,0.08);
+  --green:#3f6a53;--green-dim:rgba(100,131,112,0.13);
+  --brand-green:#648370;
+  --text:#102538;--text-mid:#3e5567;--text-dim:#627487;
+  --border:rgba(16,37,56,0.10);--border-bright:rgba(16,37,56,0.19);
+  --card:#ffffff;--card-hover:#f6f2ea;--input-bg:#ffffff;
+  --shadow:0 1px 2px rgba(16,37,56,0.05),0 6px 20px rgba(16,37,56,0.05);
+  --shadow-lg:0 2px 6px rgba(16,37,56,0.06),0 18px 44px rgba(16,37,56,0.09);
+  --f-head:'Montserrat','Helvetica Neue',Arial,sans-serif;--f-body:'Montserrat','Helvetica Neue',Arial,sans-serif;--f-num:'Montserrat','Helvetica Neue',Arial,sans-serif;
+  --radius:12px;--radius-sm:8px;
+}
+body{font-family:var(--f-body);font-weight:500;background:radial-gradient(1100px 560px at 88% -6%,#fdfbf6 0%,rgba(253,251,246,0) 62%),var(--paper);color:var(--text);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+b,strong{font-weight:700}
+.bg-art::before{background:radial-gradient(1200px 700px at 85% -8%,rgba(94,128,149,0.07),transparent 60%),radial-gradient(1000px 700px at 5% 108%,rgba(100,131,112,0.08),transparent 60%)}
+.ba-green{opacity:0.12}.ba-steel{opacity:0.10}.ba-wave{stroke:var(--slate);opacity:0.08}.bg-emblem{display:none}
+body[data-step]:not([data-step="1"]) .ba-green{opacity:0.06}
+body[data-step]:not([data-step="1"]) .ba-steel{opacity:0.05}
+
+/* header */
+.hdr{position:relative;background:rgba(255,255,255,0.88);backdrop-filter:blur(8px);padding:14px 28px}
+.hdr::after{height:3px;background:linear-gradient(90deg,var(--ink),var(--slate) 45%,var(--pine) 75%,transparent)}
+.hdr-logo{background:#fff;box-shadow:0 0 0 1px var(--border)}
+.hdr-title{font-family:var(--f-head);font-weight:700;font-size:18px;color:var(--ink);letter-spacing:-.005em}
+.hdr-sub{color:var(--text-dim)}
+.hdr-badge{white-space:nowrap;color:var(--ink);background:var(--paper);border-color:var(--border-bright);font-weight:600}
+.hdr-badge:hover{background:var(--teal-dim);color:var(--ink)}
+.hdr-tool{background:#fff;color:var(--text-mid)}
+.hdr-tool:hover{color:var(--ink);border-color:var(--slate);background:var(--teal-dim)}
+
+/* two-screen navigation */
+.screen-nav{position:sticky;top:0;z-index:200;background:rgba(251,248,241,0.95);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);box-shadow:0 4px 14px rgba(16,37,56,0.04)}
+.screen-tabs{display:flex;max-width:1180px;margin:0 auto;padding:0 24px;gap:6px}
+.screen-tab{display:flex;align-items:center;gap:12px;padding:12px 18px 11px;background:transparent;border:none;border-bottom:3px solid transparent;cursor:pointer;text-align:left;font-family:var(--f-body);color:var(--text-dim);transition:color .15s,border-color .15s,background .15s}
+.screen-tab:hover{color:var(--ink);background:rgba(16,37,56,0.03)}
+.screen-tab.active{color:var(--ink);border-bottom-color:var(--ink)}
+.st-num{font-weight:700;font-size:12px;letter-spacing:.06em;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1.5px solid currentColor;flex-shrink:0}
+.screen-tab.active .st-num{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.st-txt{display:flex;flex-direction:column;line-height:1.2}
+.st-name{font-weight:700;font-size:14px}
+.st-sub{font-size:11px;font-weight:500;color:var(--text-dim);margin-top:2px}
+.sub-nav{display:none;max-width:1180px;margin:0 auto;padding:0 24px 9px 66px;gap:6px;flex-wrap:wrap}
+body[data-screen="1"] #sub-nav-site,body[data-screen="2"] #sub-nav-uw{display:flex}
+.sub-nav .step-btn{flex:0 0 auto;padding:4px 12px;border:1px solid var(--border-bright);border-radius:20px;background:#fff;color:var(--text-mid);font-family:var(--f-body);font-size:11.5px;font-weight:600;letter-spacing:0;cursor:pointer}
+.sub-nav .step-btn:hover{border-color:var(--slate);color:var(--ink)}
+.sub-nav .step-btn.active{background:var(--ink);border-color:var(--ink);color:#fff}
+.sub-nav .step-btn::after{display:none}
+
+/* screens & sections */
+.page{max-width:1180px}
+.page.screen{padding-top:26px}
+.screen-head{margin:0 0 22px}
+.screen-eyebrow{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--slate)}
+.screen-title{font-family:var(--f-head);font-weight:700;font-size:30px;letter-spacing:-.015em;color:var(--ink);margin:4px 0 6px;line-height:1.1}
+.screen-lede{font-size:13.5px;color:var(--text-mid);max-width:760px;line-height:1.55}
+.site-top{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+.step-sec{scroll-margin-top:112px}
+.sec-head{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;color:var(--ink);margin:6px 0 12px}
+.sec-num{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.handoff{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-top:10px;padding:20px 24px;border-radius:var(--radius);background:var(--ink);color:var(--paper);box-shadow:var(--shadow-lg)}
+.handoff-title{font-weight:700;font-size:16px}
+.handoff-sub{font-size:12.5px;color:rgba(245,240,231,0.78);margin-top:3px;max-width:640px}
+.handoff .btn-primary{background:var(--paper);color:var(--ink)}
+.handoff .btn-primary:hover{background:#fff}
+.btn-lg{padding:12px 22px;font-size:14px;font-weight:700}
+
+/* cards & fields */
+.card{background:#fff;border:1px solid var(--border);box-shadow:var(--shadow);backdrop-filter:none}
+.card-title{color:var(--ink);font-weight:700;letter-spacing:.09em}
+.card-title::after{background:linear-gradient(90deg,rgba(100,131,112,0.35),var(--border))}
+.card-title .dot{box-shadow:0 0 0 3px rgba(100,131,112,0.14)}
+.field label{color:var(--text-mid);font-weight:600}
+.field input,.field select{font-family:var(--f-num);font-weight:500;border-color:var(--border-bright)}
+.field input:focus,.field select:focus{border-color:var(--slate);background:#fff;box-shadow:0 0 0 3px rgba(94,128,149,0.16)}
+.field input[readonly]{background:var(--paper-2);opacity:1;color:var(--text-mid)}
+.field select option{background:#fff;color:var(--ink)}
+.tog-track{background:rgba(16,37,56,0.18)}
+.tog-thumb{box-shadow:0 1px 2px rgba(16,37,56,0.25)}
+.link-card{background:var(--paper-2)}
+.area-display{background:linear-gradient(135deg,rgba(94,128,149,0.09),#fff 70%);border-color:rgba(94,128,149,0.25)}
+.area-big{color:var(--ink)}
+.area-item,.lot-stat-box{background:var(--paper-2)}
+.bua-block{background:var(--paper-2)}
+.fit-sort-bar select{background:#fff}
+.fit-img-btn{background:rgba(255,255,255,0.92)}
+.fit-img-btn:hover{background:var(--ink);color:#fff}
+.fit-card:hover{box-shadow:0 6px 18px rgba(16,37,56,0.10)}
+.fit-card.selected{outline:2px solid var(--ink);box-shadow:0 0 0 4px rgba(16,37,56,0.10)}
+.fit-collapse-btn{background:var(--paper-2)}
+.fit-collapse-btn:hover{background:var(--card-hover)}
+.lot-editor-wrap,.overlay-canvas-wrap{background:var(--paper-2)}
+#sb-canvas{background:var(--paper-2);border:1px solid var(--border)}
+.lot-mode-btn.active{background:var(--ink)}
+.sb-card{background:#fff;border-color:var(--border);box-shadow:var(--shadow)}
+.sb-card-title{color:var(--ink)}
+.sb-big{color:var(--ink);font-size:28px}
+.sidebar{top:128px}
+.upg-item:hover{background:var(--paper-2)}
+.upg-item.on{border-color:rgba(94,128,149,0.45)}
+.upg-item.on .upg-chk{background:var(--ink);border-color:var(--ink)}
+.lf-total-val{color:var(--ink);font-weight:700}
+.row-tree-block,.plan-overlay-section{background:rgba(176,116,40,0.05)}
+.topo-btn,.link-btn{color:var(--ink);font-weight:600}
+
+/* buttons */
+.btn{font-family:var(--f-body);font-weight:600;border-radius:var(--radius-sm)}
+.btn-primary{background:var(--ink);color:#fff}.btn-primary:hover{background:#22466a}
+.btn-pine{background:var(--pine);color:#fff}.btn-pine:hover{background:#56735f}
+.btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--border-bright)}.btn-ghost:hover{border-color:var(--slate);background:var(--paper-2)}
+
+/* THE UNDERWRITE — hero */
+.hero{display:grid;grid-template-columns:1fr 1fr 1.15fr;gap:14px;margin-bottom:16px}
+.hero-tile{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.hero-lbl{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim)}
+.hero-val{font-family:var(--f-head);font-weight:700;font-size:34px;letter-spacing:-.02em;color:var(--ink);line-height:1.1;margin-top:6px}
+.hero-val.neg{color:var(--red)}
+.hero-sub{font-size:11.5px;color:var(--text-dim);margin-top:4px;line-height:1.4}
+.hero-dirt{background:var(--ink);border-color:var(--ink)}
+.hero-dirt .hero-lbl{color:rgba(245,240,231,0.72)}
+.hero-dirt .hero-val{color:var(--paper)}
+.hero-dirt .hero-sub{color:rgba(245,240,231,0.72)}
+/* levers */
+.levers .lever-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:16px;align-items:start}
+.land-input-big .pfx{color:var(--ink);font-family:var(--f-num)}
+.land-input-big input{font-family:var(--f-num);font-weight:700;font-size:26px;color:var(--ink);background:var(--paper-2);border:1px solid var(--border-bright);padding:10px 14px 10px 34px}
+.land-input-big input:focus{border-color:var(--slate);box-shadow:0 0 0 3px rgba(94,128,149,0.16)}
+.ask-gap{font-size:12px;margin-top:6px;min-height:16px}
+.lever-stats{display:flex;flex-direction:column;gap:8px;padding-top:22px}
+.lever-stat{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--text-mid);border-bottom:1px solid var(--border);padding-bottom:6px}
+.lever-stat b{font-size:16px;color:var(--ink)}
+.lever-stat b.pos{color:var(--green)}
+.lever-arv{margin-top:14px;padding-top:14px;border-top:1px dashed var(--border-bright)}
+.lever-arv-head{font-weight:700;font-size:13px;color:var(--ink);margin-bottom:10px}
+.lever-arv-head span{display:block;font-weight:500;font-size:11px;color:var(--text-dim);margin-top:2px}
+.lever-arv-head a{color:var(--ink)}
+.board-head,.uw-inputs-head{font-weight:700;font-size:15px;color:var(--ink);margin:22px 0 10px}
+.board-head span,.uw-inputs-head span{font-weight:500;font-size:11.5px;color:var(--text-dim);margin-left:8px}
+.uw-inputs-head{margin-top:30px;padding-top:18px;border-top:1px solid var(--border-bright)}
+/* scenario board */
+.sc-card{background:#fff;box-shadow:var(--shadow);border:1px solid var(--border);border-top-width:4px}
+.sc-card.worst{background:#fff;border-color:var(--border);border-top-color:var(--red)}
+.sc-card.base{background:#fff;border-color:var(--border);border-top-color:var(--ink)}
+.sc-card.best{background:#fff;border-color:var(--border);border-top-color:var(--pine)}
+.base .sc-tag{color:var(--ink)}
+.base .profit-val{color:var(--ink)}
+.profit-val{font-weight:700}
+.sc-line-val.hi{color:var(--ink);font-weight:700}
+.uw-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.uw-shortlist{margin-top:8px}
+/* collapsible input sections */
+details.uw-sec{margin-bottom:10px}
+.uw-sum{display:flex;align-items:center;gap:12px;list-style:none;cursor:pointer;background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);transition:border-color .15s}
+.uw-sum::-webkit-details-marker{display:none}
+.uw-sum:hover{border-color:var(--slate)}
+.uw-sum::after{content:'';width:8px;height:8px;border-right:2px solid var(--text-dim);border-bottom:2px solid var(--text-dim);transform:rotate(45deg);margin-left:6px;transition:transform .15s;flex-shrink:0}
+details[open]>.uw-sum::after{transform:rotate(-135deg)}
+details[open]>.uw-sum{border-color:var(--border-bright)}
+.uw-sum .sec-num{background:var(--slate)}
+.uw-sum-t{font-weight:700;font-size:14px;color:var(--ink)}
+.uw-sum-m{font-size:11.5px;color:var(--text-dim);flex:1}
+.uw-sum-v{font-size:12px;font-weight:700;color:var(--ink);background:var(--paper);border-radius:20px;padding:3px 10px;white-space:nowrap}
+.uw-sum-v:empty{display:none}
+.uw-body{padding:14px 0 6px}
+.uw-back{justify-content:flex-start}
+/* deal pulse, toasts, modals */
+.deal-pulse{background:rgba(255,255,255,0.96);border-top:1px solid var(--border-bright);box-shadow:0 -6px 20px rgba(16,37,56,0.06)}
+.deal-pulse::before{background:linear-gradient(90deg,var(--ink),var(--slate) 45%,var(--pine) 75%,transparent)}
+body[data-screen="2"] .deal-pulse{display:flex}
+body[data-screen="2"] .page{padding-bottom:108px}
+.dp-val{font-weight:700}
+.dp-go{color:#fff;background:var(--ink);border-color:var(--ink);font-family:var(--f-body);font-weight:600}
+.dp-go:hover{background:#22466a}
+.toast{background:#fff;box-shadow:var(--shadow-lg)}
+.resume-bar{background:rgba(176,116,40,0.08)}
+.rn-overlay{background:rgba(16,37,56,0.45)}
+.rn-panel{background:#fff;box-shadow:var(--shadow-lg)}
+.rn-title{color:var(--ink);font-family:var(--f-head);font-weight:700}
+.rn-entry:first-child .rn-chip{color:#fff;background:var(--pine);border-color:var(--pine)}
+#incl-modal,#compare-modal,#offer-letter-modal,#planimg-modal{background:rgba(16,37,56,0.55)!important}
+#incl-modal>div,#compare-modal>div,#offer-letter-modal>div{box-shadow:var(--shadow-lg);border-color:var(--border)!important}
+.cmp-table thead th{color:var(--ink)}
+.cmp-winbadge,.fit-rank .rk.on{color:#fff}
+.fit-rank .rk.on{background:var(--ink);border-color:var(--ink)}
+.comps-summary b,.comps-table .ppsf,.comp-link{color:var(--ink)}
+.shortlist b{color:var(--ink)}
+.incl-cat{color:var(--slate)}
+/* focus */
+.screen-tab:focus-visible,.sub-nav .step-btn:focus-visible,.uw-sum:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
+
+/* responsive */
+@media (max-width:900px){
+  .site-top{grid-template-columns:1fr}
+  .fr-wide{grid-template-columns:1fr}
+  .hero{grid-template-columns:1fr 1fr}
+  .hero-dirt{grid-column:1 / -1}
+  .levers .lever-grid{grid-template-columns:1fr 1fr}
+  .lever-land{grid-column:1 / -1}
+  .two-col{grid-template-columns:1fr}
+  .sidebar{position:static}
+}
+@media (max-width:640px){
+  .hdr{padding:10px 16px}
+  .screen-tabs{padding:0 8px;gap:0}
+  .screen-tab{flex:1;padding:10px 8px;gap:8px}
+  .st-sub{display:none}
+  .sub-nav{padding:0 16px 8px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .sub-nav::-webkit-scrollbar{display:none}
+  .screen-title{font-size:24px}
+  .hero{grid-template-columns:1fr 1fr;gap:10px}
+  .hero-tile{padding:14px}
+  .hero-val{font-size:24px}
+  .land-input-big input{font-size:22px}
+  .sub-nav .step-btn{min-width:0;padding:4px 11px}
+  .hdr-title{font-size:15px}
+  .levers .lever-grid{grid-template-columns:1fr}
+  .lever-stats{padding-top:0}
+  .uw-sum{flex-wrap:wrap;gap:6px 10px;padding:12px 14px}
+  .uw-sum-m{flex-basis:100%;order:3}
+  .handoff{padding:16px}
+  .handoff .btn{width:100%}
+  .uw-actions .btn{flex:1 1 100%}
+}
+
+/* print — both screens, details opened by the beforeprint hook */
+@media print{
+  .screen-nav,.handoff,.uw-back,.deal-pulse,.uw-sum::after,.hdr-right{display:none!important}
+  .page.screen{display:block!important;padding:0!important}
+  #page-2,#page-4{display:none!important}
+  .hero-tile,.sc-card,.uw-sum{box-shadow:none!important}
+}
 </style>
 </head>
-<body data-step="1">
+<body data-step="1" data-screen="1">
 <div class="bg-art" aria-hidden="true">
   <svg class="bg-svg" viewBox="0 0 1440 1024" preserveAspectRatio="xMidYMid slice">
     <defs><path id="ttv-ctr" d="M0,-150 C70,-150 138,-92 134,-18 C131,46 92,118 14,140 C-66,162 -150,96 -150,12 C-150,-72 -78,-150 0,-150 Z"/></defs>
@@ -510,18 +719,27 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V7.16 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.0 &middot; Sep 2026</div></div>
 </div>
 
-<div class="step-nav">
-  <button class="step-btn active" id="nav-1" onclick="goTo(1)"><span class="step-num">01</span>Address &amp; Zoning</button>
-  <button class="step-btn" id="nav-2" onclick="goTo(2)"><span class="step-num">02</span>Lot Dimensions</button>
-  <button class="step-btn" id="nav-3" onclick="goTo(3)"><span class="step-num">03</span>Buildable Area</button>
-  <button class="step-btn" id="nav-4" onclick="goTo(4)"><span class="step-num">04</span>Lot Factor</button>
-  <button class="step-btn" id="nav-5" onclick="goTo(5)"><span class="step-num">05</span>Plan &amp; Build</button>
-  <button class="step-btn" id="nav-6" onclick="goTo(6)"><span class="step-num">06</span>Financing</button>
-  <button class="step-btn" id="nav-7" onclick="goTo(7)"><span class="step-num">07</span>Exit &amp; Offer</button>
-</div>
+<nav class="screen-nav" aria-label="Screens">
+  <div class="screen-tabs" role="tablist">
+    <button class="screen-tab active" id="tab-site" role="tab" aria-selected="true" onclick="goTo(1)"><span class="st-num">01</span><span class="st-txt"><span class="st-name">Site Intelligence</span><span class="st-sub">Address, lot &amp; what fits</span></span></button>
+    <button class="screen-tab" id="tab-uw" role="tab" aria-selected="false" onclick="goTo(7)"><span class="st-num">02</span><span class="st-txt"><span class="st-name">The Underwrite</span><span class="st-sub">Costs, financing &amp; offer</span></span></button>
+  </div>
+  <div class="sub-nav" id="sub-nav-site">
+    <button class="step-btn" id="nav-1" onclick="goTo(1)">Address &amp; zoning</button>
+    <button class="step-btn" id="nav-2" onclick="goTo(2)">Lot</button>
+    <button class="step-btn" id="nav-3" onclick="goTo(3)">Buildable &amp; fit</button>
+  </div>
+  <div class="sub-nav" id="sub-nav-uw">
+    <button class="step-btn" id="nav-7" onclick="goTo(7)">Offer &amp; scenarios</button>
+    <button class="step-btn" id="nav-5" onclick="goTo(5)">Plan &amp; build</button>
+    <button class="step-btn" id="nav-4" onclick="goTo(4)">Lot factor</button>
+    <button class="step-btn" id="nav-6" onclick="goTo(6)">Financing</button>
+    <button class="step-btn" id="nav-8" onclick="goTo(8)">Sales comps</button>
+  </div>
+</nav>
 
 <div class="resume-bar" id="resume-bar">
   <span>&#128190; Unsaved session found: <b id="resume-addr">saved deal</b> <span id="resume-when" style="color:var(--text-dim)"></span></span>
@@ -529,9 +747,17 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
   <button class="resume-btn ghost" onclick="dismissResume()">Dismiss</button>
 </div>
 
-<!-- ═══ PAGE 1: ADDRESS & ZONING ═══ -->
-<div class="page active" id="page-1">
-  <div style="max-width:720px;margin:0 auto">
+<!-- ═══════════ SCREEN 01: SITE INTELLIGENCE (geometry & feasibility, no money) ═══════════ -->
+<div class="page screen active" id="screen-1">
+<div class="screen-head">
+  <div class="screen-eyebrow">Screen 01</div>
+  <h1 class="screen-title">Site Intelligence</h1>
+  <p class="screen-lede">What is this parcel, and what can legally go on it? Zoning, setbacks, the buildable envelope and which plans fit. No money on this screen.</p>
+</div>
+<div class="site-top">
+<section class="step-sec active" id="page-1">
+  <div class="sec-head"><span class="sec-num">1</span>Address &amp; zoning</div>
+  <div>
     <div class="card">
       <div class="card-title"><span class="dot"></span>Property Address</div>
       <div class="field"><label>Street Address</label><input type="text" id="addr-street" placeholder="e.g. 2723 Dellinger Dr" oninput="onAddrChange()"></div>
@@ -591,18 +817,17 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
     <div id="meck-context" style="display:none">
       <div class="card" style="border-color:rgba(94,128,149,0.25);background:rgba(94,128,149,0.04)">
         <div class="card-title"><span class="dot"></span>Mecklenburg — Cost Inputs to Confirm</div>
-        <div class="sb-stat" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">Charlotte Water tap fee (per unit)</span><span style="font-family:'DM Mono',monospace">$17,340 <span style="color:var(--text-dim);font-size:10px">(4" sewer $6,132 + ¾" water $5,389 + fees)</span></span></div>
-        <div class="sb-stat" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">BUA watershed threshold</span><span style="font-family:'DM Mono',monospace">24% of lot or 5,000 sf <span style="color:var(--text-dim);font-size:10px">(whichever is lower)</span></span></div>
-        <div class="sb-stat" style="padding:6px 0;font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">ROW tree city fee</span><span style="font-family:'DM Mono',monospace">$200/inch diameter <span style="color:var(--text-dim);font-size:10px">+ removal labor separate</span></span></div>
+        <div class="sb-stat" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">Charlotte Water tap fee (per unit)</span><span style="font-family:var(--f-num)">$17,340 <span style="color:var(--text-dim);font-size:10px">(4" sewer $6,132 + ¾" water $5,389 + fees)</span></span></div>
+        <div class="sb-stat" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">BUA watershed threshold</span><span style="font-family:var(--f-num)">24% of lot or 5,000 sf <span style="color:var(--text-dim);font-size:10px">(whichever is lower)</span></span></div>
+        <div class="sb-stat" style="padding:6px 0;font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">ROW tree city fee</span><span style="font-family:var(--f-num)">$200/inch diameter <span style="color:var(--text-dim);font-size:10px">+ removal labor separate</span></span></div>
       </div>
     </div>
-    <div class="nav-btns"><button class="btn btn-primary" onclick="goTo(2)">Next: Lot Dimensions →</button></div>
   </div>
-</div>
+</section>
 
-<!-- ═══ PAGE 2: LOT DIMENSIONS ═══ -->
-<div class="page" id="page-2">
-  <div style="max-width:720px;margin:0 auto">
+<section class="step-sec active" id="page-2">
+  <div class="sec-head"><span class="sec-num">2</span>Lot</div>
+  <div>
     <div class="card">
       <div class="card-title"><span class="dot"></span>Lot Dimensions</div>
       <div id="gis-link-block" style="margin-bottom:16px"></div>
@@ -633,7 +858,7 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
           <label>How many corners does the lot have?</label>
           <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
             <input type="number" id="corner-count" value="6" min="3" max="20"
-              style="width:80px;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Mono',monospace;font-size:16px;padding:8px;outline:none;text-align:center">
+              style="width:80px;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:var(--radius-sm);color:var(--text);font-family:var(--f-num);font-size:16px;padding:8px;outline:none;text-align:center">
             <button class="btn btn-primary" onclick="initPolyEditor()" style="padding:8px 16px;font-size:12px">Set Corners</button>
           </div>
           <p class="note" style="margin-top:4px">Enter corner count, click Set Corners, then drag each dot to match your lot shape from Polaris.</p>
@@ -670,24 +895,21 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
 
     </div>
     <div class="card" id="sublot-card">
-      <div class="card-title"><span class="dot"></span>Sub-Lotting Analysis <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--amber);background:rgba(240,169,60,0.12);border:1px solid rgba(240,169,60,0.3);padding:2px 7px;border-radius:20px;margin-left:6px;text-transform:uppercase;letter-spacing:0.05em">Proof of concept</span></div>
-      <p class="note" style="margin-bottom:12px">Detached lots: can this parcel be carved into separate recorded lots, each meeting the zone minimum? Pick a Slate <strong>townhome</strong> on Step 5 and this auto-switches to <strong>subplotting</strong> — attached units on sublots, where the zone minimum applies to the parent parcel only and +1 Units adds a unit to the row. Feasibility screen only — a real subdivision needs a recombination/sublot plat + approved Development LDIRL.</p>
+      <div class="card-title"><span class="dot"></span>Sub-Lotting Analysis <span style="font-family:var(--f-num);font-size:9px;color:var(--amber);background:rgba(240,169,60,0.12);border:1px solid rgba(240,169,60,0.3);padding:2px 7px;border-radius:20px;margin-left:6px;text-transform:uppercase;letter-spacing:0.05em">Proof of concept</span></div>
+      <p class="note" style="margin-bottom:12px">Detached lots: can this parcel be carved into separate recorded lots, each meeting the zone minimum? Pick a Slate <strong>townhome</strong> in Plan &amp; build (The Underwrite) and this auto-switches to <strong>subplotting</strong> — attached units on sublots, where the zone minimum applies to the parent parcel only and +1 Units adds a unit to the row. Feasibility screen only — a real subdivision needs a recombination/sublot plat + approved Development LDIRL.</p>
       <div style="display:flex;gap:8px;margin-bottom:14px" id="sublot-split-row">
         <button class="lot-mode-btn active" id="sublot-n2" onclick="setSublotN(2)" style="flex:1">Split in 2</button>
         <button class="lot-mode-btn" id="sublot-n3" onclick="setSublotN(3)" style="flex:1">Split in 3</button>
       </div>
-      <div id="sublot-result"><div class="note">Enter lot width/area on this page and pick a zone on Step 1 to run the check.</div></div>
-    </div>
-    <div class="nav-btns">
-      <button class="btn btn-ghost" onclick="goTo(1)">← Back</button>
-      <button class="btn btn-primary" onclick="goTo(3)">Next: Buildable Area →</button>
+      <div id="sublot-result"><div class="note">Enter lot width/area above and pick a zone under Address &amp; zoning to run the check.</div></div>
     </div>
   </div>
+</section>
 </div>
 
-<!-- ═══ PAGE 3: BUILDABLE AREA ═══ -->
-<div class="page" id="page-3">
-  <div class="fr2" style="gap:20px;align-items:start">
+<section class="step-sec active" id="page-3">
+  <div class="sec-head"><span class="sec-num">3</span>Buildable envelope &amp; plan fit</div>
+  <div class="fr2 fr-wide" style="gap:20px;align-items:start">
     <div>
       <div class="card">
         <div class="card-title"><span class="dot"></span>Buildable Envelope</div>
@@ -726,14 +948,14 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
             <button class="rot-preset" onclick="bumpUnits(-1)">−</button>
             <span class="rot-val" id="ov-units" style="min-width:22px;text-align:center">1</span>
             <button class="rot-preset" onclick="bumpUnits(1)">+</button>
-            <span id="ov-units-hint" style="font-size:10px;color:var(--text-dim)">synced with Step 5</span>
+            <span id="ov-units-hint" style="font-size:10px;color:var(--text-dim)">synced with Plan &amp; build</span>
           </div>
           <div class="overlay-stats">
             <div class="overlay-stat">Plan: <span id="ov-plan-name">—</span></div>
             <div class="overlay-stat">Footprint: <span id="ov-footprint">—</span></div>
             <div class="overlay-stat">Fits: <span id="ov-fits">—</span></div>
           </div>
-          <p class="note" style="margin-top:6px">Drag the plan footprint within the buildable area. Select a different plan on Step 5 to swap it out.</p>
+          <p class="note" style="margin-top:6px">Drag the plan footprint within the buildable area. Select a different plan in Plan &amp; build to swap it out.</p>
         </div>
       </div>
       <div class="card">
@@ -744,7 +966,7 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
           <a class="topo-btn" id="topo-flood" href="https://ncfloodmaps.com/" target="_blank">NC Floodplain Map</a>
           <a class="topo-btn" id="topo-earth" href="https://earth.google.com/web/" target="_blank">Google Earth</a>
         </div>
-        <p class="warn" style="margin-top:10px">Grading / dirt load estimates on Step 4 are manual — use topo to assess grade first.</p>
+        <p class="warn" style="margin-top:10px">Grading / dirt load estimates under Lot factor (The Underwrite) are manual — use topo to assess grade first.</p>
       </div>
     </div>
     <div>
@@ -765,14 +987,217 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
       </div>
     </div>
   </div>
-  <div class="nav-btns">
-    <button class="btn btn-ghost" onclick="goTo(2)">← Back</button>
-    <button class="btn btn-primary" onclick="goTo(4)">Next: Lot Factor →</button>
+</section>
+
+<div class="handoff">
+  <div>
+    <div class="handoff-title">Site facts carry forward</div>
+    <p class="handoff-sub">Lot size, setbacks, buildable envelope, your plan picks and the county&rsquo;s tap fees all flow into The Underwrite automatically.</p>
   </div>
+  <button class="btn btn-primary btn-lg" onclick="goTo(7)">Continue to The Underwrite &rarr;</button>
+</div>
 </div>
 
-<!-- ═══ PAGE 4: LOT FACTOR ═══ -->
-<div class="page" id="page-4">
+<!-- ═══════════ SCREEN 02: THE UNDERWRITE (money, no geometry) ═══════════ -->
+<div class="page screen" id="screen-2">
+<div class="screen-head">
+  <div class="screen-eyebrow">Screen 02</div>
+  <h1 class="screen-title">The Underwrite</h1>
+  <p class="screen-lede">The answer first: what the deal makes and the most you can pay for the dirt. Pull the levers here; every detailed input is in the sections below.</p>
+</div>
+<section class="step-sec active" id="page-7">
+  <!-- HERO — the three numbers the deal is decided on -->
+  <div class="hero">
+    <div class="hero-tile">
+      <div class="hero-lbl">Base profit / unit</div>
+      <div class="hero-val" id="hero-profit">&mdash;</div>
+      <div class="hero-sub" id="hero-profit-sub">Set a Base ARV $/sf to see profit</div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-lbl">Base cash-on-cash</div>
+      <div class="hero-val" id="hero-coc">&mdash;</div>
+      <div class="hero-sub" id="hero-coc-sub">Profit &divide; loan per unit</div>
+    </div>
+    <div class="hero-tile hero-dirt">
+      <div class="hero-lbl">Max land cost &middot; the dirt</div>
+      <div class="hero-val" id="max-land-display">&mdash;</div>
+      <div class="hero-sub" id="max-land-sub">Base case &ge; the greater of $50k/unit or 15% of all-in</div>
+    </div>
+  </div>
+
+  <!-- LIVE LEVERS -->
+  <div class="card levers">
+    <div class="card-title"><span class="dot"></span>Live levers</div>
+    <div class="lever-grid">
+      <div class="field lever-land"><label for="land-cost">Land cost</label>
+        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="calcAll();calcScenarios()"></div>
+      </div>
+      <div class="field"><label for="asking-price">Asking price</label>
+        <div class="input-wrap"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" oninput="calcScenarios()"></div>
+        <div class="ask-gap" id="ask-gap"></div>
+      </div>
+      <div class="lever-stats">
+        <div class="lever-stat"><span>Loan amount</span><b id="exit-loan-amt">&mdash;</b></div>
+        <div class="lever-stat"><span>Cash needed</span><b id="exit-cash-needed" class="pos">&mdash;</b></div>
+      </div>
+    </div>
+    <p class="note">Listed deals: start at asking and move the offer down until the profit rule clears. Never up.</p>
+    <div class="lever-arv">
+      <div class="lever-arv-head">ARV &mdash; sale price per sq ft <span>Base is required. Worst fills at &minus;10% and Best at +10% if left blank. Pull comps in <a href="#" onclick="goTo(8);return false">Sales comps</a>.</span></div>
+      <div class="fr3">
+        <div class="field"><label for="arv-w">Worst ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-w" placeholder="auto −10%" oninput="calcScenarios()"></div></div>
+        <div class="field"><label for="arv-b">Base ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-b" placeholder="your comp $/sf" oninput="calcScenarios()"></div></div>
+        <div class="field"><label for="arv-best">Best ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board-head">Worst &middot; Base &middot; Best <span>Scenarios differ by loan term and ARV $/sf. Terms are set under Financing.</span></div>
+  <!-- SCENARIOS -->
+  <div class="sc-grid">
+    <div class="sc-card worst">
+      <div class="sc-tag">Worst — <span id="term-w-label">10</span>mo</div>
+      <div id="sc-lines-w" style="margin-top:4px"></div>
+      <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-w">—</div><div class="profit-sub" id="coc-w"></div></div>
+    </div>
+    <div class="sc-card base">
+      <div class="sc-tag">Base — <span id="term-b-label">8</span>mo</div>
+      <div id="sc-lines-b" style="margin-top:4px"></div>
+      <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-b">—</div><div class="profit-sub" id="coc-b"></div></div>
+    </div>
+    <div class="sc-card best">
+      <div class="sc-tag">Best — <span id="term-best-label">6</span>mo</div>
+      <div id="sc-lines-best" style="margin-top:4px"></div>
+      <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-best">—</div><div class="profit-sub" id="coc-best"></div></div>
+    </div>
+  </div>
+
+  <!-- PROJECT TOTALS -->
+  <div class="card" style="margin-top:20px">
+    <div class="card-title"><span class="dot"></span>Total Project (All Units)</div>
+    <div class="fr3">
+      <div style="text-align:center;padding:16px;background:var(--red-dim);border-radius:var(--radius-sm);border:1px solid rgba(239,93,87,0.2)">
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Worst Total</div>
+        <div style="font-family:var(--f-head);font-weight:700;font-size:24px;color:var(--red)" id="proj-worst">—</div>
+        <div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.4" id="proj-arv-worst"></div>
+      </div>
+      <div style="text-align:center;padding:16px;background:var(--teal-dim);border-radius:var(--radius-sm);border:1px solid rgba(94,128,149,0.25)">
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Base Total</div>
+        <div style="font-family:var(--f-head);font-weight:700;font-size:24px;color:var(--teal-light)" id="proj-base">—</div>
+        <div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.4" id="proj-arv-base"></div>
+      </div>
+      <div style="text-align:center;padding:16px;background:var(--green-dim);border-radius:var(--radius-sm);border:1px solid rgba(70,192,138,0.2)">
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Best Total</div>
+        <div style="font-family:var(--f-head);font-weight:700;font-size:24px;color:var(--green)" id="proj-best">—</div>
+        <div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.4" id="proj-arv-best"></div>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="uw-actions">
+    <button class="btn btn-primary" onclick="generateReportPackage()">&#128230; Report package (PDF + Excel)</button>
+    <button class="btn btn-pine" onclick="generateSheet()">&#128202; Excel model (live formulas)</button>
+    <button class="btn btn-ghost" onclick="generateOfferLetter()">&#9993;&#65039; Offer letter</button>
+    <button class="btn btn-ghost" onclick="openCompare()">&#9878; Compare builds</button>
+  </div>
+  <div id="compare-shortlist-note" class="note uw-shortlist"></div>
+</section>
+<div class="uw-inputs-head">Underwriting inputs <span>Open a section to change the details behind the numbers above.</span></div>
+
+<details class="step-sec uw-sec" id="page-5" open>
+<summary class="uw-sum"><span class="sec-num">A</span><span class="uw-sum-t">Plan &amp; build</span><span class="uw-sum-m">Slate plan, units, GC fee, taps, soft costs, upgrades</span><span class="uw-sum-v" id="uw-sum-plan"></span></summary>
+<div class="uw-body">
+  <div class="two-col">
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Slate Plan Selection</div>
+        <div class="field">
+          <select id="plan-sel" onchange="onPlanChange()">
+            <option value="">— Select a Slate plan —</option>
+          </select>
+        </div>
+        <div id="plan-info" style="display:none;margin-top:12px;padding:12px;background:var(--teal-dim);border:1px solid rgba(94,128,149,0.25);border-radius:var(--radius-sm)">
+          <div style="font-family:var(--f-head);font-weight:700;font-size:16px;color:var(--teal-light);margin-bottom:6px" id="plan-info-name"></div>
+          <div class="fr3">
+            <div><div style="font-size:10px;color:var(--text-dim)">Build Cost (incl. GC)</div><div style="font-family:var(--f-num);font-size:13px" id="plan-info-cost"></div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">Sq Ft / Unit</div><div style="font-family:var(--f-num);font-size:13px" id="plan-info-sf"></div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">Footprint</div><div style="font-family:var(--f-num);font-size:13px" id="plan-info-fp"></div></div>
+          </div>
+          <div id="plan-fit-msg" style="margin-top:8px"></div>
+          <div id="plan-info-img"></div>
+        </div>
+        <!-- CUSTOM DIMENSIONS — plot an arbitrary footprint with no Slate plan -->
+        <div id="custom-dim-panel" style="display:none;margin-top:12px;padding:12px;background:rgba(240,169,60,0.06);border:1px solid rgba(240,169,60,0.28);border-radius:var(--radius-sm)">
+          <div style="font-family:var(--f-head);font-weight:700;font-size:15px;color:var(--amber);margin-bottom:8px">Custom Footprint</div>
+          <div class="fr2">
+            <div class="field"><label>House Width (ft)</label><div class="input-wrap"><input type="number" id="cust-w" placeholder="e.g. 40" oninput="applyCustomDims()"><span class="sfx">ft</span></div></div>
+            <div class="field"><label>House Depth (ft)</label><div class="input-wrap"><input type="number" id="cust-d" placeholder="e.g. 55" oninput="applyCustomDims()"><span class="sfx">ft</span></div></div>
+          </div>
+          <div class="fr3" style="margin-top:2px">
+            <div class="field"><label>Finished SF <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><input type="number" id="cust-sf" placeholder="—" oninput="applyCustomDims()"></div>
+            <div class="field"><label>Units <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><input type="number" id="cust-u" value="1" min="1" oninput="applyCustomDims()"></div>
+            <div class="field"><label>Build Cost <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="cust-c" placeholder="—" oninput="applyCustomDims()"></div></div>
+          </div>
+          <div id="cust-fit-msg" style="margin-top:6px"></div>
+          <p class="note" style="margin-top:4px">Enter a width &amp; depth to plot the footprint on the Site Intelligence diagram and run the fit check. Leave build cost blank to test the footprint only; the cost stack stays at $0 until you enter one.</p>
+        </div>
+        <div class="fr2" style="margin-top:14px">
+          <div class="field"><label>Units</label><input type="number" id="units" value="1" min="1" max="20" oninput="onUnitsChange()"></div>
+          <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Utility Taps</div>
+        <p class="note" style="margin-bottom:10px">Auto-filled from the county/city on Site Intelligence — per unit. Override with a project-specific quote if you have one.</p>
+        <div class="fr2">
+          <div class="field"><label>Water Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-water" value="0" oninput="calcAll()"></div></div>
+          <div class="field"><label>Sewer Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-sewer" value="0" oninput="calcAll()"></div></div>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-lbl">No water tap (existing / not available)</span>
+          <label class="tog"><input type="checkbox" id="skip-water" onchange="calcAll()"><div class="tog-track"></div><div class="tog-thumb"></div></label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-lbl">No sewer tap — install septic instead</span>
+          <label class="tog"><input type="checkbox" id="skip-sewer" onchange="onSewerSkip()"><div class="tog-track"></div><div class="tog-thumb"></div></label>
+        </div>
+        <div class="field" id="septic-f" style="display:none;margin-top:8px"><label>Septic Install (per lot)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="septic-cost" value="8000" oninput="calcAll()"></div><p class="note">Default estimate — confirm with installer. Per lot, not × units (for multi-unit on separate systems, enter the combined cost). Set $0 if an existing sewer tap is present.</p></div>
+        <div id="tap-hint" class="warn" style="margin-top:8px;display:none"></div>
+        <div id="tap-msg" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Other Soft Costs</div>
+        <div class="fr3">
+          <div class="field"><label>Survey</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="survey" value="1000" oninput="markManual(this);calcAll()"></div></div>
+          <div class="field"><label>Appraisal</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="appraisal" value="725" oninput="calcAll()"></div></div>
+          <div class="field"><label>Insurance (build period)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="insurance" value="1400" oninput="calcAll()"></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Upgrades (per unit)</div>
+        <div class="upg-grid" id="upg-grid"></div>
+        <div class="upg-total-bar"><span style="font-size:11px;color:var(--text-mid)">Selected Upgrades Total</span><span style="font-family:var(--f-num);font-size:14px;color:var(--amber)" id="upg-total">$0</span></div>
+        <button class="btn btn-ghost" style="margin-top:12px;width:100%" onclick="openInclusions()">View standard build inclusions</button>
+      </div>
+    </div>
+    <div class="sidebar">
+      <div class="sb-card">
+        <div class="sb-card-title">Cost Stack (per unit, excl. land &amp; financing)</div>
+        <div id="cost-stack"></div>
+        <div style="border-top:1px solid var(--border-bright);margin-top:8px;padding-top:10px">
+          <div class="sb-big" id="allin-display">—</div>
+          <div class="sb-big-lbl">Pre-Land, Pre-Financing / Unit</div>
+        </div>
+      </div>
+      <p class="note" style="text-align:center;margin-top:4px">Land cost is the top lever above; financing is in section C below.</p>
+    </div>
+  </div>
+</div>
+</details>
+<details class="step-sec uw-sec" id="page-4">
+<summary class="uw-sum"><span class="sec-num">B</span><span class="uw-sum-t">Lot factor</span><span class="uw-sum-m">Demo, trees, clearing, dirt, grading &amp; site work</span><span class="uw-sum-v" id="uw-sum-lf"></span></summary>
+<div class="uw-body">
   <div class="two-col">
     <div>
       <div class="card">
@@ -846,114 +1271,18 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
       </div>
       <div class="sb-card">
         <div class="sb-card-title">Property Summary</div>
-        <div class="sb-stat"><span class="sb-stat-lbl">Address</span><span class="sb-stat-val" id="sum-addr" style="font-family:'DM Sans',sans-serif;font-size:11px;text-align:right;max-width:160px">—</span></div>
+        <div class="sb-stat"><span class="sb-stat-lbl">Address</span><span class="sb-stat-val" id="sum-addr" style="font-family:var(--f-body);font-size:11px;text-align:right;max-width:160px">—</span></div>
         <div class="sb-stat"><span class="sb-stat-lbl">County / Zone</span><span class="sb-stat-val" id="sum-zone">—</span></div>
         <div class="sb-stat"><span class="sb-stat-lbl">Lot Size</span><span class="sb-stat-val" id="sum-lotsize">—</span></div>
         <div class="sb-stat"><span class="sb-stat-lbl">Buildable Area</span><span class="sb-stat-val" id="sum-buildable">—</span></div>
       </div>
     </div>
   </div>
-  <div class="nav-btns">
-    <button class="btn btn-ghost" onclick="goTo(3)">← Back</button>
-    <button class="btn btn-primary" onclick="goTo(5)">Next: Plan &amp; Build →</button>
-  </div>
 </div>
-
-<!-- ═══ PAGE 5: PLAN & BUILD ═══ -->
-<div class="page" id="page-5">
-  <div class="two-col">
-    <div>
-      <div class="card">
-        <div class="card-title"><span class="dot"></span>Slate Plan Selection</div>
-        <div class="field">
-          <select id="plan-sel" onchange="onPlanChange()">
-            <option value="">— Select a Slate plan —</option>
-          </select>
-        </div>
-        <div id="plan-info" style="display:none;margin-top:12px;padding:12px;background:var(--teal-dim);border:1px solid rgba(94,128,149,0.25);border-radius:var(--radius-sm)">
-          <div style="font-family:'DM Serif Display',serif;font-size:16px;color:var(--teal-light);margin-bottom:6px" id="plan-info-name"></div>
-          <div class="fr3">
-            <div><div style="font-size:10px;color:var(--text-dim)">Build Cost (incl. GC)</div><div style="font-family:'DM Mono',monospace;font-size:13px" id="plan-info-cost"></div></div>
-            <div><div style="font-size:10px;color:var(--text-dim)">Sq Ft / Unit</div><div style="font-family:'DM Mono',monospace;font-size:13px" id="plan-info-sf"></div></div>
-            <div><div style="font-size:10px;color:var(--text-dim)">Footprint</div><div style="font-family:'DM Mono',monospace;font-size:13px" id="plan-info-fp"></div></div>
-          </div>
-          <div id="plan-fit-msg" style="margin-top:8px"></div>
-          <div id="plan-info-img"></div>
-        </div>
-        <!-- CUSTOM DIMENSIONS — plot an arbitrary footprint with no Slate plan -->
-        <div id="custom-dim-panel" style="display:none;margin-top:12px;padding:12px;background:rgba(240,169,60,0.06);border:1px solid rgba(240,169,60,0.28);border-radius:var(--radius-sm)">
-          <div style="font-family:'DM Serif Display',serif;font-size:15px;color:var(--amber);margin-bottom:8px">Custom Footprint</div>
-          <div class="fr2">
-            <div class="field"><label>House Width (ft)</label><div class="input-wrap"><input type="number" id="cust-w" placeholder="e.g. 40" oninput="applyCustomDims()"><span class="sfx">ft</span></div></div>
-            <div class="field"><label>House Depth (ft)</label><div class="input-wrap"><input type="number" id="cust-d" placeholder="e.g. 55" oninput="applyCustomDims()"><span class="sfx">ft</span></div></div>
-          </div>
-          <div class="fr3" style="margin-top:2px">
-            <div class="field"><label>Finished SF <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><input type="number" id="cust-sf" placeholder="—" oninput="applyCustomDims()"></div>
-            <div class="field"><label>Units <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><input type="number" id="cust-u" value="1" min="1" oninput="applyCustomDims()"></div>
-            <div class="field"><label>Build Cost <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="cust-c" placeholder="—" oninput="applyCustomDims()"></div></div>
-          </div>
-          <div id="cust-fit-msg" style="margin-top:6px"></div>
-          <p class="note" style="margin-top:4px">Enter a width &amp; depth to plot the footprint on the Step 3 diagram and run the fit check. Leave build cost blank to test the footprint only; the cost stack stays at $0 until you enter one.</p>
-        </div>
-        <div class="fr2" style="margin-top:14px">
-          <div class="field"><label>Units</label><input type="number" id="units" value="1" min="1" max="20" oninput="onUnitsChange()"></div>
-          <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title"><span class="dot"></span>Utility Taps</div>
-        <p class="note" style="margin-bottom:10px">Auto-filled from the county/city in Step 1 — per unit. Override with a project-specific quote if you have one.</p>
-        <div class="fr2">
-          <div class="field"><label>Water Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-water" value="0" oninput="calcAll()"></div></div>
-          <div class="field"><label>Sewer Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-sewer" value="0" oninput="calcAll()"></div></div>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-lbl">No water tap (existing / not available)</span>
-          <label class="tog"><input type="checkbox" id="skip-water" onchange="calcAll()"><div class="tog-track"></div><div class="tog-thumb"></div></label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-lbl">No sewer tap — install septic instead</span>
-          <label class="tog"><input type="checkbox" id="skip-sewer" onchange="onSewerSkip()"><div class="tog-track"></div><div class="tog-thumb"></div></label>
-        </div>
-        <div class="field" id="septic-f" style="display:none;margin-top:8px"><label>Septic Install (per lot)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="septic-cost" value="8000" oninput="calcAll()"></div><p class="note">Default estimate — confirm with installer. Per lot, not × units (for multi-unit on separate systems, enter the combined cost). Set $0 if an existing sewer tap is present.</p></div>
-        <div id="tap-hint" class="warn" style="margin-top:8px;display:none"></div>
-        <div id="tap-msg" style="margin-top:8px"></div>
-      </div>
-      <div class="card">
-        <div class="card-title"><span class="dot"></span>Other Soft Costs</div>
-        <div class="fr3">
-          <div class="field"><label>Survey</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="survey" value="1000" oninput="markManual(this);calcAll()"></div></div>
-          <div class="field"><label>Appraisal</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="appraisal" value="725" oninput="calcAll()"></div></div>
-          <div class="field"><label>Insurance (build period)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="insurance" value="1400" oninput="calcAll()"></div></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title"><span class="dot"></span>Upgrades (per unit)</div>
-        <div class="upg-grid" id="upg-grid"></div>
-        <div class="upg-total-bar"><span style="font-size:11px;color:var(--text-mid)">Selected Upgrades Total</span><span style="font-family:'DM Mono',monospace;font-size:14px;color:var(--amber)" id="upg-total">$0</span></div>
-        <button class="btn btn-ghost" style="margin-top:12px;width:100%" onclick="openInclusions()">View standard build inclusions</button>
-      </div>
-    </div>
-    <div class="sidebar">
-      <div class="sb-card">
-        <div class="sb-card-title">Cost Stack (per unit, excl. land &amp; financing)</div>
-        <div id="cost-stack"></div>
-        <div style="border-top:1px solid var(--border-bright);margin-top:8px;padding-top:10px">
-          <div class="sb-big" id="allin-display">—</div>
-          <div class="sb-big-lbl">Pre-Land, Pre-Financing / Unit</div>
-        </div>
-      </div>
-      <p class="note" style="text-align:center;margin-top:4px">Land cost &amp; financing inputs are on Steps 6–7 →</p>
-    </div>
-  </div>
-  <div class="nav-btns">
-    <button class="btn btn-ghost" onclick="goTo(4)">← Back</button>
-    <button class="btn btn-primary" onclick="goTo(6)">Next: Financing →</button>
-  </div>
-</div>
-
-<!-- ═══ PAGE 6: FINANCING ═══ -->
-<div class="page" id="page-6">
+</details>
+<details class="step-sec uw-sec" id="page-6">
+<summary class="uw-sum"><span class="sec-num">C</span><span class="uw-sum-t">Financing &amp; exit costs</span><span class="uw-sum-m">LTC, rate, points, taxes, loan terms, sale costs</span><span class="uw-sum-v" id="uw-sum-fin"></span></summary>
+<div class="uw-body">
   <div class="two-col">
     <div>
       <!-- Loan Structure -->
@@ -996,7 +1325,7 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
         <div class="sb-stat"><span class="sb-stat-lbl">Loan Amount</span><span class="sb-stat-val" id="fin-loan-amt">—</span></div>
         <div class="sb-stat"><span class="sb-stat-lbl">Purchase Closing (1% of loan)</span><span class="sb-stat-val" id="fin-purch-closing">—</span></div>
         <div class="sb-stat"><span class="sb-stat-lbl">Cash Needed</span><span class="sb-stat-val" id="fin-cash-needed" style="color:var(--green)">—</span></div>
-        <p class="note" style="margin-top:8px">Land cost is set on Step 7. These figures update live as you adjust land cost.</p>
+        <p class="note" style="margin-top:8px">Land cost is set in Live levers at the top. These figures update live as you adjust it.</p>
       </div>
       <div class="sb-card">
         <div class="sb-card-title">Holding Costs by Scenario</div>
@@ -1020,50 +1349,11 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
       </div>
     </div>
   </div>
-  <div class="nav-btns">
-    <button class="btn btn-ghost" onclick="goTo(5)">← Back</button>
-    <button class="btn btn-primary" onclick="goTo(7)">Next: Exit &amp; Offer →</button>
-  </div>
 </div>
-
-<!-- ═══ PAGE 7: EXIT & OFFER ═══ -->
-<div class="page" id="page-7">
-  <!-- LAND COST LEVER -->
-  <div class="land-lever">
-    <div class="land-lever-title">Land Cost — Play With This</div>
-    <div class="land-lever-sub">Adjust land cost and watch profit move live across all three scenarios below.</div>
-    <div class="land-input-big">
-      <span class="pfx">$</span>
-      <input type="text" id="land-cost" value="25,000" oninput="calcAll();calcScenarios()">
-    </div>
-    <div class="asking-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:8px 0 4px;font-size:12px;color:var(--text-dim)">
-      <label for="asking-price" style="font-weight:600">Asking Price</label>
-      <span style="display:inline-flex;align-items:center;gap:4px"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" style="width:120px" oninput="calcScenarios()"></span>
-      <span id="ask-gap"></span>
-      <span class="note" style="margin:0">Listed deals: start at asking and move the offer down until the profit rule clears. Never up.</span>
-    </div>
-    <div class="max-offer-bar">
-      <div class="max-offer-card amber">
-        <div class="max-offer-label">Max Land Cost — Profit Rule</div>
-        <div class="max-offer-val" id="max-land-display">—</div>
-        <div class="max-offer-sub" id="max-land-sub">Base case ≥ the greater of $50k/unit or 15% of all-in</div>
-      </div>
-      <div class="max-offer-card">
-        <div class="max-offer-label">Loan Amount</div>
-        <div class="max-offer-val" id="exit-loan-amt">—</div>
-        <div class="max-offer-sub">Based on current land cost + LTC%</div>
-      </div>
-      <div class="max-offer-card green">
-        <div class="max-offer-label">Cash Needed</div>
-        <div class="max-offer-val" id="exit-cash-needed">—</div>
-        <div class="max-offer-sub">Your equity contribution</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- SALES COMPS (#8) -->
-  <div class="card" style="margin-bottom:20px">
-    <div class="card-title"><span class="dot"></span>Sales Comps</div>
+</details>
+<details class="step-sec uw-sec" id="page-8">
+<summary class="uw-sum"><span class="sec-num">D</span><span class="uw-sum-t">Sales comps</span><span class="uw-sum-m">County new-build comps and your own, blended into an ARV $/sf</span><span class="uw-sum-v" id="uw-sum-comps"></span></summary>
+<div class="uw-body"><div class="card">
     <p class="note" style="margin-bottom:10px">Enter comparable sales to derive your ARV $/sf. <b>Adj $/SF</b> = (Sold + Adjustments) &divide; Sq Ft &mdash; use a negative adjustment (e.g. <code>-40,000</code>) to dock a superior comp. Suggested ARV multiplies the blended $/sf by the selected plan&rsquo;s Sq Ft. Apply median/avg to Base ARV below.</p>
     <div id="comps-summary" class="comps-summary"></div>
     <div style="overflow-x:auto"><table class="comps-table" id="comps-table"></table></div>
@@ -1074,76 +1364,10 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
       <button class="btn btn-ghost" onclick="applyCompsArv('median')">Apply median &rarr; Base ARV</button>
       <button class="btn btn-ghost" onclick="applyCompsArv('avg')">Apply avg &rarr; Base ARV</button>
     </div>
-  </div>
+</div></div>
+</details>
 
-  <!-- ARV INPUTS -->
-  <div class="card" style="margin-bottom:20px">
-    <div class="card-title"><span class="dot"></span>ARV — Sale Price per Sq Ft</div>
-    <p class="note" style="margin-bottom:12px">Enter your comp-derived $/sf. Base case is required. Worst auto-fills at −10%, Best at +10% if left blank.</p>
-    <div class="fr3">
-      <div class="field"><label>Worst Case ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-w" placeholder="auto −10%" oninput="calcScenarios()"></div></div>
-      <div class="field"><label>Base Case ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-b" placeholder="your comp $/sf" oninput="calcScenarios()"></div></div>
-      <div class="field"><label>Best Case ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()"></div></div>
-    </div>
-  </div>
-
-  <!-- SCENARIOS -->
-  <div class="sc-grid">
-    <div class="sc-card worst">
-      <div class="sc-tag">Worst — <span id="term-w-label">10</span>mo</div>
-      <div id="sc-lines-w" style="margin-top:4px"></div>
-      <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-w">—</div><div class="profit-sub" id="coc-w"></div></div>
-    </div>
-    <div class="sc-card base">
-      <div class="sc-tag">Base — <span id="term-b-label">8</span>mo</div>
-      <div id="sc-lines-b" style="margin-top:4px"></div>
-      <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-b">—</div><div class="profit-sub" id="coc-b"></div></div>
-    </div>
-    <div class="sc-card best">
-      <div class="sc-tag">Best — <span id="term-best-label">6</span>mo</div>
-      <div id="sc-lines-best" style="margin-top:4px"></div>
-      <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-best">—</div><div class="profit-sub" id="coc-best"></div></div>
-    </div>
-  </div>
-
-  <!-- PROJECT TOTALS -->
-  <div class="card" style="margin-top:20px">
-    <div class="card-title"><span class="dot"></span>Total Project (All Units)</div>
-    <div class="fr3">
-      <div style="text-align:center;padding:16px;background:var(--red-dim);border-radius:var(--radius-sm);border:1px solid rgba(239,93,87,0.2)">
-        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Worst Total</div>
-        <div style="font-family:'DM Serif Display',serif;font-size:24px;color:var(--red)" id="proj-worst">—</div>
-        <div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.4" id="proj-arv-worst"></div>
-      </div>
-      <div style="text-align:center;padding:16px;background:var(--teal-dim);border-radius:var(--radius-sm);border:1px solid rgba(94,128,149,0.25)">
-        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Base Total</div>
-        <div style="font-family:'DM Serif Display',serif;font-size:24px;color:var(--teal-light)" id="proj-base">—</div>
-        <div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.4" id="proj-arv-base"></div>
-      </div>
-      <div style="text-align:center;padding:16px;background:var(--green-dim);border-radius:var(--radius-sm);border:1px solid rgba(70,192,138,0.2)">
-        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Best Total</div>
-        <div style="font-family:'DM Serif Display',serif;font-size:24px;color:var(--green)" id="proj-best">—</div>
-        <div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.4" id="proj-arv-best"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- COMPARE BUILDS (moved from Step 5) -->
-  <div class="card" style="margin-top:20px">
-    <div class="card-title"><span class="dot"></span>Compare Builds Side-by-Side</div>
-    <p class="note" style="margin-bottom:8px">Compare up to three plans with full deal math. Pre-fills from your 1st/2nd/3rd picks on the Buildable Area step (you can still change them inside the comparison).</p>
-    <div id="compare-shortlist-note" class="note" style="margin-bottom:10px"></div>
-    <button class="btn btn-primary" onclick="openCompare()" style="background:var(--teal);color:#fff">⚖ Open Comparison</button>
-  </div>
-
-  <div class="nav-btns" style="flex-wrap:wrap;gap:10px">
-      <button class="btn btn-ghost" onclick="goTo(6)">← Back to Financing</button>
-      <button class="btn btn-primary" onclick="generateReportPackage()" style="background:var(--amber);color:#1a2535;font-size:13px;padding:10px 20px">
-        📦 Generate Report Package (PDF + Excel)
-      </button>
-      <button class="btn btn-primary" onclick="generateSheet()" style="background:var(--brand-green);color:#fff;font-size:13px;padding:10px 20px">&#128202; Excel Model (live formulas)</button>
-      <button class="btn btn-primary" onclick="generateOfferLetter()" style="background:var(--teal);color:#fff;font-size:13px;padding:10px 20px">&#9993;&#65039; Generate Offer Letter</button>
-    </div>
+<div class="nav-btns uw-back"><button class="btn btn-ghost" onclick="goTo(1)">&larr; Back to Site Intelligence</button></div>
 </div>
 
 <div style="border-top:1px solid var(--border);padding:14px 28px;display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim)">
@@ -1442,9 +1666,9 @@ function renderShortlist(){
   const lab=['1st','2nd','3rd'];
   const parts=CHOICES.map((n,i)=>n?`<b>${lab[i]}</b> ${n}`:null).filter(Boolean);
   const fs=$('fit-shortlist');
-  if(fs)fs.innerHTML=parts.length?`<div class="shortlist">Compare shortlist (used on Step 7): ${parts.join(' &nbsp;\u00b7&nbsp; ')} <button class="btn btn-ghost" style="padding:2px 8px;margin-left:8px" onclick="clearChoices()">Clear</button></div>`:'';
+  if(fs)fs.innerHTML=parts.length?`<div class="shortlist">Compare shortlist (used on The Underwrite): ${parts.join(' &nbsp;\u00b7&nbsp; ')} <button class="btn btn-ghost" style="padding:2px 8px;margin-left:8px" onclick="clearChoices()">Clear</button></div>`:'';
   const cn=$('compare-shortlist-note');
-  if(cn)cn.innerHTML=parts.length?`Your picks: ${parts.join(' &nbsp;\u00b7&nbsp; ')}`:'No picks yet \u2014 mark 1/2/3 on the Buildable Area step, or just open the comparison and choose.';
+  if(cn)cn.innerHTML=parts.length?`Your picks: ${parts.join(' &nbsp;\u00b7&nbsp; ')}`:'No picks yet \u2014 mark 1/2/3 on the plan fit check, or just open the comparison and choose.';
 }
 function addComp(){COMPS.push({addr:'',sqft:'',sold:'',adj:'',date:'',dist:'',mom:'',notes:'',url:''});renderComps();renderShortlist();}
 function removeComp(i){COMPS.splice(i,1);renderComps();}
@@ -1499,15 +1723,15 @@ async function pullCountyComps(){
   const say=(html,border)=>{ if(!box)return; box.innerHTML=html; box.style.display=''; if(border)box.style.borderColor=border; };
   const gis=(typeof window!=='undefined'&&window._lastGis)||null;
   const pid=gis&&gis.pid;
-  if(!pid){ say('Run <b>\ud83d\udef0 Auto-fill from County GIS</b> on Step 1 first \u2014 the comp search keys off the county parcel id.','#f0a93c'); return; }
+  if(!pid){ say('Run <b>\ud83d\udef0 Auto-fill from County GIS</b> on Site Intelligence first \u2014 the comp search keys off the county parcel id.','var(--amber)'); return; }
   // Guard against a stale cache even if onAddrChange never fired (paste, autofill, restored deal).
   if(gis.addrSig && gis.addrSig!==gisAddressSignature()){
     window._lastGis=null;
-    say('The address changed since the last GIS lookup, so the cached parcel id belongs to a different property. Run <b>\ud83d\udef0 Auto-fill from County GIS</b> again first.','#f0a93c');
+    say('The address changed since the last GIS lookup, so the cached parcel id belongs to a different property. Run <b>\ud83d\udef0 Auto-fill from County GIS</b> again first.','var(--amber)');
     return;
   }
   const county=($('county-sel')||{}).value||'';
-  if(county&&!/mecklenburg/i.test(county)){ say('County records are wired for <b>Mecklenburg</b> only. For '+county+', pull comps manually or from DealMachine.','#f0a93c'); return; }
+  if(county&&!/mecklenburg/i.test(county)){ say('County records are wired for <b>Mecklenburg</b> only. For '+county+', pull comps manually or from DealMachine.','var(--amber)'); return; }
   const sf=sfPerUnit>0?sfPerUnit:'';
   if(btn){btn.disabled=true;btn.textContent='Pulling\u2026';}
   say('Searching county sales records\u2026');
@@ -1515,11 +1739,11 @@ async function pullCountyComps(){
     const url='/api/comps?pid='+encodeURIComponent(pid)+'&radius=0.5&months=24'+(sf?('&sf='+sf):'');
     const r=await fetch(url);
     const d=await r.json();
-    if(d.error){ say('Comps lookup failed: '+d.error,'#ef5d57'); return; }
+    if(d.error){ say('Comps lookup failed: '+d.error,'var(--red)'); return; }
     const rows=(d.comps||[]).filter(c=>c.tier==='solid'||c.tier==='context');
     if(!rows.length){
       say('No new-build sales found within 0.5 mi in the last 24 months.'
-        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.join(' \u00b7 ')+'</div>'):''),'#f0a93c');
+        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.join(' \u00b7 ')+'</div>'):''),'var(--amber)');
       return;
     }
     // Newest first within the nearest set, then keep it to a readable dozen.
@@ -1545,8 +1769,8 @@ async function pullCountyComps(){
     if(d.summary&&d.summary.size_matched&&d.summary.size_matched.in_band!=null)
       h+='<div style="margin-top:4px">Size-matched to the plan: <b>'+d.summary.size_matched.in_band+'</b> comps within \u00b120% of '+Math.round(d.params.subjectSf||0).toLocaleString()+' sf'+(d.summary.size_matched.spread?(' \u00b7 $/sf spread '+d.summary.size_matched.spread+'\u00d7'):'')+'</div>';
     if(d.confidence){
-      const col=d.confidence.level==='high'?'#46c08a':d.confidence.level==='medium'?'#f0a93c':'#ef5d57';
-      h+='<div style="margin-top:6px;padding:6px 8px;border-left:3px solid '+col+';background:rgba(255,255,255,0.03)">'
+      const col=d.confidence.level==='high'?'var(--green)':d.confidence.level==='medium'?'var(--amber)':'var(--red)';
+      h+='<div style="margin-top:6px;padding:6px 8px;border-left:3px solid '+col+';background:rgba(16,37,56,0.03)">'
         +'<b style="color:'+col+'">Confidence: '+d.confidence.level.toUpperCase()+'</b>'
         +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+d.confidence.reason+'</div></div>';
     }
@@ -1554,10 +1778,10 @@ async function pullCountyComps(){
       +' <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="applyCountyArv('+d.arv.retail_psf+')">Apply \u2192 Base ARV</button>'
       +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+(d.arv.basis||'')+'</div>'
       +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+d.arv.note+'</div></div>';
-    (d.flags||[]).forEach(f=>{h+='<div style="color:#f0a93c;margin-top:4px">\u26a0 '+f+'</div>';});
+    (d.flags||[]).forEach(f=>{h+='<div style="color:var(--amber);margin-top:4px">\u26a0 '+f+'</div>';});
     h+='<div style="color:var(--text-dim);font-size:11px;margin-top:6px">County deed records only \u2014 no MLS status, concessions or photos. Recording lags closing by 1\u20133 weeks. Check each row before you lean on it.</div>';
     say(h);
-  }catch(e){ say('Comps lookup failed: '+e.message,'#ef5d57'); }
+  }catch(e){ say('Comps lookup failed: '+e.message,'var(--red)'); }
   finally{ if(btn){btn.disabled=false;btn.innerHTML='\ud83d\udce1 Pull new-build comps (Meck)';} }
 }
 function applyCountyArv(psf){
@@ -1652,31 +1876,39 @@ const pv=id=>{const e=$(id);if(!e)return 0;const v=parseFloat((e.value||'').repl
 const planNameFromVal=v=>v==='__CUSTOM__'?'Custom footprint':((v||'').split('|')[0]||'');
 
 // ═══════════════════ NAVIGATION ═══════════════════
+// v8: two screens replace the seven-step wizard. Screen 1 (Site Intelligence) holds sections
+// 1-3; Screen 2 (The Underwrite) holds 7 (output), 5, 4, 6 and 8 (sales comps). goTo(n) keeps the
+// old step numbers so every caller still works: it shows n's screen, runs the same entry hooks the
+// old steps ran, then brings section n into view (opening it if it's a collapsed input section).
+const SCREEN_OF=n=>n<=3?1:2;
+const SECTIONS=[1,2,3,4,5,6,7,8];
 function goTo(n){
-  try{document.body.setAttribute('data-step',n);}catch(e){}
-  (window._visitedSteps=window._visitedSteps||new Set([1])).add(n);
-  for(let i=1;i<=7;i++){
-    $(`page-${i}`).classList.toggle('active',i===n);
-    const nb=$(`nav-${i}`);
-    nb.classList.remove('active','done');
-    if(i===n)nb.classList.add('active');
-    else if(i<n&&window._visitedSteps&&window._visitedSteps.has(i))nb.classList.add('done');
+  n=parseInt(n,10)||1;
+  const scr=SCREEN_OF(n);
+  const prev=document.body.getAttribute('data-screen');
+  try{document.body.setAttribute('data-step',n);document.body.setAttribute('data-screen',scr);}catch(e){}
+  [1,2].forEach(k=>{const el=$(`screen-${k}`);if(el)el.classList.toggle('active',k===scr);});
+  const tabs={1:$('tab-site'),2:$('tab-uw')};
+  [1,2].forEach(k=>{const t=tabs[k];if(!t)return;t.classList.toggle('active',k===scr);t.setAttribute('aria-selected',k===scr?'true':'false');});
+  SECTIONS.forEach(i=>{
+    const pg=$(`page-${i}`);if(pg&&pg.tagName!=='DETAILS')pg.classList.toggle('active',SCREEN_OF(i)===scr);
+    const nb=$(`nav-${i}`);if(nb)nb.classList.toggle('active',i===n);
+  });
+  // same entry hooks the old steps ran, grouped by screen; a chip click within the screen only scrolls
+  const entering=String(prev)!==String(scr);
+  if(entering&&scr===1){
+    updateGISLink();
+    if(lotMode==='poly'){snapshotLotEditor();calcBuildable();renderFitCheck();updateTopoLinks();}
+    else{calcBuildable();drawDiagram();renderFitCheck();updateTopoLinks();}
+  }else if(entering){
+    updateSummaryBar();
+    applyRankedPlanDefault();applyTapDefaults();
+    calcAll();calcFinancing();calcScenarios();
   }
-  window.scrollTo(0,0);
-  if(n===2)updateGISLink();
-  if(n===3){
-    if(lotMode==='poly'){
-      // snapshotLotEditor pre-loads the image then calls drawDiagram() once
-      snapshotLotEditor();
-      calcBuildable();renderFitCheck();updateTopoLinks();
-    } else {
-      calcBuildable();drawDiagram();renderFitCheck();updateTopoLinks();
-    }
-  }
-  if(n===4)updateSummaryBar();
-  if(n===5){applyRankedPlanDefault();applyTapDefaults();calcAll();}
-  if(n===6){calcAll();calcFinancing();}
-  if(n===7){calcAll();calcFinancing();calcScenarios();}
+  const target=$(`page-${n}`);
+  if(target&&target.tagName==='DETAILS'&&!target.open)target.open=true;
+  if(n===1||n===7||!target)window.scrollTo(0,0);
+  else target.scrollIntoView({block:'start'});   // offset comes from .step-sec scroll-margin-top
 }
 
 // ═══════════════════ PAGE 1 ═══════════════════
@@ -1945,7 +2177,7 @@ function applyCountyDefaults(d){
 }
 function renderGisResult(d){
   const box=$('gis-result');if(!box)return;
-  const dim='var(--text-dim)',amber='#f0a93c',red='#ef5d57',green='#46c08a',teal='#5e8095';
+  const dim='var(--text-dim)',amber='var(--amber)',red='var(--red)',green='var(--green)',teal='#5e8095';
   const row=(lbl,val,col)=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid rgba(94,128,149,0.18)"><span style="color:${dim}">${lbl}</span><span style="text-align:right${col?';color:'+col:''}">${val}</span></div>`;
   const p=d.parcel||{},z=d.zoning||{},w=d.watershed||{},b=d.swim_buffer||{};
   let h='<div style="font-weight:bold;color:'+teal+';margin-bottom:6px">🛰 County GIS \u2014 '+(p.matched_address||d.address||'')+'</div>';
@@ -2089,15 +2321,15 @@ function redrawEditor(){
   ctx.clearRect(0,0,W,H);
 
   // Background
-  ctx.fillStyle='#0d1a26';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#FBF8F1';ctx.fillRect(0,0,W,H);
 
   // Grid
   const gridFt=bestGridInterval(pxToFt(W));
   const gridPx=ftToPx(gridFt);
-  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(16,37,56,0.05)';ctx.lineWidth=1;
   for(let x=0;x<W;x+=gridPx){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
   for(let y=0;y<H;y+=gridPx){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
-  ctx.font='9px DM Mono,monospace';ctx.fillStyle='rgba(255,255,255,0.18)';
+  ctx.font='9px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.35)';
   ctx.textAlign='left';
   for(let x=gridPx;x<W-10;x+=gridPx)ctx.fillText(Math.round(pxToFt(x))+"'",x+2,10);
   ctx.textAlign='right';
@@ -2108,7 +2340,7 @@ function redrawEditor(){
   const n=pts.length;
 
   // Edge designation colors
-  const EDGE_COLORS={front:'#4a9eff',rear:'#e05c5c',side:'rgba(255,255,255,0.35)'};
+  const EDGE_COLORS={front:'#2f6fb3',rear:'#b03f37',side:'rgba(16,37,56,0.35)'};
   const EDGE_LABELS={front:'FRONT',rear:'REAR',side:'SIDE'};
 
   // Draw lot fill
@@ -2128,7 +2360,7 @@ function redrawEditor(){
   }
 
   // Draw side length labels + designation badge
-  ctx.font='bold 11px DM Mono,monospace';
+  ctx.font='bold 11px Montserrat,sans-serif';
   for(let i=0;i<n;i++){
     const a=pts[i],b=pts[(i+1)%n];
     const dx=b.x-a.x,dy=b.y-a.y;
@@ -2150,15 +2382,15 @@ function redrawEditor(){
     const bm=ctx.measureText(badge);
     const totalW=Math.max(m.width,bm.width)+10;
     // Background pill
-    ctx.fillStyle='rgba(13,26,38,0.88)';
+    ctx.fillStyle='rgba(255,255,255,0.93)';
     roundRect(ctx,lx-totalW/2,ly-18,totalW,32,4);ctx.fill();
     ctx.strokeStyle=color;ctx.lineWidth=1;
     roundRect(ctx,lx-totalW/2,ly-18,totalW,32,4);ctx.stroke();
     // Distance
-    ctx.fillStyle='rgba(240,169,60,0.95)';ctx.textAlign='center';ctx.font='bold 11px DM Mono,monospace';
+    ctx.fillStyle='#9a5f17';ctx.textAlign='center';ctx.font='bold 11px Montserrat,sans-serif';
     ctx.fillText(lbl,lx,ly-4);
     // Designation
-    ctx.fillStyle=color;ctx.font='bold 8px DM Sans,monospace';
+    ctx.fillStyle=color;ctx.font='bold 8px Montserrat,sans-serif';
     ctx.fillText(badge,lx,ly+8);
   }
 
@@ -2169,7 +2401,7 @@ function redrawEditor(){
     for(let i=1;i<insetPts.length;i++)ctx.lineTo(insetPts[i].x,insetPts[i].y);
     ctx.closePath();
     ctx.fillStyle='rgba(240,169,60,0.08)';ctx.fill();
-    ctx.strokeStyle='rgba(240,169,60,0.85)';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.stroke();ctx.setLineDash([]);
+    ctx.strokeStyle='rgba(176,116,40,0.9)';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.stroke();ctx.setLineDash([]);
 
     // Buildable area = full inset polygon
     // Calculate area using shoelace in feet
@@ -2185,9 +2417,9 @@ function redrawEditor(){
     // Label the buildable area at the centroid of the inset polygon
     const icx=insetPts.reduce((s,p)=>s+p.x,0)/np;
     const icy=insetPts.reduce((s,p)=>s+p.y,0)/np;
-    ctx.font='bold 12px DM Sans,sans-serif';ctx.textAlign='center';ctx.fillStyle='rgba(70,192,138,0.95)';
+    ctx.font='bold 12px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#3f6a53';
     ctx.fillText('Buildable Area',icx,icy-10);
-    ctx.font='bold 11px DM Mono,monospace';
+    ctx.font='bold 11px Montserrat,sans-serif';
     ctx.fillText(insetAreaFt.toLocaleString()+' sf',icx,icy+6);
 
     // Store inset polygon in FEET (canvas-independent)
@@ -2221,9 +2453,9 @@ function redrawEditor(){
   for(let i=0;i<n;i++){
     const p=pts[i];
     ctx.beginPath();ctx.arc(p.x,p.y,9,0,Math.PI*2);
-    ctx.fillStyle=polyDragIdx===i?'#fff':'rgba(240,169,60,0.9)';ctx.fill();
+    ctx.fillStyle=polyDragIdx===i?'#fff':'rgba(176,116,40,0.9)';ctx.fill();
     ctx.strokeStyle='rgba(13,26,38,0.9)';ctx.lineWidth=2;ctx.stroke();
-    ctx.font='bold 10px DM Mono,monospace';ctx.textAlign='center';ctx.fillStyle='#0d1a26';
+    ctx.font='bold 10px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#0d1a26';
     ctx.fillText(i+1,p.x,p.y+4);
   }
 
@@ -2243,8 +2475,8 @@ function redrawEditor(){
     const fits=br&&(planOverlay.x-rotW/2>=br.x&&planOverlay.x+rotW/2<=br.x+br.w&&planOverlay.y-rotH/2>=br.y&&planOverlay.y+rotH/2<=br.y+br.h);
     ctx.fillStyle=fits?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)';ctx.fillRect(-pw/2,-ph/2,pw,ph);
     ctx.strokeStyle=fits?'rgba(70,192,138,0.9)':'rgba(239,93,87,0.9)';ctx.lineWidth=2.5;ctx.setLineDash([]);ctx.strokeRect(-pw/2,-ph/2,pw,ph);
-    ctx.font='bold 10px DM Sans,sans-serif';ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,0.9)';
-    ctx.fillText(planOverlay.planName||'',0,-2);ctx.font='9px DM Mono,monospace';ctx.fillStyle='rgba(255,255,255,0.6)';
+    ctx.font='bold 10px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#102538';
+    ctx.fillText(planOverlay.planName||'',0,-2);ctx.font='9px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.7)';
     ctx.fillText(planOverlay.fpW+"'×"+planOverlay.fpH+"'",0,11);
     ctx.restore();
     const fe=$('ov-fits');if(fe){fe.textContent=fits?'✓ Yes':'✗ Outside';fe.className=fits?'overlay-fit-ok':'overlay-fit-warn';}
@@ -2263,23 +2495,23 @@ function roundRect(ctx,x,y,w,h,r){
 
 function drawLegend(ctx,W,H){
   const items=[
-    {color:'#4a9eff',dash:false,label:'Front (click edge to change)'},
-    {color:'#e05c5c',dash:false,label:'Rear'},
-    {color:'rgba(255,255,255,0.35)',dash:true,label:'Side'},
-    {color:'rgba(240,169,60,0.85)',dash:true,label:'Setback boundary'},
+    {color:'#2f6fb3',dash:false,label:'Front (click edge to change)'},
+    {color:'#b03f37',dash:false,label:'Rear'},
+    {color:'rgba(16,37,56,0.35)',dash:true,label:'Side'},
+    {color:'rgba(176,116,40,0.9)',dash:true,label:'Setback boundary'},
     {color:'rgba(70,192,138,0.6)',dash:false,label:'Buildable area (inside setbacks)'},
   ];
   const lh=18,pad=10,bw=160,bh=lh*items.length+pad*2;
-  ctx.fillStyle='rgba(13,26,38,0.88)';
+  ctx.fillStyle='rgba(255,255,255,0.93)';
   roundRect(ctx,8,H-bh-8,bw,bh,5);ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(16,37,56,0.12)';ctx.lineWidth=1;
   roundRect(ctx,8,H-bh-8,bw,bh,5);ctx.stroke();
   items.forEach((it,i)=>{
     const y=H-bh-8+pad+i*lh+lh/2;
     ctx.strokeStyle=it.color;ctx.lineWidth=it.dash?1.5:2.5;
     ctx.setLineDash(it.dash?[4,3]:[]);
     ctx.beginPath();ctx.moveTo(16,y);ctx.lineTo(38,y);ctx.stroke();ctx.setLineDash([]);
-    ctx.font='10px DM Sans,sans-serif';ctx.fillStyle='rgba(200,210,220,0.75)';ctx.textAlign='left';
+    ctx.font='10px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.75)';ctx.textAlign='left';
     ctx.fillText(it.label,44,y+4);
   });
 }
@@ -2511,7 +2743,7 @@ function updateGISLink(){
   if(county&&addr&&COUNTY_GIS[county])
     bl.innerHTML=`<div class="link-card"><div class="link-card-title">📐 Pull lot dimensions from GIS</div><div class="link-row"><span class="link-row-label">Open ${county} GIS — find lot width &amp; depth, enter below</span><a class="link-btn" href="${COUNTY_GIS[county](addr)}" target="_blank">Open GIS →</a></div><p class="note" style="margin-top:6px">Always confirm in GIS before finalizing.</p></div>`;
   else
-    bl.innerHTML=`<div class="warn">Enter address and county on Step 1 to get a pre-filled GIS link.</div>`;
+    bl.innerHTML=`<div class="warn">Enter address and county above to get a pre-filled GIS link.</div>`;
 }
 
 // ═══════════════════ BUILDABLE AREA ═══════════════════
@@ -2541,7 +2773,7 @@ function calcBuildable(){
             <div class="area-item"><div class="area-item-val">${d||'—'} ft</div><div class="area-item-lbl">Lot Depth</div></div>
             <div class="area-item"><div class="area-item-val">${fmtN(lotSFManual||(w*d))} sf</div><div class="area-item-lbl">Total Lot</div></div>
           </div></div>`;
-      }else br.innerHTML=`<div class="warn">Enter lot dimensions and setbacks on Steps 1–2.</div>`;
+      }else br.innerHTML=`<div class="warn">Enter lot dimensions and setbacks above.</div>`;
     }
   } else {
     // IRREGULAR MODE — uses polyPoints (canvas drag points)
@@ -2691,10 +2923,10 @@ function calcBUA(){
   const pct=buaLimit>0?Math.min(estBUA/buaLimit,1):0;
   const fill=$('bua-fill');if(fill){fill.style.width=(pct*100)+'%';fill.style.background=pct>1?'var(--red)':pct>0.9?'var(--amber)':'var(--green)';}
   const res=$('bua-result');
-  if(res)res.innerHTML=`<div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-dim)">Limit: ${fmtN(buaLimit)} sf<br>Est. used: ${fmtN(estBUA)} sf<br>Remaining: ${fmtN(Math.max(0,buaLimit-estBUA))} sf</div>`;
+  if(res)res.innerHTML=`<div style="font-family:var(--f-num);font-size:11px;color:var(--text-dim)">Limit: ${fmtN(buaLimit)} sf<br>Est. used: ${fmtN(estBUA)} sf<br>Remaining: ${fmtN(Math.max(0,buaLimit-estBUA))} sf</div>`;
   const msg=$('bua-msg');
   if(msg){
-    if(!footprint)msg.innerHTML='<div class="note">Select a plan on Step 5 to run BUA check.</div>';
+    if(!footprint)msg.innerHTML='<div class="note">Select a plan (Plan &amp; build, or click a card in the fit check) to run the BUA check.</div>';
     else if(estBUA>buaLimit)msg.innerHTML=`<div class="err">⚠ BUA Exceeded — ${fmtN(estBUA)} sf used vs ${fmtN(buaLimit)} sf limit. Consider a smaller footprint or confirm adjacent parcel pooling.</div>`;
     else if(pct>0.9)msg.innerHTML=`<div class="warn">BUA is within 10% of the limit. Verify hardscape carefully.</div>`;
     else msg.innerHTML=`<div class="ok">✓ BUA within limit (${Math.round(pct*100)}% used).</div>`;
@@ -2722,8 +2954,8 @@ function drawDiagram(){
       drawPlanOverlayOnSnapshotCanvas(ctx,W,H,snapshotScaleX,snapshotScaleY);
     } else {
       ctx.fillStyle='rgba(94,128,149,0.08)';ctx.fillRect(0,0,W,H);
-      ctx.font='13px DM Sans,sans-serif';ctx.fillStyle='rgba(143,163,188,0.6)';ctx.textAlign='center';
-      ctx.fillText('Navigate to Step 2 → Irregular Lot to define your lot shape',W/2,H/2);
+      ctx.font='13px Montserrat,sans-serif';ctx.fillStyle='rgba(62,85,103,0.75)';ctx.textAlign='center';
+      ctx.fillText('Choose Irregular Lot in the Lot section to define your lot shape',W/2,H/2);
     }
     return;
   }
@@ -2741,19 +2973,19 @@ function drawDiagram(){
   const isCorner=$('corner-lot')&&$('corner-lot').checked;
   const pad=20,scale=Math.min((W-pad*2)/w,(H-pad*2)/d);
   const ox=(W-w*scale)/2,oy=(H-d*scale)/2;
-  if(!lotImageObj){ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.strokeRect(ox,oy,w*scale,d*scale);ctx.setLineDash([]);}
+  if(!lotImageObj){ctx.strokeStyle='rgba(16,37,56,0.25)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.strokeRect(ox,oy,w*scale,d*scale);ctx.setLineDash([]);}
   const sL=sides,sR=isCorner?corner:sides;
   const bx=ox+sL*scale,by=oy+front*scale,bw=(w-sL-sR)*scale,bh=(d-front-rear)*scale;
   if(bw>0&&bh>0){
     ctx.fillStyle='rgba(94,128,149,0.15)';ctx.fillRect(bx,by,bw,bh);
-    ctx.strokeStyle='rgba(240,169,60,0.9)';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.strokeRect(bx,by,bw,bh);ctx.setLineDash([]);
+    ctx.strokeStyle='rgba(176,116,40,0.9)';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.strokeRect(bx,by,bw,bh);ctx.setLineDash([]);
     [[bx,by],[bx+bw,by],[bx,by+bh],[bx+bw,by+bh]].forEach(([cx,cy])=>{
-      const mk=7;ctx.strokeStyle='rgba(240,169,60,0.9)';ctx.lineWidth=2;
+      const mk=7;ctx.strokeStyle='rgba(176,116,40,0.9)';ctx.lineWidth=2;
       ctx.beginPath();ctx.moveTo(cx-mk,cy);ctx.lineTo(cx+mk,cy);ctx.stroke();
       ctx.beginPath();ctx.moveTo(cx,cy-mk);ctx.lineTo(cx,cy+mk);ctx.stroke();
     });
   }
-  ctx.font='bold 10px DM Mono,monospace';ctx.fillStyle='rgba(143,163,188,0.85)';
+  ctx.font='bold 10px Montserrat,sans-serif';ctx.fillStyle='rgba(62,85,103,0.9)';
   ctx.textAlign='center';
   if(front>0)ctx.fillText(`Front ${front}'`,W/2,oy+front*scale/2+4);
   if(rear>0)ctx.fillText(`Rear ${rear}'`,W/2,oy+d*scale-rear*scale/2+4);
@@ -2761,7 +2993,7 @@ function drawDiagram(){
   ctx.textAlign='right';
   if(isCorner&&corner>0)ctx.fillText(`${corner}'`,W-ox-4,H/2+2);
   else if(sides>0)ctx.fillText(`${sides}'`,W-ox-4,H/2+2);
-  if(bw>40&&bh>20){ctx.textAlign='center';ctx.fillStyle='rgba(58,184,168,0.6)';ctx.fillText('Buildable',bx+bw/2,by+bh/2+4);}
+  if(bw>40&&bh>20){ctx.textAlign='center';ctx.fillStyle='rgba(59,95,117,0.75)';ctx.fillText('Buildable',bx+bw/2,by+bh/2+4);}
   planOverlay.scale=scale;
   planOverlay.buildRect={x:bx,y:by,w:bw,h:bh};
   planOverlay.buildPoly=null;
@@ -2828,9 +3060,9 @@ function drawPlanOverlayOnSnapshotCanvas(ctx,W,H,scaleX,scaleY){
   ctx.fillRect(-pw/2,-ph/2,pw,ph);
   ctx.strokeStyle=fits?'rgba(70,192,138,0.9)':'rgba(239,93,87,0.9)';
   ctx.lineWidth=2.5;ctx.strokeRect(-pw/2,-ph/2,pw,ph);
-  ctx.font='bold 11px DM Sans,sans-serif';ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,0.95)';
+  ctx.font='bold 11px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#102538';
   ctx.fillText(planOverlay.planName||'',0,-2);
-  ctx.font='9px DM Mono,monospace';ctx.fillStyle='rgba(255,255,255,0.65)';
+  ctx.font='9px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.7)';
   ctx.fillText(`${planOverlay.fpW}'×${planOverlay.fpH}'`,0,11);
   ctx.restore();
 
@@ -2909,9 +3141,9 @@ function drawPlanOverlayOnCanvas(ctx,W,H){
   ctx.fillRect(-pw/2,-ph/2,pw,ph);
   ctx.strokeStyle=fits?'rgba(70,192,138,0.9)':'rgba(239,93,87,0.9)';
   ctx.lineWidth=2.5;ctx.strokeRect(-pw/2,-ph/2,pw,ph);
-  ctx.font='bold 11px DM Sans,sans-serif';ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,0.95)';
+  ctx.font='bold 11px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#102538';
   ctx.fillText(planOverlay.planName||'',0,-2);
-  ctx.font='9px DM Mono,monospace';ctx.fillStyle='rgba(255,255,255,0.65)';
+  ctx.font='9px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.7)';
   ctx.fillText(`${planOverlay.fpW}'×${planOverlay.fpH}'`,0,11);
   ctx.restore();
   const fe=$('ov-fits');
@@ -3173,18 +3405,18 @@ function sublotSvg(n,frontage,area,minW){
   for(let i=0;i<n;i++){
     const cx=x0+(rw/n)*i;
     cells+=`<rect x="${cx.toFixed(1)}" y="${y0.toFixed(1)}" width="${(rw/n).toFixed(1)}" height="${rh.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
-    cells+=`<text x="${(cx+rw/n/2).toFixed(1)}" y="${(y0+rh/2-3).toFixed(1)}" fill="rgba(255,255,255,0.85)" font-family="DM Mono,monospace" font-size="10" text-anchor="middle">Lot ${i+1}</text>`;
-    cells+=`<text x="${(cx+rw/n/2).toFixed(1)}" y="${(y0+rh/2+11).toFixed(1)}" fill="rgba(255,255,255,0.55)" font-family="DM Mono,monospace" font-size="9" text-anchor="middle">${perF.toFixed(0)}' fr</text>`;
+    cells+=`<text x="${(cx+rw/n/2).toFixed(1)}" y="${(y0+rh/2-3).toFixed(1)}" fill="rgba(16,37,56,0.85)" font-family="Montserrat,sans-serif" font-size="10" text-anchor="middle">Lot ${i+1}</text>`;
+    cells+=`<text x="${(cx+rw/n/2).toFixed(1)}" y="${(y0+rh/2+11).toFixed(1)}" fill="rgba(16,37,56,0.6)" font-family="Montserrat,sans-serif" font-size="9" text-anchor="middle">${perF.toFixed(0)}' fr</text>`;
   }
-  const front=`<text x="${(W/2).toFixed(1)}" y="${(y0+rh+16).toFixed(1)}" fill="rgba(94,128,149,0.9)" font-family="DM Mono,monospace" font-size="9" text-anchor="middle">◀ ${frontage.toFixed(0)} ft frontage (street) ▶</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:160px;background:#0d1a26;border-radius:6px;margin-top:4px">${cells}${front}</svg>`;
+  const front=`<text x="${(W/2).toFixed(1)}" y="${(y0+rh+16).toFixed(1)}" fill="rgba(94,128,149,0.9)" font-family="Montserrat,sans-serif" font-size="9" text-anchor="middle">◀ ${frontage.toFixed(0)} ft frontage (street) ▶</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:160px;background:#FBF8F1;border:1px solid rgba(16,37,56,0.1);border-radius:6px;margin-top:4px">${cells}${front}</svg>`;
 }
 // ── Attached townhome "subplotting": +1 Units adds a unit to the row; flag past the county cap ──
 function currentPlanObj(){const val=($('plan-sel')||{}).value||'';if(!val||val==='__CUSTOM__')return null;return PLANS.find(p=>p.val===val)||null;}
 function isAttachedPlan(){const p=currentPlanObj();return !!(p&&p.t==='th');}
 function syncUnitsUI(){
   const el=$('ov-units');if(el)el.textContent=Math.max(1,pv('units'));
-  const h=$('ov-units-hint');if(h)h.textContent=isAttachedPlan()?'attached row — grows footprint':'synced with Step 5';
+  const h=$('ov-units-hint');if(h)h.textContent=isAttachedPlan()?'attached row — grows footprint':'synced with Plan & build';
 }
 function onUnitsChange(){
   updateAttachedBuild();syncUnitsUI();
@@ -3216,10 +3448,10 @@ function subplotSvg(u,unitW,unitD,maxLen){
   for(let i=0;i<u;i++){
     const cx=x0+(rw/u)*i;
     cells+=`<rect x="${cx.toFixed(1)}" y="${y0.toFixed(1)}" width="${(rw/u).toFixed(1)}" height="${rh.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
-    cells+=`<text x="${(cx+rw/u/2).toFixed(1)}" y="${(y0+rh/2+3).toFixed(1)}" fill="rgba(255,255,255,0.8)" font-family="DM Mono,monospace" font-size="9" text-anchor="middle">U${i+1}</text>`;
+    cells+=`<text x="${(cx+rw/u/2).toFixed(1)}" y="${(y0+rh/2+3).toFixed(1)}" fill="rgba(16,37,56,0.8)" font-family="Montserrat,sans-serif" font-size="9" text-anchor="middle">U${i+1}</text>`;
   }
-  const lbl=`<text x="${(W/2).toFixed(1)}" y="${(y0+rh+16).toFixed(1)}" fill="${over?'#ef5d57':'rgba(94,128,149,0.9)'}" font-family="DM Mono,monospace" font-size="9" text-anchor="middle">◀ ${totalW.toFixed(0)} ft building length${maxLen?` / ${maxLen} ft max`:''} ▶</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:160px;background:#0d1a26;border-radius:6px;margin-top:4px">${cells}${lbl}</svg>`;
+  const lbl=`<text x="${(W/2).toFixed(1)}" y="${(y0+rh+16).toFixed(1)}" fill="${over?'#ef5d57':'rgba(94,128,149,0.9)'}" font-family="Montserrat,sans-serif" font-size="9" text-anchor="middle">◀ ${totalW.toFixed(0)} ft building length${maxLen?` / ${maxLen} ft max`:''} ▶</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:160px;background:#FBF8F1;border:1px solid rgba(16,37,56,0.1);border-radius:6px;margin-top:4px">${cells}${lbl}</svg>`;
 }
 function renderSubplot(p){
   const box=$('sublot-result');if(!box)return;
@@ -3234,24 +3466,24 @@ function renderSubplot(p){
   const zoneKey=($('zone-sel')||{}).value||'';
   const sb=SETBACKS[zoneKey]||null;const minW=pv('sb-minw')||(sb?sb.minWidth:0)||0;const minSF=sb?(sb.minSF||0):0;
   const parentOK=(rules.sublotParentOnly&&frontage&&area)?((minW>0?frontage>=minW:true)&&(minSF>0?area>=minSF:true)):null;
-  const chip=(ok,txt)=>`<span style="font-family:'DM Mono',monospace;font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'#ef5d57'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
+  const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'var(--red)'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
   const stepper=`<div style="display:flex;align-items:center;gap:10px;margin:2px 0 8px">
       <span style="font-size:11px;color:var(--text-mid)">Attached units</span>
       <button class="btn btn-ghost" style="padding:1px 12px;font-size:17px;line-height:1.2" onclick="bumpUnits(-1)">−</button>
-      <span style="font-family:'DM Serif Display',serif;font-size:20px;min-width:24px;text-align:center">${u}</span>
+      <span style="font-family:var(--f-head);font-weight:700;font-size:20px;min-width:24px;text-align:center">${u}</span>
       <button class="btn btn-ghost" style="padding:1px 12px;font-size:17px;line-height:1.2" onclick="bumpUnits(1)">+</button>
-      <span style="font-size:10px;color:var(--text-dim)">(same Units as Step 5)</span></div>`;
+      <span style="font-size:10px;color:var(--text-dim)">(same Units as Plan &amp; build)</span></div>`;
   const head=`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px">
-      <div style="font-family:'DM Serif Display',serif;font-size:22px;color:${over?'#ef5d57':'var(--teal-light)'}">${bldgLen.toFixed(0)} ft</div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${over?'var(--red)':'var(--teal-light)'}">${bldgLen.toFixed(0)} ft</div>
       <div style="font-size:11px;color:var(--text-dim)">building length${maxLen?` · ${maxLen} ft max (${county})`:''}</div></div>`;
-  const detail=`<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:2px">${p.n} · ${unitW}'/unit × ${unitD}' deep · row ${bldgLen.toFixed(0)}'×${unitD}'${maxByLen?` · ~${maxByLen} units max by length`:''}</div>`;
+  const detail=`<div style="font-family:var(--f-num);font-size:10px;color:var(--text-dim);margin-bottom:2px">${p.n} · ${unitW}'/unit × ${unitD}' deep · row ${bldgLen.toFixed(0)}'×${unitD}'${maxByLen?` · ~${maxByLen} units max by length`:''}</div>`;
   const chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">
       ${maxLen?chip(!over,over?`over ${maxLen}' max`:`≤ ${maxLen}' max`):''}
       ${fit?chip(fit.status!=='no',fit.status==='fits'?'fits envelope':fit.status==='tight'?'tight — verify':'exceeds envelope'):''}
       ${parentOK!=null?chip(parentOK,parentOK?'parent meets zone min':'parent below zone min'):''}</div>`;
   const note=`<p class="note" style="margin-top:8px">${rules.note}</p>`
     +(maxLen?'':`<p class="warn" style="margin-top:6px">No researched max building length for ${county||'this county'} yet — length flag disabled; verify locally.</p>`);
-  box.innerHTML=`<div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Attached townhomes · subplotting</div>`
+  box.innerHTML=`<div style="font-family:var(--f-num);font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Attached townhomes · subplotting</div>`
     +stepper+head+detail+chips+subplotSvg(u,unitW,unitD,maxLen)+note;
 }
 function renderSublot(){
@@ -3265,33 +3497,33 @@ function renderSublot(){
   const minW=pv('sb-minw')||(sb?sb.minWidth:0)||0;
   const minSF=sb?(sb.minSF||0):0;
   const {frontage,area}=getParentLot();
-  if(!frontage||!area){box.innerHTML=`<div class="note">Enter lot width/area on this page and pick a zone on Step 1 to run the check.</div>`;return;}
+  if(!frontage||!area){box.innerHTML=`<div class="note">Enter lot width/area above and pick a zone under Address &amp; zoning to run the check.</div>`;return;}
   const zoneLabel=zoneKey?zoneKey.replace('|',' · '):null;
   const capW=minW>0?Math.floor(frontage/minW):Infinity;
   const capA=minSF>0?Math.floor(area/minSF):Infinity;
   let maxN=Math.min(capW,capA);
   if(!isFinite(maxN))maxN=(isFinite(capW)?capW:(isFinite(capA)?capA:0));
-  const chip=(ok,txt)=>`<span style="font-family:'DM Mono',monospace;font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'#ef5d57'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
+  const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'var(--red)'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
   const rows=[2,3].map(n=>{
     const pf=frontage/n,pa=area/n;
     const okW=minW>0?pf>=minW:true;
     const okA=minSF>0?pa>=minSF:true;
     const ok=okW&&okA;
     return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)">
-      <div style="width:66px;font-family:'DM Serif Display',serif;font-size:14px;color:${ok?'var(--teal-light)':'var(--text-mid)'}">${n} lots</div>
-      <div style="flex:1;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-mid)">${pf.toFixed(0)} ft frontage · ${fmtN(pa)} sf each</div>
+      <div style="width:66px;font-family:var(--f-head);font-weight:700;font-size:14px;color:${ok?'var(--teal-light)':'var(--text-mid)'}">${n} lots</div>
+      <div style="flex:1;font-family:var(--f-num);font-size:11px;color:var(--text-mid)">${pf.toFixed(0)} ft frontage · ${fmtN(pa)} sf each</div>
       <div style="display:flex;gap:5px">${chip(okW,minW>0?`≥${minW}' W`:'W n/a')}${chip(okA,minSF>0?`≥${fmtN(minSF)} sf`:'area n/a')}</div>
     </div>`;
   }).join('');
   let head;
   if(!zoneLabel){
-    head=`<div class="warn" style="margin-bottom:8px">No zone selected — pick a county &amp; zone on Step 1 to screen against UDO minimums. Showing geometric division only.</div>`;
+    head=`<div class="warn" style="margin-bottom:8px">No zone selected — pick a county &amp; zone under Address &amp; zoning to screen against UDO minimums. Showing geometric division only.</div>`;
   } else {
     const okMax=maxN>=2;
     head=`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
-      <div style="font-family:'DM Serif Display',serif;font-size:22px;color:${okMax?'var(--teal-light)':'#ef5d57'}">${isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1?'':'s'}</div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':'var(--red)'}">${isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1?'':'s'}</div>
       <div style="font-size:11px;color:var(--text-dim)">max by UDO minimums · ${zoneLabel}</div></div>
-    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:6px">Parent: ${frontage.toFixed(0)} ft frontage · ${fmtN(area)} sf${minW>0?` · min ${minW}' W`:''}${minSF>0?` · min ${fmtN(minSF)} sf`:' · no min area in table (verify UDO)'}</div>`;
+    <div style="font-family:var(--f-num);font-size:10px;color:var(--text-dim);margin-bottom:6px">Parent: ${frontage.toFixed(0)} ft frontage · ${fmtN(area)} sf${minW>0?` · min ${minW}' W`:''}${minSF>0?` · min ${fmtN(minSF)} sf`:' · no min area in table (verify UDO)'}</div>`;
   }
   box.innerHTML=head+rows+sublotSvg(sublotN,frontage,area,minW)
     +`<p class="note" style="margin-top:8px">Equal-division estimate. Interior lots need their own street frontage or a shared-access / panhandle (flag lot) arrangement — confirm access, easements, and BUA re-allocation before relying on the max. Corner lots may support more.</p>`;
@@ -4670,13 +4902,48 @@ function updateDealPulse(){
       pEl.className='dp-val '+(b.profit>0?'pos':b.profit<0?'neg':'');
       cEl.textContent='CoC '+b.coc.toFixed(1)+'%';
     }else{pEl.textContent='\u2014';pEl.className='dp-val';cEl.textContent='set ARV';}
+    updateHero(d,b,F);
   }catch(_){/* pulse must never break the app */}
+}
+// v8 hero tiles + collapsed-section summaries. Display only: every figure is read from
+// getReportData(), nothing here feeds back into the math.
+function updateHero(d,b,F){
+  const hp=$('hero-profit'),hps=$('hero-profit-sub'),hc=$('hero-coc'),hcs=$('hero-coc-sub');
+  if(hp){
+    if(b&&b.hasArv){
+      hp.textContent=F(b.profit);hp.classList.toggle('neg',b.profit<0);
+      hps.textContent=(d.units>1?F(b.total)+' project total \u00b7 ':'')+b.term+'-mo base case';
+      hc.textContent=b.coc.toFixed(1)+'%';hc.classList.toggle('neg',b.coc<0);
+      hcs.textContent='profit \u00f7 '+F(d.fin.loan/(d.units||1))+' loan per unit';
+    }else{
+      hp.textContent='\u2014';hp.classList.remove('neg');hps.textContent='Set a Base ARV $/sf to see profit';
+      hc.textContent='\u2014';hc.classList.remove('neg');hcs.textContent='Profit \u00f7 loan per unit';
+    }
+  }
+  const set=(id,t)=>{const e=$(id);if(e)e.textContent=t||'';};
+  set('uw-sum-plan',d.plan&&d.plan!=='\u2014'?(d.plan+(d.units>1?' \u00d7 '+d.units:'')+' \u00b7 '+F(d.cost.allInExLand)):'No plan yet');
+  set('uw-sum-lf',F(d.cost.lotFactor));
+  set('uw-sum-fin',d.fin.ltc+'% LTC \u00b7 '+d.fin.rate+'% \u00b7 '+d.terms.w+'/'+d.terms.b+'/'+d.terms.best+' mo');
+  set('uw-sum-comps',d.compStats&&d.compStats.n?d.compStats.n+' comp'+(d.compStats.n===1?'':'s'):'None yet');
 }
 // hook recalcs by rebinding (originals untouched)
 (function(){
   const _ca=calcAll,_cs=calcScenarios;
   calcAll=function(){_ca();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ }};
   calcScenarios=function(){_cs();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ }};
+})();
+// v8: address, zoning and lot share one screen, so refresh the GIS link and property summary as
+// they're typed instead of on the old "enter step 2/4" transitions (rebind; originals untouched)
+(function(){
+  const _oa=onAddrChange,_oc=onCountyChange;
+  onAddrChange=function(){_oa.apply(this,arguments);try{updateGISLink();updateSummaryBar();}catch(_){ }};
+  onCountyChange=function(){_oc.apply(this,arguments);try{updateGISLink();updateSummaryBar();}catch(_){ }};
+})();
+// Print shows both screens; closed input sections would print empty, so open them for the job.
+(function(){
+  let reopened=[];
+  window.addEventListener('beforeprint',()=>{reopened=[...document.querySelectorAll('details.uw-sec:not([open])')];reopened.forEach(d=>d.open=true);});
+  window.addEventListener('afterprint',()=>{reopened.forEach(d=>d.open=false);reopened=[];});
 })();
 
 // Busy states on heavy exports (rebind; originals untouched)
@@ -4785,7 +5052,13 @@ function loadDealFile(inp){
 let _autosaveTimer=null;
 function scheduleAutosave(){
   clearTimeout(_autosaveTimer);
-  _autosaveTimer=setTimeout(()=>{try{localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(serializeDeal()));}catch(_){ }},900);
+  _autosaveTimer=setTimeout(()=>{try{
+    const d=serializeDeal();
+    // v8: navigating now triggers recalcs (and so autosaves) before Resume is clicked; a blank form
+    // must never overwrite a saved session the resume bar is still offering.
+    if(!d.address&&localStorage.getItem(AUTOSAVE_KEY))return;
+    localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(d));
+  }catch(_){ }},900);
 }
 document.addEventListener('input',scheduleAutosave);
 document.addEventListener('change',scheduleAutosave);
@@ -4810,8 +5083,14 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='7.16', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.0', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.0',date:'Sep 2026',name:'A brighter, simpler calculator \u2014 two screens instead of seven steps',items:[
+   'The seven-step wizard is now two screens. Site Intelligence covers the parcel: address, zoning, lot, buildable envelope and which plans fit, with no money on it. The Underwrite covers the money, with no geometry on it.',
+   'The Underwrite leads with the answer: base profit per unit, base cash-on-cash and the most you can pay for the dirt, then the live levers (land cost, asking price, ARV $/sf) and the Worst / Base / Best board.',
+   'Every detailed input is still there, tucked into sections you open when you need them: Plan & build, Lot factor, Financing & exit costs, Sales comps.',
+   'New bright look on the Tide & Timber brand: Paper Cream, Deep Navy, Slate Blue and Pine Green, set in Montserrat.',
+   'The math is unchanged. Same engine, same numbers as v7.16, checked line by line on two test deals before release. The Excel model and offer letter are unchanged; the PDF report carries the same figures, with its site diagram drawn in the new colours.']},
  {v:'7.16',date:'Sep 2026',name:'Comps now match the pocket, not just the radius',items:[
    'Comps are picked from the subject\u2019s own assessor neighbourhood first, then by plan size, and only fall back to \u201ceverything within half a mile\u201d when nothing closer exists. The county\u2019s neighbourhood code is its own market-area boundary, so it captures pockets a radius blurs \u2014 which is what threw the NoDa and Keswick estimates off.',
    'The panel now says which tier it used and how many comps were in it.',
@@ -4916,7 +5195,7 @@ updateDealPulse();
 <div id="incl-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9998;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px" onclick="closeInclusions()">
   <div style="background:var(--navy-mid);border:1px solid rgba(94,128,149,0.35);border-radius:12px;padding:24px;max-width:840px;width:100%;margin:auto" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <div style="font-family:'DM Serif Display',serif;font-size:20px;color:var(--text)">Standard Build Inclusions</div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:20px;color:var(--text)">Standard Build Inclusions</div>
       <button class="btn btn-ghost" onclick="closeInclusions()" style="padding:6px 14px">Close</button>
     </div>
     <p class="note" style="margin-bottom:8px">What Slate includes in the base build (before upgrades). Reflects Slate&rsquo;s Home Features spec (Modern Duet &amp; Polaris) and standard Spec Selections &mdash; single-family standard may vary slightly by plan; confirm the plan-specific sheet with Slate.</p>
@@ -4971,7 +5250,7 @@ updateDealPulse();
 <div id="planimg-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center;padding:24px" onclick="closePlanImg()">
   <div style="max-width:1100px;width:100%" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div id="planimg-cap" style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--text)"></div>
+      <div id="planimg-cap" style="font-family:var(--f-head);font-weight:700;font-size:18px;color:var(--text)"></div>
       <button class="btn btn-ghost" onclick="closePlanImg()" style="padding:6px 14px">Close</button>
     </div>
     <img id="planimg-img" alt="Plan drawing" style="display:block;width:100%;max-height:82vh;object-fit:contain;border-radius:10px;background:#fff" />
@@ -4982,7 +5261,7 @@ updateDealPulse();
 <div id="compare-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9998;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px">
   <div style="background:var(--navy-mid);border:1px solid rgba(94,128,149,0.35);border-radius:12px;padding:24px;max-width:1100px;width:100%;margin:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <div style="font-family:'DM Serif Display',serif;font-size:20px;color:var(--text)">⚖ Plan Comparison</div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:20px;color:var(--text)">⚖ Plan Comparison</div>
       <button class="btn btn-ghost" onclick="closeCompare()" style="padding:6px 14px">Close</button>
     </div>
     <div id="cmp-constants" class="note" style="margin-bottom:14px"></div>
