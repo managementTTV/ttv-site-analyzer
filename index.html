@@ -719,7 +719,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.0 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.1 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -2412,7 +2412,7 @@ function redrawEditor(){
       insetAreaPx+=a.x*b.y-b.x*a.y;
     }
     const insetAreaFt=Math.round(Math.abs(insetAreaPx)/2*getScaleFtPerPx()*getScaleFtPerPx());
-    buildableArea=insetAreaFt;
+    if(lotMode==='poly')buildableArea=insetAreaFt;
 
     // Label the buildable area at the centroid of the inset polygon
     const icx=insetPts.reduce((s,p)=>s+p.x,0)/np;
@@ -2447,6 +2447,8 @@ function redrawEditor(){
     if(planOverlay.active&&!planOverlay.positioned){
       planOverlay.x=icx;planOverlay.y=icy;planOverlay.positioned=true;
     }
+  } else if(lotMode==='poly'){
+    buildableArea=0; // fewer than 3 corners — no envelope
   }
 
   // Draw corner dots
@@ -2624,12 +2626,9 @@ function updatePolyStats(){
   let perim=0;
   for(let i=0;i<n;i++){const a=polyPoints[i],b=polyPoints[(i+1)%n];perim+=Math.sqrt((b.x-a.x)**2+(b.y-a.y)**2);}
   if(perEl)perEl.textContent=Math.round(pxToFt(perim)).toLocaleString();
-  // Update buildable area for calculations
-  const lotSFManual=pv('lot-sf-poly');
-  if(!lotSFManual && areaEl){
-    const val=parseInt(areaEl.textContent.replace(/,/g,''));
-    if(!isNaN(val))buildableArea=val; // rough — gets overridden by inscribed rect calc
-  }
+  // buildableArea is NOT set here: redrawEditor() owns it (inset polygon shoelace).
+  // This runs at the end of redrawEditor(), so assigning the lot area here used to
+  // overwrite the inset and report the whole lot as buildable (v8.1 fix).
 }
 
 // Inscribed rect search removed — buildable area is the full inset polygon
@@ -2790,9 +2789,9 @@ function calcBuildable(){
         area+=a.x*b.y-b.x*a.y;
       }
       const lotSFCalc=Math.round(Math.abs(area)/2*sc*sc);
-      // Buildable area comes from the inscribed rect drawn in redrawEditor
-      // It's stored in planOverlay.buildRect — convert back to ft
-      // buildableArea is set by redrawEditor via inset polygon shoelace
+      // buildableArea is set by redrawEditor via inset polygon shoelace —
+      // redraw first so the card reflects the current setbacks, not the last draw
+      redrawEditor();
       const baSF = buildableArea || 0;
       const bwFt = '—';
       const bhFt = '—';
@@ -2806,8 +2805,6 @@ function calcBuildable(){
             <div class="area-item"><div class="area-item-val">${fmtN(baSF)} sf</div><div class="area-item-lbl">Buildable sf</div></div>
           </div></div>`;
       }
-      // Trigger editor redraw so buildable rect is current
-      redrawEditor();
     }
   }
   calcBUA();renderFitCheck();updateSummaryBar();renderSublot();
@@ -5083,8 +5080,12 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.0', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.1', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.1',date:'Sep 2026',name:'Irregular lots: buildable area now respects setbacks',items:[
+   'Fixed: on irregular (polygon) lots, including every lot filled by the County GIS auto-fill, the Buildable Envelope card reported the whole lot area as buildable. The dashed setback outline on the diagram was right; the number was not.',
+   'The buildable figure now equals the area inside that dashed outline, so the plan fit check, the BUA / watershed check and the PDF report\u2019s Buildable Area line all use the real envelope. Example: 2723 Dellinger Dr went from 7,170 sf (the whole lot) to 3,327 sf.',
+   'Rectangular lots are unchanged.']},
  {v:'8.0',date:'Sep 2026',name:'A brighter, simpler calculator \u2014 two screens instead of seven steps',items:[
    'The seven-step wizard is now two screens. Site Intelligence covers the parcel: address, zoning, lot, buildable envelope and which plans fit, with no money on it. The Underwrite covers the money, with no geometry on it.',
    'The Underwrite leads with the answer: base profit per unit, base cash-on-cash and the most you can pay for the dirt, then the live levers (land cost, asking price, ARV $/sf) and the Worst / Base / Best board.',
