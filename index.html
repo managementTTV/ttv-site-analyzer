@@ -51,14 +51,9 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .hdr-sub{font-size:10.5px;color:var(--text-mid);margin-top:2px;letter-spacing:.01em}
 .hdr-badge{font-family:var(--f-num);font-size:10px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.35);padding:3px 8px;border-radius:20px}
 
-.step-nav{display:flex;align-items:stretch;background:var(--navy-mid);border-bottom:1px solid var(--border)}
 .step-btn{flex:1;padding:10px 6px;text-align:center;cursor:pointer;border:none;background:transparent;color:var(--text-dim);font-family:var(--f-body);font-size:10px;font-weight:500;letter-spacing:0.03em;transition:all 0.2s;border-bottom:2px solid transparent;position:relative}
 .step-btn:hover{color:var(--text-mid);background:rgba(255,255,255,0.03)}
 .step-btn.active{color:var(--teal-light);border-bottom-color:var(--teal);background:rgba(94,128,149,0.06)}
-.step-btn.done{color:var(--text-mid)}
-.step-btn.done::after{content:'✓';position:absolute;top:6px;right:8px;font-size:9px;color:var(--green)}
-.step-num{display:block;font-family:var(--f-num);font-size:14px;color:inherit;margin-bottom:1px}
-.step-btn.active .step-num{color:var(--teal-light)}
 
 .page{display:none;max-width:1100px;margin:0 auto;padding:28px 24px 60px}
 .page.active{display:block}
@@ -227,14 +222,6 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .sb-big-lbl{font-size:10px;color:var(--text-dim);text-align:center;text-transform:uppercase;letter-spacing:0.06em}
 
 /* FINANCING TAB */
-.loan-summary{background:linear-gradient(135deg,rgba(94,128,149,0.08),rgba(16,37,56,0.6));border:1px solid rgba(94,128,149,0.25);border-radius:var(--radius);padding:20px;margin-bottom:20px}
-.loan-summary-title{font-family:var(--f-head);font-weight:700;font-size:18px;color:var(--teal-light);margin-bottom:14px}
-.loan-stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.loan-stat{text-align:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:var(--radius-sm);border:1px solid var(--border)}
-.loan-stat-val{font-family:var(--f-head);font-weight:700;font-size:20px;color:var(--text);line-height:1}
-.loan-stat-lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-top:4px}
-.loan-stat.highlight .loan-stat-val{color:var(--amber)}
-.loan-stat.cash .loan-stat-val{color:var(--green)}
 
 .holding-table{width:100%;border-collapse:collapse;margin-top:8px}
 .holding-table tr{border-bottom:1px solid var(--border)}
@@ -270,20 +257,10 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .topo-btn:hover{background:rgba(94,128,149,0.25)}
 
 /* EXIT & OFFER */
-.land-lever{background:linear-gradient(135deg,rgba(240,169,60,0.08),rgba(16,37,56,0.6));border:1px solid rgba(240,169,60,0.3);border-radius:var(--radius);padding:24px;margin-bottom:20px}
-.land-lever-title{font-family:var(--f-head);font-weight:700;font-size:18px;color:var(--amber);margin-bottom:6px}
-.land-lever-sub{font-size:11px;color:var(--text-dim);margin-bottom:18px}
 .land-input-big{position:relative;display:flex;align-items:center}
 .land-input-big .pfx{position:absolute;left:14px;font-family:var(--f-num);font-size:22px;color:var(--amber);pointer-events:none}
 .land-input-big input{font-family:var(--f-num);font-size:28px;color:var(--amber);background:rgba(240,169,60,0.08);border:1px solid rgba(240,169,60,0.3);border-radius:var(--radius-sm);padding:12px 16px 12px 38px;width:100%;outline:none}
 .land-input-big input:focus{border-color:var(--amber)}
-.max-offer-bar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px}
-.max-offer-card{text-align:center;padding:14px;border-radius:var(--radius-sm);background:rgba(255,255,255,0.04);border:1px solid var(--border-bright)}
-.max-offer-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px}
-.max-offer-val{font-family:var(--f-head);font-weight:700;font-size:20px;color:var(--teal-light)}
-.max-offer-sub{font-size:10px;color:var(--text-dim);margin-top:2px}
-.max-offer-card.amber .max-offer-val{color:var(--amber)}
-.max-offer-card.green .max-offer-val{color:var(--green)}
 
 .sc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 .sc-card{border-radius:var(--radius);padding:18px;border:1px solid var(--border)}
@@ -316,7 +293,7 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 /* ── PRINT / PDF EXPORT ──────────────────────────────────────────────── */
 @media print {
   body { background: #fff !important; color: #1a2535 !important; font-size: 11pt; }
-  .hdr, .step-nav, .screen-nav, .nav-btns, #plan-overlay-controls, .fit-collapse-btn,
+  .hdr, .screen-nav, .nav-btns, #plan-overlay-controls, .fit-collapse-btn,
   .lot-editor-wrap, .lot-editor-toolbar, .lot-stats, .hint-text,
   button, .tog, .btn, .bua-fill { display: none !important; }
   .page { display: block !important; page-break-after: avoid; }
@@ -341,8 +318,6 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 /* deal pulse (bottom dock, steps 4–7) */
 .deal-pulse{position:fixed;left:0;right:0;bottom:0;z-index:300;display:none;align-items:center;gap:20px;padding:9px 22px;background:linear-gradient(180deg,rgba(13,26,38,0.95),rgba(10,20,30,0.98));backdrop-filter:blur(10px);border-top:1px solid var(--border-bright);overflow-x:auto;-webkit-overflow-scrolling:touch}
 .deal-pulse::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--teal),var(--brand-green) 45%,transparent 85%)}
-body[data-step="4"] .deal-pulse,body[data-step="5"] .deal-pulse,body[data-step="6"] .deal-pulse,body[data-step="7"] .deal-pulse{display:flex}
-body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,body[data-step="7"] .page{padding-bottom:108px}
 .dp-item{display:flex;flex-direction:column;min-width:max-content}
 .dp-lbl{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);white-space:nowrap}
 .dp-val{font-family:var(--f-num);font-size:14px;color:var(--text);margin-top:1px;white-space:nowrap}
@@ -379,7 +354,7 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
 /* ── responsive ── */
 @media (max-width:900px){
   .page{padding:22px 16px 60px}
-  .fr4,.loan-stat-grid{grid-template-columns:1fr 1fr}
+  .fr4{grid-template-columns:1fr 1fr}
   .sc-grid,.scenario-holding-grid{grid-template-columns:1fr 1fr}
   .cmp-pickers{grid-template-columns:1fr 1fr}
 }
@@ -388,16 +363,11 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
   .hdr-title{font-size:16px}
   .hdr-sub{display:none}
   .hdr-logo{width:36px;height:36px}
-  .step-nav{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-  .step-nav::-webkit-scrollbar{display:none}
   .step-btn{flex:0 0 auto;min-width:92px;padding:10px 10px;font-size:10px}
   .fr3,.fr4{grid-template-columns:1fr 1fr}
-  .sc-grid,.scenario-holding-grid,.max-offer-bar,.upg-grid,.cmp-pickers{grid-template-columns:1fr}
+  .sc-grid,.scenario-holding-grid,.upg-grid,.cmp-pickers{grid-template-columns:1fr}
   .area-big{font-size:32px}
-  .land-input-big input{font-size:22px}
-  .land-input-big .pfx{font-size:17px}
   .profit-val{font-size:21px}
-  .loan-stat-val{font-size:17px}
   .card{padding:16px 14px}
   .nav-btns{flex-wrap:wrap}
   .nav-btns .btn{flex:1 1 auto;min-width:150px}
@@ -408,7 +378,7 @@ body[data-step="4"] .page,body[data-step="5"] .page,body[data-step="6"] .page,bo
   .toast-wrap{left:12px;right:12px;max-width:none}
 }
 @media (max-width:420px){
-  .fr2,.fr3,.fr4,.loan-stat-grid,.area-grid,.lot-stats{grid-template-columns:1fr 1fr}
+  .fr2,.fr3,.fr4,.area-grid,.lot-stats{grid-template-columns:1fr 1fr}
   .fr2,.fr3{grid-template-columns:1fr}
 }
 
@@ -538,7 +508,7 @@ body[data-screen="1"] #sub-nav-site,body[data-screen="2"] #sub-nav-uw{display:fl
 .screen-title{font-family:var(--f-head);font-weight:700;font-size:30px;letter-spacing:-.015em;color:var(--ink);margin:4px 0 6px;line-height:1.1}
 .screen-lede{font-size:13.5px;color:var(--text-mid);max-width:760px;line-height:1.55}
 .site-top{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
-.step-sec{scroll-margin-top:130px}
+.step-sec{scroll-margin-top:112px}
 .sec-head{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;color:var(--ink);margin:6px 0 12px}
 .sec-num{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .handoff{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-top:10px;padding:20px 24px;border-radius:var(--radius);background:var(--ink);color:var(--paper);box-shadow:var(--shadow-lg)}
@@ -693,6 +663,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
   .hero{grid-template-columns:1fr 1fr;gap:10px}
   .hero-tile{padding:14px}
   .hero-val{font-size:24px}
+  .land-input-big input{font-size:22px}
   .sub-nav .step-btn{min-width:0;padding:4px 11px}
   .hdr-title{font-size:15px}
   .levers .lever-grid{grid-template-columns:1fr}
@@ -1045,7 +1016,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="hero-tile">
       <div class="hero-lbl">Base cash-on-cash</div>
       <div class="hero-val" id="hero-coc">&mdash;</div>
-      <div class="hero-sub" id="hero-coc-sub">Profit &divide; your cash in</div>
+      <div class="hero-sub" id="hero-coc-sub">Profit &divide; loan per unit</div>
     </div>
     <div class="hero-tile hero-dirt">
       <div class="hero-lbl">Max land cost &middot; the dirt</div>
@@ -1752,15 +1723,15 @@ async function pullCountyComps(){
   const say=(html,border)=>{ if(!box)return; box.innerHTML=html; box.style.display=''; if(border)box.style.borderColor=border; };
   const gis=(typeof window!=='undefined'&&window._lastGis)||null;
   const pid=gis&&gis.pid;
-  if(!pid){ say('Run <b>\ud83d\udef0 Auto-fill from County GIS</b> on Site Intelligence first \u2014 the comp search keys off the county parcel id.','#f0a93c'); return; }
+  if(!pid){ say('Run <b>\ud83d\udef0 Auto-fill from County GIS</b> on Site Intelligence first \u2014 the comp search keys off the county parcel id.','var(--amber)'); return; }
   // Guard against a stale cache even if onAddrChange never fired (paste, autofill, restored deal).
   if(gis.addrSig && gis.addrSig!==gisAddressSignature()){
     window._lastGis=null;
-    say('The address changed since the last GIS lookup, so the cached parcel id belongs to a different property. Run <b>\ud83d\udef0 Auto-fill from County GIS</b> again first.','#f0a93c');
+    say('The address changed since the last GIS lookup, so the cached parcel id belongs to a different property. Run <b>\ud83d\udef0 Auto-fill from County GIS</b> again first.','var(--amber)');
     return;
   }
   const county=($('county-sel')||{}).value||'';
-  if(county&&!/mecklenburg/i.test(county)){ say('County records are wired for <b>Mecklenburg</b> only. For '+county+', pull comps manually or from DealMachine.','#f0a93c'); return; }
+  if(county&&!/mecklenburg/i.test(county)){ say('County records are wired for <b>Mecklenburg</b> only. For '+county+', pull comps manually or from DealMachine.','var(--amber)'); return; }
   const sf=sfPerUnit>0?sfPerUnit:'';
   if(btn){btn.disabled=true;btn.textContent='Pulling\u2026';}
   say('Searching county sales records\u2026');
@@ -1768,11 +1739,11 @@ async function pullCountyComps(){
     const url='/api/comps?pid='+encodeURIComponent(pid)+'&radius=0.5&months=24'+(sf?('&sf='+sf):'');
     const r=await fetch(url);
     const d=await r.json();
-    if(d.error){ say('Comps lookup failed: '+d.error,'#ef5d57'); return; }
+    if(d.error){ say('Comps lookup failed: '+d.error,'var(--red)'); return; }
     const rows=(d.comps||[]).filter(c=>c.tier==='solid'||c.tier==='context');
     if(!rows.length){
       say('No new-build sales found within 0.5 mi in the last 24 months.'
-        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.join(' \u00b7 ')+'</div>'):''),'#f0a93c');
+        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.join(' \u00b7 ')+'</div>'):''),'var(--amber)');
       return;
     }
     // Newest first within the nearest set, then keep it to a readable dozen.
@@ -1798,7 +1769,7 @@ async function pullCountyComps(){
     if(d.summary&&d.summary.size_matched&&d.summary.size_matched.in_band!=null)
       h+='<div style="margin-top:4px">Size-matched to the plan: <b>'+d.summary.size_matched.in_band+'</b> comps within \u00b120% of '+Math.round(d.params.subjectSf||0).toLocaleString()+' sf'+(d.summary.size_matched.spread?(' \u00b7 $/sf spread '+d.summary.size_matched.spread+'\u00d7'):'')+'</div>';
     if(d.confidence){
-      const col=d.confidence.level==='high'?'#46c08a':d.confidence.level==='medium'?'#f0a93c':'#ef5d57';
+      const col=d.confidence.level==='high'?'var(--green)':d.confidence.level==='medium'?'var(--amber)':'var(--red)';
       h+='<div style="margin-top:6px;padding:6px 8px;border-left:3px solid '+col+';background:rgba(16,37,56,0.03)">'
         +'<b style="color:'+col+'">Confidence: '+d.confidence.level.toUpperCase()+'</b>'
         +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+d.confidence.reason+'</div></div>';
@@ -1807,10 +1778,10 @@ async function pullCountyComps(){
       +' <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="applyCountyArv('+d.arv.retail_psf+')">Apply \u2192 Base ARV</button>'
       +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+(d.arv.basis||'')+'</div>'
       +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+d.arv.note+'</div></div>';
-    (d.flags||[]).forEach(f=>{h+='<div style="color:#f0a93c;margin-top:4px">\u26a0 '+f+'</div>';});
+    (d.flags||[]).forEach(f=>{h+='<div style="color:var(--amber);margin-top:4px">\u26a0 '+f+'</div>';});
     h+='<div style="color:var(--text-dim);font-size:11px;margin-top:6px">County deed records only \u2014 no MLS status, concessions or photos. Recording lags closing by 1\u20133 weeks. Check each row before you lean on it.</div>';
     say(h);
-  }catch(e){ say('Comps lookup failed: '+e.message,'#ef5d57'); }
+  }catch(e){ say('Comps lookup failed: '+e.message,'var(--red)'); }
   finally{ if(btn){btn.disabled=false;btn.innerHTML='\ud83d\udce1 Pull new-build comps (Meck)';} }
 }
 function applyCountyArv(psf){
@@ -1916,7 +1887,6 @@ function goTo(n){
   const scr=SCREEN_OF(n);
   const prev=document.body.getAttribute('data-screen');
   try{document.body.setAttribute('data-step',n);document.body.setAttribute('data-screen',scr);}catch(e){}
-  (window._visitedSteps=window._visitedSteps||new Set([1])).add(n);
   [1,2].forEach(k=>{const el=$(`screen-${k}`);if(el)el.classList.toggle('active',k===scr);});
   const tabs={1:$('tab-site'),2:$('tab-uw')};
   [1,2].forEach(k=>{const t=tabs[k];if(!t)return;t.classList.toggle('active',k===scr);t.setAttribute('aria-selected',k===scr?'true':'false');});
@@ -1924,12 +1894,13 @@ function goTo(n){
     const pg=$(`page-${i}`);if(pg&&pg.tagName!=='DETAILS')pg.classList.toggle('active',SCREEN_OF(i)===scr);
     const nb=$(`nav-${i}`);if(nb)nb.classList.toggle('active',i===n);
   });
-  // same entry hooks the old steps ran, grouped by screen
-  if(scr===1){
+  // same entry hooks the old steps ran, grouped by screen; a chip click within the screen only scrolls
+  const entering=String(prev)!==String(scr);
+  if(entering&&scr===1){
     updateGISLink();
     if(lotMode==='poly'){snapshotLotEditor();calcBuildable();renderFitCheck();updateTopoLinks();}
     else{calcBuildable();drawDiagram();renderFitCheck();updateTopoLinks();}
-  }else{
+  }else if(entering){
     updateSummaryBar();
     applyRankedPlanDefault();applyTapDefaults();
     calcAll();calcFinancing();calcScenarios();
@@ -1937,11 +1908,7 @@ function goTo(n){
   const target=$(`page-${n}`);
   if(target&&target.tagName==='DETAILS'&&!target.open)target.open=true;
   if(n===1||n===7||!target)window.scrollTo(0,0);
-  else{
-    const nav=document.querySelector('.screen-nav'),hdr=document.querySelector('.hdr');
-    const off=(nav?nav.offsetHeight:0)+(hdr?hdr.offsetHeight:0)+12;
-    window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-off),behavior:prev===String(scr)?'smooth':'auto'});
-  }
+  else target.scrollIntoView({block:'start'});   // offset comes from .step-sec scroll-margin-top
 }
 
 // ═══════════════════ PAGE 1 ═══════════════════
@@ -2210,7 +2177,7 @@ function applyCountyDefaults(d){
 }
 function renderGisResult(d){
   const box=$('gis-result');if(!box)return;
-  const dim='var(--text-dim)',amber='#f0a93c',red='#ef5d57',green='#46c08a',teal='#5e8095';
+  const dim='var(--text-dim)',amber='var(--amber)',red='var(--red)',green='var(--green)',teal='#5e8095';
   const row=(lbl,val,col)=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid rgba(94,128,149,0.18)"><span style="color:${dim}">${lbl}</span><span style="text-align:right${col?';color:'+col:''}">${val}</span></div>`;
   const p=d.parcel||{},z=d.zoning||{},w=d.watershed||{},b=d.swim_buffer||{};
   let h='<div style="font-weight:bold;color:'+teal+';margin-bottom:6px">🛰 County GIS \u2014 '+(p.matched_address||d.address||'')+'</div>';
@@ -3499,7 +3466,7 @@ function renderSubplot(p){
   const zoneKey=($('zone-sel')||{}).value||'';
   const sb=SETBACKS[zoneKey]||null;const minW=pv('sb-minw')||(sb?sb.minWidth:0)||0;const minSF=sb?(sb.minSF||0):0;
   const parentOK=(rules.sublotParentOnly&&frontage&&area)?((minW>0?frontage>=minW:true)&&(minSF>0?area>=minSF:true)):null;
-  const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'#ef5d57'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
+  const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'var(--red)'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
   const stepper=`<div style="display:flex;align-items:center;gap:10px;margin:2px 0 8px">
       <span style="font-size:11px;color:var(--text-mid)">Attached units</span>
       <button class="btn btn-ghost" style="padding:1px 12px;font-size:17px;line-height:1.2" onclick="bumpUnits(-1)">−</button>
@@ -3507,7 +3474,7 @@ function renderSubplot(p){
       <button class="btn btn-ghost" style="padding:1px 12px;font-size:17px;line-height:1.2" onclick="bumpUnits(1)">+</button>
       <span style="font-size:10px;color:var(--text-dim)">(same Units as Plan &amp; build)</span></div>`;
   const head=`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px">
-      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${over?'#ef5d57':'var(--teal-light)'}">${bldgLen.toFixed(0)} ft</div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${over?'var(--red)':'var(--teal-light)'}">${bldgLen.toFixed(0)} ft</div>
       <div style="font-size:11px;color:var(--text-dim)">building length${maxLen?` · ${maxLen} ft max (${county})`:''}</div></div>`;
   const detail=`<div style="font-family:var(--f-num);font-size:10px;color:var(--text-dim);margin-bottom:2px">${p.n} · ${unitW}'/unit × ${unitD}' deep · row ${bldgLen.toFixed(0)}'×${unitD}'${maxByLen?` · ~${maxByLen} units max by length`:''}</div>`;
   const chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">
@@ -3536,7 +3503,7 @@ function renderSublot(){
   const capA=minSF>0?Math.floor(area/minSF):Infinity;
   let maxN=Math.min(capW,capA);
   if(!isFinite(maxN))maxN=(isFinite(capW)?capW:(isFinite(capA)?capA:0));
-  const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'#ef5d57'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
+  const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'var(--red)'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
   const rows=[2,3].map(n=>{
     const pf=frontage/n,pa=area/n;
     const okW=minW>0?pf>=minW:true;
@@ -3554,7 +3521,7 @@ function renderSublot(){
   } else {
     const okMax=maxN>=2;
     head=`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
-      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':'#ef5d57'}">${isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1?'':'s'}</div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':'var(--red)'}">${isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1?'':'s'}</div>
       <div style="font-size:11px;color:var(--text-dim)">max by UDO minimums · ${zoneLabel}</div></div>
     <div style="font-family:var(--f-num);font-size:10px;color:var(--text-dim);margin-bottom:6px">Parent: ${frontage.toFixed(0)} ft frontage · ${fmtN(area)} sf${minW>0?` · min ${minW}' W`:''}${minSF>0?` · min ${fmtN(minSF)} sf`:' · no min area in table (verify UDO)'}</div>`;
   }
@@ -4947,10 +4914,10 @@ function updateHero(d,b,F){
       hp.textContent=F(b.profit);hp.classList.toggle('neg',b.profit<0);
       hps.textContent=(d.units>1?F(b.total)+' project total \u00b7 ':'')+b.term+'-mo base case';
       hc.textContent=b.coc.toFixed(1)+'%';hc.classList.toggle('neg',b.coc<0);
-      hcs.textContent='on '+F(d.fin.cash)+' cash in';
+      hcs.textContent='profit \u00f7 '+F(d.fin.loan/(d.units||1))+' loan per unit';
     }else{
       hp.textContent='\u2014';hp.classList.remove('neg');hps.textContent='Set a Base ARV $/sf to see profit';
-      hc.textContent='\u2014';hc.classList.remove('neg');hcs.textContent='Profit \u00f7 your cash in';
+      hc.textContent='\u2014';hc.classList.remove('neg');hcs.textContent='Profit \u00f7 loan per unit';
     }
   }
   const set=(id,t)=>{const e=$(id);if(e)e.textContent=t||'';};
@@ -5085,7 +5052,13 @@ function loadDealFile(inp){
 let _autosaveTimer=null;
 function scheduleAutosave(){
   clearTimeout(_autosaveTimer);
-  _autosaveTimer=setTimeout(()=>{try{localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(serializeDeal()));}catch(_){ }},900);
+  _autosaveTimer=setTimeout(()=>{try{
+    const d=serializeDeal();
+    // v8: navigating now triggers recalcs (and so autosaves) before Resume is clicked; a blank form
+    // must never overwrite a saved session the resume bar is still offering.
+    if(!d.address&&localStorage.getItem(AUTOSAVE_KEY))return;
+    localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(d));
+  }catch(_){ }},900);
 }
 document.addEventListener('input',scheduleAutosave);
 document.addEventListener('change',scheduleAutosave);
@@ -5117,7 +5090,7 @@ const RELEASE_NOTES=[
    'The Underwrite leads with the answer: base profit per unit, base cash-on-cash and the most you can pay for the dirt, then the live levers (land cost, asking price, ARV $/sf) and the Worst / Base / Best board.',
    'Every detailed input is still there, tucked into sections you open when you need them: Plan & build, Lot factor, Financing & exit costs, Sales comps.',
    'New bright look on the Tide & Timber brand: Paper Cream, Deep Navy, Slate Blue and Pine Green, set in Montserrat.',
-   'The math is unchanged. Same engine, same numbers as v7.16, checked line by line on two test deals before release. Reports, the Excel model and offer letters are unchanged too.']},
+   'The math is unchanged. Same engine, same numbers as v7.16, checked line by line on two test deals before release. The Excel model and offer letter are unchanged; the PDF report carries the same figures, with its site diagram drawn in the new colours.']},
  {v:'7.16',date:'Sep 2026',name:'Comps now match the pocket, not just the radius',items:[
    'Comps are picked from the subject\u2019s own assessor neighbourhood first, then by plan size, and only fall back to \u201ceverything within half a mile\u201d when nothing closer exists. The county\u2019s neighbourhood code is its own market-area boundary, so it captures pockets a radius blurs \u2014 which is what threw the NoDa and Keswick estimates off.',
    'The panel now says which tier it used and how many comps were in it.',
