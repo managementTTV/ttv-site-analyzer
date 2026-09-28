@@ -573,6 +573,8 @@ body[data-screen="1"] #sub-nav-site,body[data-screen="2"] #sub-nav-uw{display:fl
 .hero-dirt .hero-lbl{color:rgba(245,240,231,0.72)}
 .hero-dirt .hero-val{color:var(--paper)}
 .hero-dirt .hero-sub{color:rgba(245,240,231,0.72)}
+.hero-edit{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;color:rgba(245,240,231,0.9);text-decoration:underline;text-underline-offset:2px}
+.hero-edit:hover{color:var(--paper)}
 /* levers */
 .levers .lever-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:16px;align-items:start}
 .land-input-big .pfx{color:var(--ink);font-family:var(--f-num)}
@@ -670,6 +672,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
   .lever-stats{padding-top:0}
   .uw-sum{flex-wrap:wrap;gap:6px 10px;padding:12px 14px}
   .uw-sum-m{flex-basis:100%;order:3}
+  .uw-sum-v{white-space:normal}
   .handoff{padding:16px}
   .handoff .btn{width:100%}
   .uw-actions .btn{flex:1 1 100%}
@@ -677,7 +680,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
 
 /* print — both screens, details opened by the beforeprint hook */
 @media print{
-  .screen-nav,.handoff,.uw-back,.deal-pulse,.uw-sum::after,.hdr-right{display:none!important}
+  .screen-nav,.handoff,.uw-back,.deal-pulse,.uw-sum::after,.hdr-right,.hero-edit{display:none!important}
   .page.screen{display:block!important;padding:0!important}
   #page-2,#page-4{display:none!important}
   .hero-tile,.sc-card,.uw-sum{box-shadow:none!important}
@@ -719,7 +722,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.0 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.2 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1021,7 +1024,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="hero-tile hero-dirt">
       <div class="hero-lbl">Max land cost &middot; the dirt</div>
       <div class="hero-val" id="max-land-display">&mdash;</div>
-      <div class="hero-sub" id="max-land-sub">Base case &ge; the greater of $50k/unit or 15% of all-in</div>
+      <div class="hero-sub" id="max-land-sub">&mdash;</div>
+      <a href="#" class="hero-edit" onclick="openProfitRule();return false">Change the profit rule</a>
     </div>
   </div>
 
@@ -1314,6 +1318,17 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="card">
         <div class="card-title"><span class="dot"></span>Exit / Sale Costs</div>
         <div class="field"><label>Sale Costs (% of ARV)</label><div class="input-wrap"><input type="number" id="sale-cost-pct" value="6" step="0.5" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div><p class="note">Covers realtor (5%) + sale closing (1%). Default 6%, matching the team UW template.</p></div>
+      </div>
+
+      <!-- Profit rule (v8.2) — the hurdle the Max land cost back-solve targets -->
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Profit Rule (sets Max land cost)</div>
+        <p class="note" style="margin-bottom:14px">Base-case profit per unit must clear the <b>higher</b> of these two. Max land cost is the most you can pay for the dirt and still clear it. The Deal Analyst SOP is $50,000 or 15%.</p>
+        <div class="fr2">
+          <div class="field"><label for="profit-floor">Minimum profit / unit</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="numeric" id="profit-floor" value="50,000" oninput="markManual(this);calcScenarios()"></div></div>
+          <div class="field"><label for="profit-pct">or % of all-in cost</label><div class="input-wrap"><input type="text" inputmode="decimal" id="profit-pct" value="15" class="sfx-pad" oninput="markManual(this);calcScenarios()"><span class="sfx">%</span></div></div>
+        </div>
+        <div id="profit-rule-warn" class="warn" style="display:none" role="status"></div>
       </div>
     </div>
 
@@ -3810,6 +3825,50 @@ function calcFinancing(){
   calcScenarios();
 }
 
+// v8.2 PROFIT RULE is an input (Financing › Profit Rule) instead of two constants. Its shipped default (the
+// Deal Analyst SOP, $50k / 15%) lives only in the two inputs' value attributes; a blank field falls back to
+// it, not to zero. The Max land card, the PDF and the Excel model all read the rule through here.
+// The fields are text, not type=number: a number input hands back '' for text the browser can't parse
+// (Safari/Firefox "70,000"), which would silently become the default, and Chrome turns "70k" into 70.
+// "$70,000", "70000", "70k" -> 70000; "23", "23%" -> 23. Blank -> {blank}; anything else -> {bad}.
+function parseRuleValue(s){
+  const t=String(s==null?'':s).replace(/[$,%\s]/g,'');
+  if(t==='')return {blank:true};
+  const m=t.match(/^(-?(?:\d+\.?\d*|\.\d+))(k)?$/i);
+  return m?{v:parseFloat(m[1])*(m[2]?1000:1)}:{bad:true};
+}
+const fmtRulePct=v=>(+v.toFixed(2))+'%';
+function profitRuleDefaults(){
+  const d=k=>parseRuleValue(($('profit-'+k)||{}).defaultValue).v||0;
+  return {floor:d('floor'),pct:d('pct')};
+}
+// {floor, pct, issues}: issues say, in words, when a value couldn't be read or had to be limited, so the
+// screen never quietly uses a rule other than the one typed.
+function getProfitRule(){
+  const issues=[], dflt=profitRuleDefaults();
+  const read=(k,label,max,show)=>{
+    const e=$('profit-'+k), p=parseRuleValue(e&&e.value);
+    if(p.bad)issues.push(`${label}: couldn’t read “${String(e.value).trim()}”, so the default ${show(dflt[k])} applies.`);
+    const v=p.blank||p.bad?dflt[k]:p.v, c=Math.min(max,Math.max(0,v));
+    if(c!==v)issues.push(`${label} ${c<v?'is capped at':'can’t be below'} ${show(c)}.`);
+    return c;
+  };
+  return {floor:read('floor','Minimum profit',Infinity,fmt),pct:read('pct','% of all-in',99,fmtRulePct),issues};
+}
+// Labels that always match the number the math uses: "$50k" / "$72.5k" for round hundreds from $1,000 up,
+// full dollars otherwise; "15%" / "22.45%"; and the one sentence every surface shows.
+function profitRuleLabels(r){
+  const floor=r.floor>=1000&&r.floor%100===0?'$'+(r.floor/1000)+'k':fmt(r.floor), pct=fmtRulePct(r.pct);
+  return {floor,pct,text:`the greater of ${floor}/unit or ${pct} of all-in`};
+}
+// The rule every deal saved before v8.2 was underwritten on, as it would have been typed. A historical fact,
+// not the default: never change it.
+const PRE_V82_PROFIT_RULE={floor:'50,000',pct:'15'};
+function openProfitRule(){
+  goTo(6);
+  const e=$('profit-floor');if(e){e.scrollIntoView({block:'center'});e.focus({preventScroll:true});}
+}
+
 // ═══════════════════ SCENARIOS (Page 7) ═══════════════════
 function calcScenarios(){
   const landCost=pv('land-cost');
@@ -3866,15 +3925,19 @@ function calcScenarios(){
     } else askEl.textContent='';
   }
   // Max land cost — back-solve for the PROFIT RULE target
+  const rule=getProfitRule(), ruleL=profitRuleLabels(rule);
+  {const w=$('profit-rule-warn');if(w){w.textContent=rule.issues.join(' ');w.style.display=rule.issues.length?'':'none';}}
+  let ruleNote='';
   if(basePSF>0&&sfPerUnit>0){
     const bARV=basePSF*sfPerUnit;
     const term=pv('term-b');
     const salePctV=salePct;
     const ltcPct=pv('ltc-pct')/100;
     const rate=pv('fin-rate')/100,pts=pv('fin-points')/100,docFee=pv('fin-doc-fee'),annTax=pv('fin-tax');
-    // v7.12 PROFIT RULE (Deal Analyst SOP): base-case profit per unit must clear the GREATER of $50k or 15% of
-    // all-in cost per unit. Solve the land ceiling for each rule and take the lower one (that rule is binding).
-    const FLOOR=50000, RULE_PCT=0.15;
+    // v7.12 PROFIT RULE (Deal Analyst SOP): base-case profit per unit must clear the GREATER of a flat floor or a
+    // % of all-in cost per unit. Solve the land ceiling for each rule and take the lower one (that rule is binding).
+    // v8.2: floor and % come from the Profit Rule inputs (shipped default $50k / 15%, the SOP).
+    const FLOOR=rule.floor, RULE_PCT=rule.pct/100;
     // loan = ltcPct*(L+A)/(1-ltcPct*0.01) = k1*(L+A) where k1=ltcPct/(1-ltcPct*0.01); L = land (unknown), A = allInExLand
     const k1=ltcPct/(1-ltcPct*0.01);
     // holdPerUnit = loan*(rate/12*term + pts + 0.01)/units + (docFee + annTax/12*term)/units
@@ -3884,15 +3947,16 @@ function calcScenarios(){
     // Rule A (flat floor): bARV*(1-salePct) - FLOOR - A/units - fixedHold - k1*A*loanFactor/units = L*lhsCoeff
     const rhsA=bARV*(1-salePctV)-FLOOR-allInExLand/units-fixedHold-k1*allInExLand*loanFactor/units;
     const landA=rhsA/lhsCoeff;
-    // Rule B (15% of all-in): profit = RULE_PCT*allIn  =>  allIn(L) = bARV/(1+RULE_PCT)
+    // Rule B (% of all-in): profit = RULE_PCT*allIn  =>  allIn(L) = bARV/(1+RULE_PCT)
     // allIn(L) = (A+L)/units + k1*(L+A)*loanFactor/units + fixedHold + bARV*salePct
     const rhsB=bARV/(1+RULE_PCT)-allInExLand/units-fixedHold-bARV*salePctV-k1*allInExLand*loanFactor/units;
     const landB=rhsB/lhsCoeff;
     const maxLand=Math.min(landA,landB);
-    const binding=landB<landA?'15% of all-in':'$50k floor';
-    const mls=$('max-land-sub');if(mls)mls.textContent=`Base case ≥ max($50k/unit, 15% of all-in) · binding rule: ${binding} · $50k-only ceiling ${landA>0?fmt(landA):'—'}`;
+    const binding=landB<landA?`${ruleL.pct} of all-in`:`${ruleL.floor} floor`;
+    ruleNote=` · binding rule: ${binding} · ${ruleL.floor}-only ceiling ${landA>0?fmt(landA):'—'}`;
     const ml=$('max-land-display');if(ml)ml.textContent=maxLand>0?fmt(maxLand):'—';
-  }else{const ml=$('max-land-display');if(ml)ml.textContent='Enter ARV $/sf';}
+  }else{const ml=$('max-land-display');if(ml)ml.textContent=basePSF>0?'Pick a plan':'Enter ARV $/sf';}
+  const mls=$('max-land-sub');if(mls)mls.textContent=`Base case ≥ ${ruleL.text}${ruleNote}`;
 }
 
 // ═══════════════════ SUMMARY ═══════════════════
@@ -4002,8 +4066,11 @@ function getReportData(){
 
   // Financing
   const lb=calcLoanBase(landCost);
-  const fin={ltc:pv('ltc-pct')||93,rate:pv('fin-rate')||10,points:pv('fin-points')||1,
-    docFee:pv('fin-doc-fee')||0,annualTax:pv('fin-tax')||0,salePct:pv('sale-cost-pct')||0,
+  // v8.2: raw field values, the same ones the on-screen loan and holding math reads (calcLoanBase,
+  // holdingCost). The old `||93` / `||10` / `||1` fallbacks turned a deliberate 0 into a default.
+  const fin={ltc:pv('ltc-pct'),rate:pv('fin-rate'),points:pv('fin-points'),
+    docFee:pv('fin-doc-fee'),annualTax:pv('fin-tax'),salePct:pv('sale-cost-pct'),
+    profitRule:getProfitRule(),
     loan:lb.loan,costBase:lb.costBase,purchaseClosing:lb.purchaseClosing,cash:Math.max(0,lb.cash)};
 
   // Cost build-up
@@ -4092,7 +4159,7 @@ function buildReportHTML(canvasDataUrl){
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'%'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
       +metric('Cash Required',F(d.fin.cash),'at close',true)
-      +metric('Max Land (Base, profit rule)',d.maxLand,'greater of $50k/unit or 15% of all-in',true)
+      +metric('Max Land (Base, profit rule)',d.maxLand,profitRuleLabels(d.fin.profitRule).text,true)
     +'</div>'
     +'<div class="two-col">'
       +'<div>'+secHdr('DEAL SUMMARY')
@@ -4353,7 +4420,7 @@ function generateSheet(){
   else{
     const sc=document.createElement('script');
     sc.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
-    sc.onload=()=>buildAndDownloadXLSX(d,slug);
+    sc.onload=()=>buildAndDownloadXLSX(getReportData(),slug);   // re-read: inputs may change while the library loads
     sc.onerror=()=>alert('Could not load the Excel library. Check internet connection.');
     document.head.appendChild(sc);
   }
@@ -4378,8 +4445,11 @@ function collectModelInputs(d){
         framing:pv('framing'),culverts:pv('culverts'),landscaping:pv('landscaping')},
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
-    land:pv('land-cost'),ltc:(pv('ltc-pct')||93)/100,rate:(pv('fin-rate')||10)/100,points:(pv('fin-points')||1)/100,
-    docFee:pv('fin-doc-fee')||0,annTax:pv('fin-tax')||0,salePct:(pv('sale-cost-pct')||6)/100,
+    // same raw values the screen uses; `||6` etc. would turn a deliberate 0 into a default and move Max Land
+    land:pv('land-cost'),ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
+    docFee:pv('fin-doc-fee'),annTax:pv('fin-tax'),salePct:pv('sale-cost-pct')/100,
+    profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
+    profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
     arvBase:pv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
     termW:pv('term-w')||12,termB:pv('term-b')||9,termBest:pv('term-best')||6,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
@@ -4442,6 +4512,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   sec('OTHER COSTS'); inp('upg','Upgrades / Unit',M.upgUnit,MONEY); inp('survey','Survey',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
   sec('FINANCING'); inp('ltc','LTC %',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
   sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo)',M.termW); inp('termB','Term Base (mo)',M.termB); inp('termBest','Term Best (mo)',M.termBest);
+  // v8.2: appended last so every existing Inputs cell keeps its address
+  sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT);
   const I=k=>'Inputs!'+IN[k];
   wsI.pageSetup={printArea:'A1:C'+ir};
 
@@ -4487,21 +4559,26 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   {const TINT={C:'FFFAF1F0',D:'FFF0F4F7',E:'FFF0F5F2'};
    ['C','D','E'].forEach(col=>{for(let r=14;r<=23;r++){ws.getCell(col+r).fill=fill(TINT[col]);}});
    ['A','B','C','D','E'].forEach(col=>{ws.getCell(col+'21').border=Object.assign({},ws.getCell(col+'21').border,{top:{style:'thin',color:{argb:STEEL}}});});}
-  band(ws,25,'E','MAX LAND — back-solve for $50k/unit base profit');
+  band(ws,25,'E','MAX LAND — back-solve for the profit rule (Inputs › Profit Rule)');
   ws.getCell('A26').value='k1'; F('B26','B7/(1-B7*0.01)','0.0000');
   ws.getCell('A27').value='loan factor'; F('B27',`${I('rate')}/12*${I('termB')}+${I('pts')}+0.01`,'0.0000');
   ws.getCell('A28').value='fixed hold / unit'; F('B28',`(${I('doc')}+${I('tax')}/12*${I('termB')})/${I('units')}`,MONEY);
   ws.getCell('A29').value='Base ARV ($)'; F('B29','D15',MONEY);
-  // PROFIT RULE, same as the on-screen card: base profit/unit must clear the GREATER of $50k or
-  // 15% of all-in per unit, so the land ceiling is the LOWER of the two solutions. Solving only
-  // the $50k rule here would let a recalculated workbook recommend land above the app's ceiling.
+  // PROFIT RULE, same as the on-screen card: base profit/unit must clear the GREATER of the floor or
+  // the % of all-in per unit, so the land ceiling is the LOWER of the two solutions. Solving only
+  // the floor rule here would let a recalculated workbook recommend land above the app's ceiling.
+  // v8.2: both thresholds are Inputs cells (default $50k / 15%), so the workbook stays adjustable.
   ws.getCell('A30').value='Max Land Cost (profit rule)';
   {
     const U=I('units'), S=I('sale'), DEN=`(1/${U}+B26*B27/${U})`;
-    const ruleA=`(B29*(1-${S})-50000-B4/${U}-B28-B26*B4*B27/${U})/${DEN}`;          // >= $50k/unit
-    const ruleB=`(B29/1.15-B4/${U}-B28-B29*${S}-B26*B4*B27/${U})/${DEN}`;           // >= 15% of all-in
+    // same semantics as getProfitRule(): a blank cell means the app's default, the floor can't go below 0,
+    // and the % stays within 0–99%
+    const FL=`MAX(0,IF(${I('pfloor')}="",${M.profitFloorDefault},${I('pfloor')}))`;
+    const PC=`MIN(0.99,MAX(0,IF(${I('ppct')}="",${M.profitPctDefault},${I('ppct')})))`;
+    const ruleA=`(B29*(1-${S})-${FL}-B4/${U}-B28-B26*B4*B27/${U})/${DEN}`;   // >= floor/unit
+    const ruleB=`(B29/(1+${PC})-B4/${U}-B28-B29*${S}-B26*B4*B27/${U})/${DEN}`;  // >= % of all-in
     F('B30',`MIN(${ruleA},${ruleB})`,MONEY,true);
-    ws.getCell('C30').value='lower of the $50k/unit and 15%-of-all-in ceilings';
+    ws.getCell('C30').value='lower of the floor/unit and %-of-all-in ceilings (set on Inputs)';
     ws.getCell('C30').font={name:'Arial',size:9,italic:true,color:{argb:'FF7A7A7A'}};
   }
   ws.pageSetup={printArea:'A1:E30'};
@@ -4661,11 +4738,13 @@ function generateOfferLetter(){
   }
   const de=document.getElementById("ol-date");
   if(de&&!de.value)de.value=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
+  // Refill from the current Max land each time unless the analyst typed their own amount: the rule or any
+  // input may have changed since the letter was last opened, and a stale ceiling could go out in writing.
   const ae=document.getElementById("ol-amount");
-  if(ae&&!ae.value){
-    const ml=($("max-land-display")||{}).textContent||"";
-    const n=parseFloat(ml.replace(/[$,]/g,""));
-    if(n>0)ae.value=Math.round(n).toLocaleString();
+  if(ae&&(!ae.value||ae.dataset.auto==='1')){
+    const n=parseFloat((($("max-land-display")||{}).textContent||"").replace(/[$,]/g,""));
+    if(n>0){ae.value=Math.round(n).toLocaleString();ae.dataset.auto='1';}
+    else if(ae.dataset.auto==='1'){ae.value='';delete ae.dataset.auto;}
   }
   modal.style.display="flex";
 }
@@ -4674,6 +4753,7 @@ function closeOfferLetter(){
   if(m)m.style.display="none";
 }
 function formatOfferAmt(el){
+  delete el.dataset.auto;   // typed by the analyst: stop refilling it from Max land
   const raw=el.value.replace(/[^0-9]/g,"");
   if(raw)el.value=parseInt(raw).toLocaleString();
 }
@@ -4923,7 +5003,8 @@ function updateHero(d,b,F){
   const set=(id,t)=>{const e=$(id);if(e)e.textContent=t||'';};
   set('uw-sum-plan',d.plan&&d.plan!=='\u2014'?(d.plan+(d.units>1?' \u00d7 '+d.units:'')+' \u00b7 '+F(d.cost.allInExLand)):'No plan yet');
   set('uw-sum-lf',F(d.cost.lotFactor));
-  set('uw-sum-fin',d.fin.ltc+'% LTC \u00b7 '+d.fin.rate+'% \u00b7 '+d.terms.w+'/'+d.terms.b+'/'+d.terms.best+' mo');
+  const rl=profitRuleLabels(d.fin.profitRule);
+  set('uw-sum-fin',d.fin.ltc+'% LTC \u00b7 '+d.fin.rate+'% \u00b7 '+d.terms.w+'/'+d.terms.b+'/'+d.terms.best+' mo \u00b7 rule '+rl.floor+' / '+rl.pct);
   set('uw-sum-comps',d.compStats&&d.compStats.n?d.compStats.n+' comp'+(d.compStats.n===1?'':'s'):'None yet');
 }
 // hook recalcs by rebinding (originals untouched)
@@ -4987,6 +5068,18 @@ function restoreDeal(d){
   try{
     const vals=d.fields;
     const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else e.value=f.v;}};
+    // 0) start from a fresh page's defaults. The blanket restore below only writes fields the file has, so a
+    //    field added after the deal was saved would otherwise keep whatever the previous deal left on screen.
+    document.querySelectorAll('.page input[id], .page select[id]').forEach(e=>{
+      if(e.type==='file')return;
+      if(e.type==='checkbox'||e.type==='radio')e.checked=e.defaultChecked;
+      else if(e.tagName==='SELECT'){const o=Array.from(e.options).find(x=>x.defaultSelected)||e.options[0];if(o)e.value=o.value;}
+      else e.value=e.defaultValue;
+    });
+    _tapSig=null;   // taps were just reset, so let the jurisdiction autofill in step 1 run again
+    // A deal saved before v8.2 has no profit-rule fields; it was underwritten on the SOP, so pin that rather than
+    // today's default, which may have moved since. Reopening an old deal must not move its Max land.
+    ['floor','pct'].forEach(k=>{const e=$('profit-'+k);if(e&&!vals['profit-'+k])e.value=PRE_V82_PROFIT_RULE[k];});
     // 1) jurisdiction first (rebuilds zones, autofills taps)
     setV('addr-city');setV('county-sel');
     onCountyChange();
@@ -5083,8 +5176,16 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.0', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.2', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.2',date:'Sep 2026',name:'The profit rule is now a setting',items:[
+   'Max land cost used to be locked to the Deal Analyst SOP: base-case profit of at least $50,000 per unit or 15% of all-in cost, whichever is higher. Both numbers are now inputs, under Financing & exit costs › Profit Rule, and the Max land tile has a “Change the profit rule” link.',
+   'The defaults are unchanged ($50k / 15%), so every deal shows the same numbers as before until someone changes the rule.',
+   'Type it however you like: 70000, 70,000, $70k, 23 or 23%. If a value can’t be read, or is out of range, the card says so instead of quietly using something else.',
+   'The rule is saved with each deal. Deals saved before this version open on the SOP rule they were underwritten on.',
+   'The Max land tile, the Financing summary, the PDF report and the Excel model all show which rule is in use. In the Excel model the two thresholds are cells on the Inputs sheet, so a downloaded workbook can be re-run at a different hurdle.',
+   'Fixes found in review: the PDF and Excel now respect 0 loan points or 0% sale costs instead of swapping in 1% / 6%, so their Max land matches the tile; the offer letter refreshes its amount from the current Max land unless you typed your own; opening an older saved deal no longer carries over values from the deal you had open, such as the asking price.',
+   'Why: the September backtest of 26 real offers found the team offers at about $70k per unit, or 23% of all-in, which is stricter than the SOP. Now you can underwrite at either.']},
  {v:'8.0',date:'Sep 2026',name:'A brighter, simpler calculator \u2014 two screens instead of seven steps',items:[
    'The seven-step wizard is now two screens. Site Intelligence covers the parcel: address, zoning, lot, buildable envelope and which plans fit, with no money on it. The Underwrite covers the money, with no geometry on it.',
    'The Underwrite leads with the answer: base profit per unit, base cash-on-cash and the most you can pay for the dirt, then the live levers (land cost, asking price, ARV $/sf) and the Worst / Base / Best board.',
