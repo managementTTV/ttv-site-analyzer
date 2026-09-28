@@ -722,7 +722,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.6 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.8 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1308,10 +1308,11 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="card">
         <div class="card-title"><span class="dot"></span>Loan Term by Scenario (months)</div>
         <div class="fr3">
-          <div class="field"><label>Worst Case</label><input type="number" id="term-w" value="10" min="1" max="36" oninput="calcFinancing()"></div>
-          <div class="field"><label>Base Case</label><input type="number" id="term-b" value="8" min="1" max="36" oninput="calcFinancing()"></div>
-          <div class="field"><label>Best Case</label><input type="number" id="term-best" value="6" min="1" max="36" oninput="calcFinancing()"></div>
+          <div class="field"><label for="term-w">Worst Case</label><input type="number" id="term-w" value="10" placeholder="10" min="1" max="36" oninput="calcFinancing()" onblur="setTimeout(()=>renderInputWarnings())"></div>
+          <div class="field"><label for="term-b">Base Case</label><input type="number" id="term-b" value="8" placeholder="8" min="1" max="36" oninput="calcFinancing()" onblur="setTimeout(()=>renderInputWarnings())"></div>
+          <div class="field"><label for="term-best">Best Case</label><input type="number" id="term-best" value="6" placeholder="6" min="1" max="36" oninput="calcFinancing()" onblur="setTimeout(()=>renderInputWarnings())"></div>
         </div>
+        <div id="term-warn" class="warn" style="display:none" role="status"></div>
       </div>
 
       <!-- Exit Costs -->
@@ -1325,8 +1326,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="card-title"><span class="dot"></span>Profit Rule (sets Max land cost)</div>
         <p class="note" style="margin-bottom:14px">Base-case profit per unit must clear the <b>higher</b> of these two. Max land cost is the most you can pay for the dirt and still clear it. The Deal Analyst SOP is $50,000 or 15%.</p>
         <div class="fr2">
-          <div class="field"><label for="profit-floor">Minimum profit / unit</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="numeric" id="profit-floor" value="50,000" oninput="markManual(this);calcScenarios()"></div></div>
-          <div class="field"><label for="profit-pct">or % of all-in cost</label><div class="input-wrap"><input type="text" inputmode="decimal" id="profit-pct" value="15" class="sfx-pad" oninput="markManual(this);calcScenarios()"><span class="sfx">%</span></div></div>
+          <div class="field"><label for="profit-floor">Minimum profit / unit</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="numeric" id="profit-floor" value="50,000" oninput="markManual(this);calcScenarios()" onblur="setTimeout(()=>renderInputWarnings())"></div></div>
+          <div class="field"><label for="profit-pct">or % of all-in cost</label><div class="input-wrap"><input type="text" inputmode="decimal" id="profit-pct" value="15" class="sfx-pad" oninput="markManual(this);calcScenarios()" onblur="setTimeout(()=>renderInputWarnings())"><span class="sfx">%</span></div></div>
         </div>
         <div id="profit-rule-warn" class="warn" style="display:none" role="status"></div>
       </div>
@@ -3803,7 +3804,7 @@ function calcFinancing(){
   set('exit-cash-needed',fmt(Math.max(0,cash)));
 
   // Holding cost per scenario
-  const terms={w:pv('term-w'),b:pv('term-b'),best:pv('term-best')};
+  const terms=getTerms();
   const labels={w:'Worst',b:'Base',best:'Best'};
   ['w','b','best'].forEach(k=>{
     const term=terms[k];
@@ -3831,14 +3832,24 @@ function calcFinancing(){
 // "$70,000", "70000", "70k" -> 70000; "23", "23%" -> 23. Blank -> {blank}; anything else -> {bad}.
 // v8.5: a comma only counts as a thousands separator in groups of three ("70,000"). A decimal comma
 // ("7,5", "70,00") is reported as unreadable instead of silently becoming 75 or 7,000.
+// v8.7: a trailing "." is fine with or without commas ("70,000." pasted from the end of a sentence).
 function parseRuleValue(s){
   const t=String(s==null?'':s).replace(/[$%\s]/g,'');
   if(t==='')return {blank:true};
-  if(t.includes(',')&&!/^-?\d{1,3}(,\d{3})+(\.\d+)?k?$/i.test(t))return {bad:true};
+  if(t.includes(',')&&!/^-?\d{1,3}(,\d{3})+(\.\d*)?k?$/i.test(t))return {bad:true};
   const m=t.replace(/,/g,'').match(/^(-?(?:\d+\.?\d*|\.\d+))(k)?$/i);
   return m?{v:parseFloat(m[1])*(m[2]?1000:1)}:{bad:true};
 }
-const fmtRulePct=v=>(+v.toFixed(2))+'%';
+// v8.7: rule values are shown exactly (no rounding to whole dollars or 2 decimals, so a message can't say
+// "$1,000" for 999.5) and in a format parseRuleValue() reads back, whatever the browser's locale: a
+// "did you mean $70,000?" typed in as shown must give 70,000, not the "70.000" it's correcting.
+const fmtRuleUSD=v=>'$'+v.toLocaleString('en-US',{maximumFractionDigits:2});
+const fmtRulePct=v=>(+v.toPrecision(4))+'%';
+// Limits and "did you mean…?" thresholds, in the app's units (dollars; percent, not fraction). getProfitRule()
+// and the Excel model's rule formulas and notes all read them here, so the app and the workbook can't disagree.
+const PROFIT_RULE_LIMITS={
+  floor:{min:0,max:Infinity,typoBelow:1000,typoScale:1000,show:fmtRuleUSD},
+  pct:{min:0,max:99,typoBelow:1,typoScale:100,show:fmtRulePct}};
 function profitRuleDefaults(){
   const d=k=>parseRuleValue(($('profit-'+k)||{}).defaultValue).v||0;
   return {floor:d('floor'),pct:d('pct')};
@@ -3847,23 +3858,23 @@ function profitRuleDefaults(){
 // screen never quietly uses a rule other than the one typed. v8.5 also flags values that are readable but
 // implausible (a floor under $1,000, a % under 1%): they still apply, but the card asks "did you mean…?",
 // which catches "70.000" typed as seventy thousand and "0.23" typed for 23%.
+// Each issue is {id, msg}: id is the field, so renderInputWarnings() can hold a note until you leave it.
 function getProfitRule(){
   const issues=[], dflt=profitRuleDefaults();
-  const read=(k,label,max,show,typo)=>{
-    const e=$('profit-'+k), p=parseRuleValue(e&&e.value);
-    if(p.bad)issues.push(`${label}: couldn’t read “${String(e.value).trim()}”, so the default ${show(dflt[k])} applies.`);
-    const v=p.blank||p.bad?dflt[k]:p.v, c=Math.min(max,Math.max(0,v));
-    if(c!==v)issues.push(`${label} ${c<v?'is capped at':'can’t be below'} ${show(c)}.`);
-    else if(!p.blank&&!p.bad&&typo(c))issues.push(typo(c));
+  const read=(k,label,perUnit)=>{
+    const id='profit-'+k, e=$(id), p=parseRuleValue(e&&e.value), L=PROFIT_RULE_LIMITS[k], add=msg=>issues.push({id,msg});
+    if(p.bad)add(`${label}: couldn’t read “${String(e.value).trim()}”, so the default ${L.show(dflt[k])} applies.`);
+    const v='v' in p?p.v:dflt[k], c=Math.min(L.max,Math.max(L.min,v));
+    if(c!==v)add(`${label} ${c<v?'is capped at':'can’t be below'} ${L.show(c)}.`);
+    else if('v' in p&&c>0&&c<L.typoBelow)add(`${label} is ${L.show(c)}${perUnit}. Did you mean ${L.show(c*L.typoScale)}?`);
     return c;
   };
-  return {floor:read('floor','Minimum profit',Infinity,fmt,v=>v>0&&v<1000?`Minimum profit is ${fmt(v)} per unit. Did you mean ${fmt(v*1000)}?`:''),
-          pct:read('pct','% of all-in',99,fmtRulePct,v=>v>0&&v<1?`% of all-in is ${fmtRulePct(v)}. Did you mean ${fmtRulePct(v*100)}?`:''),issues};
+  return {floor:read('floor','Minimum profit',' per unit'),pct:read('pct','% of all-in',''),issues};
 }
 // Labels that always match the number the math uses: "$50k" / "$72.5k" for round hundreds from $1,000 up,
-// full dollars otherwise; "15%" / "22.45%"; and the one sentence every surface shows.
+// exact dollars otherwise; "15%" / "22.45%"; and the one sentence every surface shows.
 function profitRuleLabels(r){
-  const floor=r.floor>=1000&&r.floor%100===0?'$'+(r.floor/1000)+'k':fmt(r.floor), pct=fmtRulePct(r.pct);
+  const floor=r.floor>=1000&&r.floor%100===0?'$'+(r.floor/1000)+'k':fmtRuleUSD(r.floor), pct=fmtRulePct(r.pct);
   return {floor,pct,text:`the greater of ${floor}/unit or ${pct} of all-in`};
 }
 // The rule every deal saved before v8.2 was underwritten on, as it would have been typed. A historical fact,
@@ -3872,6 +3883,35 @@ const PRE_V82_PROFIT_RULE={floor:'50,000',pct:'15'};
 function openProfitRule(){
   goTo(6);
   const e=$('profit-floor');if(e){e.scrollIntoView({block:'center'});e.focus({preventScroll:true});}
+}
+// v8.7 LOAN TERMS: the one reader for the three term fields. The scenario cards, Max land, the hero, the PDF,
+// the Excel model and the plan comparison all read terms through here. Like the profit rule, a blank term
+// means the field's shipped default (its value attribute), not 0 months, and the field's placeholder shows
+// it. A term the browser can't read also gets the default, and one under 1 month (the fields' min) is
+// raised to 1; both say so on screen. {w, b, best, issues}; issues are {id, msg}, as in getProfitRule().
+function getTerms(){
+  const issues=[], t={};
+  [['w','Worst'],['b','Base'],['best','Best']].forEach(([k,label])=>{
+    const id='term-'+k, e=$(id), dflt=parseFloat(e&&e.defaultValue)||0, v=parseFloat(e&&e.value);
+    if(isNaN(v)){
+      t[k]=dflt;
+      if(e&&e.validity&&e.validity.badInput)issues.push({id,msg:`${label} term isn’t a number, so the default ${dflt} months applies.`});
+    }else{
+      t[k]=Math.max(1,v);
+      if(v<1)issues.push({id,msg:`${label} term can’t be below 1 month.`});
+    }
+  });
+  return {w:t.w,b:t.b,best:t.best,issues};
+}
+// The profit-rule and loan-term warning lines. A field's own note waits until you leave the field, so typing
+// "70,000" or "75000" doesn't flash notes about the half-typed "70," or "75"; the math still updates as you
+// type. Each field's onblur re-renders on a timeout, once focus has actually moved on.
+function renderInputWarnings(rule,terms){
+  [['profit-rule-warn',(rule||getProfitRule()).issues],['term-warn',(terms||getTerms()).issues]].forEach(([wid,issues])=>{
+    const w=$(wid);if(!w)return;
+    const t=issues.filter(i=>$(i.id)!==document.activeElement).map(i=>i.msg).join(' ');
+    w.textContent=t;w.style.display=t?'':'none';
+  });
 }
 
 // ═══════════════════ SCENARIOS (Page 7) ═══════════════════
@@ -3882,14 +3922,14 @@ function calcScenarios(){
   const loanPerUnit=loan/units;
   const salePct=pv('sale-cost-pct')/100;
   const allInPerUnit=(allInExLand+landCost)/units;
+  const T=getTerms();
 
   ['w','b','best'].forEach(k=>{
-    const termId=k==='w'?'term-w':k==='b'?'term-b':'term-best';
     const arvId=k==='w'?'arv-w':k==='b'?'arv-b':'arv-best';
     let arvPSF=pv(arvId);
     if(!arvPSF&&basePSF){if(k==='w')arvPSF=basePSF*0.90;if(k==='best')arvPSF=basePSF*1.10;}
     const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit:0;
-    const term=pv(termId);
+    const term=T[k];
     const h=holdingCost(loan,term);
     const holdPerUnit=(h.total+purchaseClosing)/units;
     const saleCost=arv*salePct;
@@ -3931,11 +3971,11 @@ function calcScenarios(){
   }
   // Max land cost — back-solve for the PROFIT RULE target
   const rule=getProfitRule(), ruleL=profitRuleLabels(rule);
-  {const w=$('profit-rule-warn');if(w){w.textContent=rule.issues.join(' ');w.style.display=rule.issues.length?'':'none';}}
+  renderInputWarnings(rule,T);
   let ruleNote='';
   if(basePSF>0&&sfPerUnit>0){
     const bARV=basePSF*sfPerUnit;
-    const term=pv('term-b');
+    const term=T.b;
     const salePctV=salePct;
     const ltcPct=pv('ltc-pct')/100;
     const rate=pv('fin-rate')/100,pts=pv('fin-points')/100,docFee=pv('fin-doc-fee'),annTax=pv('fin-tax');
@@ -4067,8 +4107,8 @@ function getReportData(){
   // ARV $/sf with auto ±10% fallback off base
   const basePSF=pv('arv-b')||0;
   const psf={w:pv('arv-w')||(basePSF?basePSF*0.90:0),b:basePSF,best:pv('arv-best')||(basePSF?basePSF*1.10:0)};
-  // v8.5: raw, like calcScenarios(); `||12/||9/||6` made a blank term 9 months in the report but 0 on screen
-  const terms={w:pv('term-w'),b:pv('term-b'),best:pv('term-best')};
+  // v8.7: getTerms(), the reader the screen uses (a blank term is the field's default, not 0 or `||9`)
+  const {w:tW,b:tB,best:tBest}=getTerms(), terms={w:tW,b:tB,best:tBest};
 
   // Financing
   const lb=calcLoanBase(landCost);
@@ -4088,7 +4128,7 @@ function getReportData(){
   // Build cost = base × (1 + GC fee); break out for the memo
   {const selName=planNameFromVal(($('plan-sel')||{}).value||'');
    const po=PLANS.find(p=>p.n===selName);
-   cost.gcFeePct=(typeof GC_BUILD_FEE!=='undefined'?GC_BUILD_FEE:(pv('gc-build-fee')||14));
+   cost.gcFeePct=GC_BUILD_FEE;
    cost.baseBuild=po?Math.round(po.base||0)*u:0;
    cost.gcFee=Math.max(0,cost.buildTotal-cost.baseBuild);}
   // Tap breakout (water / sewer / septic) for the memo
@@ -4439,7 +4479,7 @@ function collectModelInputs(d){
   return {
     address:d.address,county:d.county,zone:d.zone,units:Math.max(1,units),
     planName:d.plan,sf:sfPerUnit,buildUnit:currentPlanCost,
-    baseUnit:planObj?(planObj.base||0):0,gcFeePct:(typeof GC_BUILD_FEE!=='undefined'?GC_BUILD_FEE:14)/100,
+    baseUnit:planObj?(planObj.base||0):0,gcFeePct:GC_BUILD_FEE/100,
     upgUnit:upgUnit,
     lotFactor:lotFactor||0,
     lf:{demoSqft:pv('demo-sqft'),demoRate:pv('demo-rate'),herTrees:pv('her-trees'),
@@ -4457,7 +4497,7 @@ function collectModelInputs(d){
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
     arvBase:pv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
-    termW:pv('term-w'),termB:pv('term-b'),termBest:pv('term-best'),
+    termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     dateStr:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
     comps:(typeof COMPS!=='undefined'?COMPS:[]).filter(c=>compNum(c.sqft)>0&&compNum(c.sold)>0)
@@ -4480,12 +4520,12 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   const wb=new ExcelJS.Workbook(); wb.creator='TTV Site Analyzer';
   const NAVY='FF102538',STEEL='FF5E8095',GREEN='FF648370',CREAM='FFF5F0E7',WHITE='FFFFFFFF',BLUE='FF0000FF',LINK='FF1F6F63';
   const fill=a=>({type:'pattern',pattern:'solid',fgColor:{argb:a}});
-  const MONEY='$#,##0;($#,##0);"-"',MONEY2='$#,##0.00',PCT='0.0%',SF='#,##0';
+  const MONEY='$#,##0;($#,##0);"-"',MONEY2='$#,##0.00',PCT='0.0%',PCT2='0.0#%',SF='#,##0';
   const titleBar=(ws,row,span,txt)=>{const c=ws.getCell('A'+row);c.value=txt;c.font={bold:true,size:13,color:{argb:WHITE},name:'Arial'};c.fill=fill(NAVY);ws.mergeCells('A'+row+':'+span+row);ws.getRow(row).height=22;c.alignment={vertical:'middle'};};
   const band=(ws,row,span,txt)=>{const c=ws.getCell('A'+row);c.value=txt;c.font={bold:true,size:10,color:{argb:WHITE},name:'Arial'};c.fill=fill(STEEL);ws.mergeCells('A'+row+':'+span+row);};
 
   // ---------- Inputs ----------
-  const wsI=wb.addWorksheet('Inputs'); wsI.getColumn(1).width=30; wsI.getColumn(2).width=22; wsI.getColumn(3).width=16;
+  const wsI=wb.addWorksheet('Inputs'); wsI.getColumn(1).width=30; wsI.getColumn(2).width=22; wsI.getColumn(3).width=24;
   titleBar(wsI,1,'C','TIDE & TIMBER VENTURES — Underwriting Inputs');
   wsI.getCell('A2').value='Blue cells = inputs (edit these). Cream cells = calculated — every sheet recalculates live.'; wsI.getCell('A2').font={italic:true,size:9,color:{argb:'FF566B82'}}; wsI.mergeCells('A2:C2');
   let ir=2; const IN={};
@@ -4519,13 +4559,21 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   sec('FINANCING'); inp('ltc','LTC %',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
   sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo)',M.termW); inp('termB','Term Base (mo)',M.termB); inp('termBest','Term Best (mo)',M.termBest);
   // v8.2: appended last so every existing Inputs cell keeps its address
-  sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT);
-  // v8.5: the workbook can't show the app's warning line, so each rule cell gets a note beside it when its
-  // value won't be used as typed (not a number, out of range) or looks like a typo (same thresholds as the app)
-  {const note=(key,formula)=>{const c=wsI.getCell(IN[key].replace('B','C'));c.value={formula};c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};};
-   const f=IN['pfloor'], p=IN['ppct'];
-   note('pfloor',`IF(ISBLANK(${f}),"",IF(NOT(ISNUMBER(${f})),"Not a number: using the default",IF(${f}<0,"Below $0: using $0",IF(${f}<1000,IF(${f}>0,"Under $1,000: typo?",""),""))))`);
-   note('ppct',`IF(ISBLANK(${p}),"",IF(NOT(ISNUMBER(${p})),"Not a number: using the default",IF(${p}>0.99,"Over 99%: using 99%",IF(${p}<0,"Below 0%: using 0%",IF(${p}<0.01,IF(${p}>0,"Under 1%: typo?",""),"")))))`);}
+  sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT2);
+  // v8.7: the rule Max Land actually uses, after getProfitRule()'s defaults and limits (PROFIT_RULE_LIMITS):
+  // a blank or non-numeric cell means the app's default (ISNUMBER, so text like "$70k" isn't skipped as 0 by
+  // MAX/MIN), then the limits apply. Scenarios!B30 reads these two cells, so each clamp exists once.
+  {const L=PROFIT_RULE_LIMITS;
+   const used=(key,dflt,lim,scale)=>{const x=IN[key], lo=`MAX(${lim.min/scale},IF(ISNUMBER(${x}),${x},${dflt}))`;return isFinite(lim.max)?`MIN(${lim.max/scale},${lo})`:lo;};
+   der('pfloorU','\u2514 Min profit used',used('pfloor',M.profitFloorDefault,L.floor,1),MONEY);
+   der('ppctU','\u2514 % of all-in used',used('ppct',M.profitPctDefault,L.pct,100),PCT2);
+   // v8.5: the workbook can't show the app's warning line, so each rule cell gets a note beside it when its
+   // value isn't used as typed (compared with the used cell) or looks like a typo (the app's threshold)
+   const note=(key,usedKey,lim,scale)=>{
+     const x=IN[key], u=IN[usedKey], c=wsI.getCell(x.replace('B','C'));
+     c.value={formula:`IF(ISBLANK(${x}),"",IF(NOT(ISNUMBER(${x})),"Not a number: default used",IF(${x}<>${u},"Out of range: limit used",IF(AND(${x}>0,${x}<${lim.typoBelow/scale}),"Under ${lim.show(lim.typoBelow)}: typo?",""))))`};
+     c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};};
+   note('pfloor','pfloorU',L.floor,1); note('ppct','ppctU',L.pct,100);}
   const I=k=>'Inputs!'+IN[k];
   wsI.pageSetup={printArea:'A1:C'+ir};
 
@@ -4583,12 +4631,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   ws.getCell('A30').value='Max Land Cost (profit rule)';
   {
     const U=I('units'), S=I('sale'), DEN=`(1/${U}+B26*B27/${U})`;
-    // same semantics as getProfitRule(): a blank or non-numeric cell means the app's default, the floor
-    // can't go below 0, and the % stays within 0–99%
-    // v8.5: ISNUMBER, not ="": text typed into the cell (e.g. "$70k") also means the default, where MAX/MIN
-    // would otherwise skip the text and silently use 0
-    const FL=`MAX(0,IF(ISNUMBER(${I('pfloor')}),${I('pfloor')},${M.profitFloorDefault}))`;
-    const PC=`MIN(0.99,MAX(0,IF(ISNUMBER(${I('ppct')}),${I('ppct')},${M.profitPctDefault})))`;
+    // v8.7: the rule as used, from Inputs (defaults and limits applied there, the same as getProfitRule())
+    const FL=I('pfloorU'), PC=I('ppctU');
     const ruleA=`(B29*(1-${S})-${FL}-B4/${U}-B28-B26*B4*B27/${U})/${DEN}`;   // >= floor/unit
     const ruleB=`(B29/(1+${PC})-B4/${U}-B28-B29*${S}-B26*B4*B27/${U})/${DEN}`;  // >= % of all-in
     F('B30',`MIN(${ruleA},${ruleB})`,MONEY,true);
@@ -4607,10 +4651,13 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
    const deltas=[-20,-10,0,10,20],offs=[-3,-1,0,1,3];
    deltas.forEach((dv,i)=>{const c=wsS.getCell(4,2+i);c.value={formula:`${I('arvB')}${dv>=0?'+':''}${dv}`};c.numFmt=MONEY2;c.font={bold:true,color:{argb:WHITE},name:'Arial'};c.fill=fill(STEEL);c.alignment={horizontal:'center'};});
    offs.forEach((o,r)=>{
-     const lc=wsS.getCell(5+r,1);lc.value={formula:`${I('termB')}${o>=0?'+':''}${o}`};lc.numFmt='0" mo"';lc.font={bold:true,name:'Arial'};lc.fill=fill(CREAM);lc.alignment={horizontal:'center'};
+     // v8.7: the rows around the base never go under 1 month, like the PDF's grid; a 2-month base term
+     // gave a -1 mo row whose negative interest showed the best profit on the sheet
+     const t=o===0?`${I('termB')}+0`:`MAX(1,${I('termB')}${o>=0?'+':''}${o})`;
+     const lc=wsS.getCell(5+r,1);lc.value={formula:t};lc.numFmt='0" mo"';lc.font={bold:true,name:'Arial'};lc.fill=fill(CREAM);lc.alignment={horizontal:'center'};
      deltas.forEach((dv,ci)=>{
        const arvU=`(${I('arvB')}${dv>=0?'+':''}${dv})*${I('sf')}`;
-       const term=`(${I('termB')}${o>=0?'+':''}${o})`;
+       const term=`(${t})`;
        const hold=`(Scenarios!$B$8*(${I('rate')}/12)*${term}+Scenarios!$B$8*${I('pts')}+${I('doc')}+(${I('tax')}/12)*${term}+Scenarios!$B$9)/${I('units')}`;
        const cell=wsS.getCell(5+r,2+ci);cell.value={formula:`${arvU}-(Scenarios!$B$11+${hold}+${arvU}*${I('sale')})`};cell.numFmt=MONEY;cell.font={name:'Arial',size:9};
      });
@@ -4868,9 +4915,9 @@ function dealForPlan(plan,psf){
   const loanPerUnit=loan/u;
   const salePct=pv('sale-cost-pct')/100;
   const allInPerUnit=(allInExL+landCost)/u;
-  const scen={};
+  const scen={}, T=getTerms();
   ['w','b','best'].forEach(k=>{
-    const term=pv(k==='w'?'term-w':k==='b'?'term-b':'term-best');
+    const term=T[k];
     const arvPSF=psf[k]||0;
     const arv=plan.sf>0&&arvPSF>0?arvPSF*plan.sf:0;
     const h=holdingCost(loan,term);
@@ -4915,10 +4962,10 @@ function resolveCmpArv(i){
 }
 function renderCompare(){
   const body=$('cmp-body');if(!body)return;
-  const cc=$('cmp-constants');
+  const cc=$('cmp-constants'), T=getTerms();
   if(cc){
     const upgPerUnit=Array.from(selectedUpgrades).reduce((acc,id)=>{const u=UPGRADES.find(x=>x.id===id);return acc+(u?u.cost:0);},0);
-    cc.innerHTML='Held constant — Land '+fmt(pv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+pv('ltc-pct')+'% \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+pv('term-w')+'/'+pv('term-b')+'/'+pv('term-best')+'. Loan size & ARV $/sf vary by plan.';
+    cc.innerHTML='Held constant — Land '+fmt(pv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+pv('ltc-pct')+'% \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+T.w+'/'+T.b+'/'+T.best+'. Loan size & ARV $/sf vary by plan.';
   }
   const cols=[0,1,2].filter(i=>CMP[i]).map(i=>{
     const plan=PLANS.find(p=>p.n===CMP[i]);if(!plan)return null;
@@ -4942,7 +4989,7 @@ function renderCompare(){
   h+=row('Finished SF / unit',c=>c.plan.sf>0?c.plan.sf.toLocaleString()+' sf':'\u2014');
   h+=row('Footprint (W\u00d7D)',c=>c.plan.w>0?c.plan.w+"'\u00d7"+c.plan.d+"'":'\u2014');
   h+=row('Fit',c=>fitTxt(c.plan));
-  h+=row('Build Cost (base + '+(typeof GC_BUILD_FEE!=='undefined'?GC_BUILD_FEE:14)+'% GC)',c=>fmt(c.plan.c));
+  h+=row('Build Cost (base + '+GC_BUILD_FEE+'% GC)',c=>fmt(c.plan.c));
   h+=row('All-In / unit',c=>fmt(c.deal.allInPerUnit));
   h+=row('Loan Amount',c=>fmt(c.deal.loan));
   h+=sect('ARV $/sf \u2014 editable');
@@ -4951,7 +4998,7 @@ function renderCompare(){
   h+=row('Best $/sf',c=>arvInput(c,'best'));
   [['w','Worst'],['b','Base'],['best','Best']].forEach(function(pair){
     var k=pair[0],lbl=pair[1];
-    h+=sect(lbl+' Case ('+pv(k==='w'?'term-w':k==='b'?'term-b':'term-best')+' mo)');
+    h+=sect(lbl+' Case ('+T[k]+' mo)');
     h+=row('ARV / unit',c=>c.deal.scen[k].arv>0?fmt(c.deal.scen[k].arv):'\u2014');
     h+=row('Holding / unit',c=>fmt(c.deal.scen[k].holdPerUnit));
     h+=row('Profit / unit',c=>c.deal.scen[k].arv>0?money(c.deal.scen[k].profit):'\u2014');
@@ -5208,19 +5255,23 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.6', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.8', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
- {v:'8.6',date:'Sep 2026',name:'Reopened deals keep their setbacks and their plan',items:[
+ {v:'8.8',date:'Sep 2026',name:'Reopened deals keep their setbacks and their plan',items:[
    'A saved deal now reopens with the setbacks it was saved with. Before, reopening put the zone’s table setbacks back, so a deal with an adjusted front setback (an established or contextual one, say) came back with a different buildable envelope and plan fit.',
    'A deal underwritten on its 2nd- or 3rd-ranked plan now stays on that plan when you open The Underwrite after resuming it. Before, the app switched to the 1st-ranked plan and reset the units, so cost, profit and Max land no longer matched the saved deal.',
    'The offer letter’s amount and date no longer carry over from the deal you had open before, so a new deal’s letter can’t go out at the last deal’s price.',
    'Opening a file that isn’t a saved deal no longer clears the page, and if a saved deal fails to open part-way, the deal you had open comes back.',
    'Nothing changes while you build a deal: picking a zone still fills in its setbacks, and re-ranking plans still moves The Underwrite to your new 1st choice.',
    'A deal that was reopened and saved again before this version may already hold the zone’s setbacks or the 1st-ranked plan, because that is what it was saved with. Check the setbacks and plan on those.']},
+ {v:'8.7',date:'Sep 2026',name:'Loan terms and profit rule notes: steadier',items:[
+   'A blank loan term now means the field’s default (10, 8 or 6 months, shown greyed in the empty field) everywhere: the scenario cards, Max land, the profit tiles, the PDF and the Excel model. It used to count as 0 months, which left out the whole carry. A term under 1 month is raised to 1, with a note.',
+   'The profit rule and loan term notes wait until you leave the field, so they no longer flash while you type “70,000”. “70,000.” with a trailing period now reads as 70,000, and the notes show the value exactly as it was read.',
+   'Excel model: Inputs now shows the profit rule Max Land actually uses, under the two rule cells, and the notes beside them fit on a printout. The Sensitivity rows never go below 1 month; a 2-month base term used to give a −1 month row with negative interest.']},
  {v:'8.5',date:'Sep 2026',name:'Profit rule and exports: fewer silent surprises',items:[
    'The profit rule fields catch likely typos instead of quietly using them. A comma used as a decimal point (“7,5”) is reported as unreadable, and a minimum profit under $1,000 or a % under 1% gets a “did you mean…?” note, so “70.000” can’t slip through as $70.',
    'Excel model: typing text such as “$70k” into a Profit Rule cell now falls back to the default instead of counting as $0, and a note beside each cell says when its value isn’t a number, is out of range, or looks like a typo.',
-   'The PDF, the Excel model and the plan comparison now use the loan term, LTC and rate exactly as entered. A blank loan term used to count as 12, 9 or 6 months in the exports while the screen used 0.']},
+   'The PDF, the Excel model and the profit tiles now use the loan terms exactly as entered, like the scenario cards and Max land. A blank term used to count as 12, 9 or 6 months there but 0 on the cards. The plan comparison’s header also shows LTC and rate as entered.']},
  {v:'8.3',date:'Sep 2026',name:'Irregular lots: buildable area now respects setbacks',items:[
    'Fixed: on irregular (polygon) lots, including every lot filled by the County GIS auto-fill, the Buildable Envelope card reported the whole lot area as buildable. The dashed setback outline on the diagram was right; the number was not.',
    'The buildable figure now equals the area inside that dashed outline, on the Buildable Envelope card, the summary bar and the PDF report\u2019s Buildable Area line. Example: 2723 Dellinger Dr went from 7,170 sf (the whole lot) to 3,327 sf.',

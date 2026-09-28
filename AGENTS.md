@@ -83,15 +83,27 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   input returns `''` for text the browser can't parse, which silently became the default. A value
   that can't be read, or has to be limited (floor ≥ 0, % within 0–99), must show in
   `#profit-rule-warn`, never be applied quietly; an implausible one (floor under $1,000, % under 1%)
-  applies but also shows a "did you mean…?" note. The Excel formula mirrors the same semantics
-  (a blank **or non-numeric** cell = the default via `ISNUMBER`, same limits, and a note in column C
-  beside each rule cell with the same thresholds); flag a change to one side that isn't made on
-  the other.
-- **Exports read the same raw values the screen uses.** `getReportData()` (`fin` and `terms`),
-  `collectModelInputs()` and the plan-compare header take LTC, rate, points, fees, tax, sale cost
-  and the three loan terms straight from the fields, as `calcLoanBase()` / `holdingCost()` /
-  `calcScenarios()` do. Flag a `pv(x)||default` fallback on a field where 0 is a
-  real answer (0 points, 0% sale cost): it makes the PDF and Excel Max Land disagree with the tile.
+  applies but also shows a "did you mean…?" note. The limits and typo thresholds live once, in
+  `PROFIT_RULE_LIMITS`, which `getProfitRule()` and the Excel builder both read. Messages and labels
+  format values with `fmtRuleUSD()` / `fmtRulePct()`: exact (no rounding that contradicts a threshold)
+  and in a form `parseRuleValue()` reads back in any browser locale. The warning lines are drawn by
+  `renderInputWarnings()`, which holds a field's own note until the field loses focus, so half-typed
+  values ("70,", "75") don't flash notes; keep the `onblur` on each rule and term field. The Excel
+  model mirrors the same semantics: the Inputs rows "Min profit used" / "% of all-in used" apply the
+  default (a blank **or non-numeric** cell, via `ISNUMBER`) and the limits, `Scenarios!B30` reads
+  those two cells, and the note in column C beside each rule cell compares what was typed with what
+  was used, plus the same typo thresholds. Flag a change to one side that isn't made on the other.
+- **Exports read the same raw values the screen uses.** `getReportData()` (`fin`),
+  `collectModelInputs()` and the plan-compare header take LTC, rate, points, fees, tax and sale cost
+  straight from the fields, as `calcLoanBase()` / `holdingCost()` / `calcScenarios()` do. Flag a
+  `pv(x)||default` fallback on a field where 0 is a real answer (0 points, 0% sale cost): it makes
+  the PDF and Excel Max Land disagree with the tile.
+- **Loan terms go through `getTerms()` (v8.7)**, the one reader for `term-w` / `term-b` / `term-best`:
+  the scenario cards, Max land, the hero (via `getReportData().terms`), the PDF, the Excel inputs and
+  the plan comparison. A blank or unreadable term is the field's HTML default (10 / 8 / 6, also its
+  placeholder), not 0 months; a term under 1 month is raised to 1; both show in `#term-warn`. Flag a
+  direct `pv('term-…')` read. The sensitivity grids never show a row under 1 month (PDF
+  `Math.max(1,…)`, Excel `MAX(1,…)`); keep the two in step.
 - **`restoreDeal()` starts from a fresh page (v8.2).** Step 0 resets every `.page` input/select to its
   HTML default before anything else, because the blanket restore only writes fields the saved file
   has. A field added in a later version therefore opens at its shipped default, not at the previous
@@ -100,8 +112,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   Step 0 only runs once the file passes a check (its `fields` must include at least one `.page` id),
   and a restore that throws puts back the deal that was on screen (`restoreDeal(snapshot, true)`), so
   a bad file can't leave a half-reset page for the autosave to save. Deal values that live outside
-  `.page` (the offer letter's `ol-amount` / `ol-date`) are cleared by hand in step 0 (v8.6).
-- **In `restoreDeal()`, saved values land last (v8.6).** Anything that fills fields from other fields
+  `.page` (the offer letter's `ol-amount` / `ol-date`) are cleared by hand in step 0 (v8.8).
+- **In `restoreDeal()`, saved values land last (v8.8).** Anything that fills fields from other fields
   runs *before* the blanket restore: `onCountyChange()` (zone list, taps) and `onZoneChange()` (the
   zone table's setbacks), so a saved, adjusted setback survives. The auto-defaults that fire when The
   Underwrite is entered are locked after the restore: `_tapSig` (taps) and `_rankSig` (the 1st-ranked
