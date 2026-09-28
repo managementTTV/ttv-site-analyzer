@@ -1897,21 +1897,27 @@ const pv=id=>{const e=$(id);if(!e)return 0;const v=parseFloat((e.value||'').repl
 // no base ARV, and Worst/Best at the auto ∓10%. An unreadable or negative value also shows in #lever-warn, and
 // a readable but implausible one (land or asking under $1,000; an ARV of $1,000/sf or more) applies with a note.
 // The notes go through renderInputWarnings(), so, like the profit rule's, a field's note waits until you leave it.
+// The PDF memo and the Excel Inputs sheet carry the same notes, so an export can't quietly run on a misread value.
+// typoBelow: a dollar figure this low was probably typed in thousands; typoFrom: a $/sf this high is a sale price.
 const MONEY_FIELDS={
-  'land-cost':{label:'Land cost',blank:'so the deal is running on $0 land',typo:v=>v<1000?`Did you mean ${fmtRuleUSD(v*1000)}?`:''},
-  'asking-price':{label:'Asking price',blank:'so there’s no asking-price comparison',typo:v=>v<1000?`Did you mean ${fmtRuleUSD(v*1000)}?`:''},
-  'arv-w':{label:'Worst ARV',blank:'so Worst uses the auto −10%',unit:'/sf',typo:v=>v>=1000?'That looks like a sale price, not $/sf.':''},
-  'arv-b':{label:'Base ARV',blank:'so there’s no base ARV',unit:'/sf',typo:v=>v>=1000?'That looks like a sale price, not $/sf.':''},
-  'arv-best':{label:'Best ARV',blank:'so Best uses the auto +10%',unit:'/sf',typo:v=>v>=1000?'That looks like a sale price, not $/sf.':''}};
-// {v, msg}: v is what the math uses; msg, when set, is the note for #lever-warn.
+  'land-cost':{label:'Land cost',blank:'so the deal is running on $0 land',typoBelow:1000},
+  'asking-price':{label:'Asking price',blank:'so there’s no asking-price comparison',typoBelow:1000},
+  'arv-w':{label:'Worst ARV',blank:'so Worst uses the auto −10%',typoFrom:1000},
+  'arv-b':{label:'Base ARV',blank:'so there’s no base ARV',typoFrom:1000},
+  'arv-best':{label:'Best ARV',blank:'so Best uses the auto +10%',typoFrom:1000}};
+// {v, msg, note}: v is what the math uses; msg, when set, is the sentence for #lever-warn and the PDF, and note the
+// short form for the Excel cell beside the input. An id missing from MONEY_FIELDS still parses, but has no note.
 function readMoney(id){
-  const e=$(id), F=MONEY_FIELDS[id], raw=e?String(e.value):'';
+  const e=$(id), F=MONEY_FIELDS[id]||{label:id,blank:'so 0 is used'}, raw=e?String(e.value):'', t=raw.trim();
   const p=raw.includes('%')?{bad:true}:parseRuleValue(raw);
   if(p.blank)return {v:0};
-  if(p.bad)return {v:0,msg:`${F.label}: couldn’t read “${raw.trim()}”, ${F.blank}.`};
-  if(p.v<0)return {v:0,msg:`${F.label} can’t be negative, ${F.blank}.`};
-  const typo=p.v>0?F.typo(p.v):'';
-  return typo?{v:p.v,msg:`${F.label} is ${fmtRuleUSD(p.v)}${F.unit||''}. ${typo}`}:{v:p.v};
+  if(p.bad)return {v:0,msg:`${F.label}: couldn’t read “${t}”, ${F.blank}.`,note:`App couldn’t read “${t}”`};
+  if(p.v<0)return {v:0,msg:`${F.label} can’t be negative, ${F.blank}.`,note:'Negative: left blank'};
+  if(F.typoBelow&&p.v>0&&p.v<F.typoBelow)
+    return {v:p.v,msg:`${F.label} is ${fmtRuleUSD(p.v)}. Did you mean ${fmtRuleUSD(p.v*1000)}?`,note:`Under ${fmtRuleUSD(F.typoBelow)}: typo?`};
+  if(F.typoFrom&&p.v>=F.typoFrom)
+    return {v:p.v,msg:`${F.label} is ${fmtRuleUSD(p.v)}/sf. That looks like a sale price, not $/sf.`,note:`${fmtRuleUSD(F.typoFrom)}/sf or more: typo?`};
+  return {v:p.v};
 }
 const mv=id=>readMoney(id).v;
 // [{id, msg}] for #lever-warn, in the shape renderInputWarnings() takes
@@ -4228,8 +4234,11 @@ function buildReportHTML(canvasDataUrl){
     +'<div class="mcard-val'+(big?' big':'')+'">'+val+'</div>'+(sub?'<div class="mcard-sub">'+sub+'</div>':'')+'</div>';
   const baseProfit=base.hasArv?sign(base.profit):'<span style="color:#647a8e">Enter ARV</span>';
   const baseCoc=base.hasArv?signPct(base.coc):'—';
+  // v8.8: the same notes as the screen's #lever-warn, so the memo can't quietly run on a misread land or ARV
+  const inputNotes=moneyIssues().map(i=>i.msg).join(' ');
   const cover=
     '<div class="addr-bar"><div class="addr-text">'+esc(d.address)+'</div><div class="date-text">'+d.date+'</div></div>'
+    +(inputNotes?'<div class="avoid" style="border-left:3px solid #b26b00;background:#fdf3e1;color:#6b4000;padding:6px 10px;margin:6px 0 10px;font-size:10px;line-height:1.4"><b>Check inputs:</b> '+esc(inputNotes)+'</div>':'')
     +'<div class="metric-row">'
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'%'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
@@ -4526,6 +4535,7 @@ function collectModelInputs(d){
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
     arvBase:mv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
+    moneyNotes:{land:readMoney('land-cost').note||'',arvB:readMoney('arv-b').note||'',arvW:readMoney('arv-w').note||'',arvBest:readMoney('arv-best').note||''},
     termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     dateStr:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
@@ -4587,6 +4597,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   sec('OTHER COSTS'); inp('upg','Upgrades / Unit',M.upgUnit,MONEY); inp('survey','Survey',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
   sec('FINANCING'); inp('ltc','LTC %',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
   sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo)',M.termW); inp('termB','Term Base (mo)',M.termB); inp('termBest','Term Best (mo)',M.termBest);
+  // v8.8: a land or ARV the app couldn't read (the cell holds what it used) or that looks like a typo gets a
+  // note beside it, in the same style as the rule notes below; no note, no cell, so a clean deal's sheet is unchanged
+  {const mn=M.moneyNotes||{};
+   ['land','arvB','arvW','arvBest'].forEach(k=>{if(!mn[k])return;const c=wsI.getCell(IN[k].replace('B','C'));c.value=mn[k];c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};});}
   // v8.2: appended last so every existing Inputs cell keeps its address
   sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT2);
   // v8.7: the rule Max Land actually uses, after getProfitRule()'s defaults and limits (PROFIT_RULE_LIMITS):
@@ -5270,7 +5284,7 @@ const APP_VERSION='8.8', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
  {v:'8.8',date:'Sep 2026',name:'Land, asking and ARV read what you type',items:[
    'Land cost, asking price and the three ARV $/sf fields now read “$185,000”, “185,000” and “185k” as $185,000. Before, “$185,000” counted as $0 (so the whole underwrite, the PDF and the Excel model ran on free land), “185k” counted as $185 and an ARV of “385,5” as $3,855/sf.',
-   'Anything those fields can’t read (a decimal comma like “385,5”, a stray letter) now shows a note under the ARV fields instead of silently counting as 0. The note waits until you leave the field. A land or asking price under $1,000, or an ARV of $1,000/sf or more, also gets a “did you mean…?” note.',
+   'Anything those fields can’t read (a decimal comma like “385,5”, a stray letter) now shows a note under the ARV fields instead of silently counting as 0, and the same note appears on the PDF and beside the cell in the Excel model. The on-screen note waits until you leave the field. A land or asking price under $1,000 gets a “did you mean $185,000?” note, and an ARV of $1,000/sf or more a “looks like a sale price” note.',
    'BUA check: a hardscape of 0 sf now means none. It used to become the 500 sf default; a blank field still means 500.']},
  {v:'8.7',date:'Sep 2026',name:'Loan terms and profit rule notes: steadier',items:[
    'A blank loan term now means the field’s default (10, 8 or 6 months, shown greyed in the empty field) everywhere: the scenario cards, Max land, the profit tiles, the PDF and the Excel model. It used to count as 0 months, which left out the whole carry. A term under 1 month is raised to 1, with a note.',

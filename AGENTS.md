@@ -112,9 +112,13 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `readMoney()` parse them with `parseRuleValue()`'s rules (`$`, `k`, commas only as thousands groups; `%` is
   refused). Blank, unreadable and negative all give 0, which every reader already treats as "not entered"
   (no land, no asking line, no base ARV, auto ∓10% for Worst/Best), but unreadable and negative values also
-  show in `#lever-warn`, never silently. Readable but implausible values (land or asking under $1,000, an ARV
-  of $1,000/sf or more) apply and get a "did you mean…?" note. `renderInputWarnings()` draws `#lever-warn`
-  with the other warning lines, so a field's note waits until focus leaves it; keep the `onblur` on all five.
+  show in `#lever-warn`, never silently. Readable but implausible values apply and get a note: land or asking
+  under $1,000 ("did you mean $185,000?"), an ARV of $1,000/sf or more ("looks like a sale price"); the
+  thresholds are data in `MONEY_FIELDS` (`typoBelow` / `typoFrom`). `renderInputWarnings()` draws
+  `#lever-warn` with the other warning lines, so a field's note waits until focus leaves it; keep the `onblur`
+  on all five. The exports carry the same notes: a "Check inputs" line on the PDF cover, and a note in column C
+  beside the land / ARV cell on the Excel Inputs sheet (only when there is one, so a clean deal's files are
+  unchanged). Flag an export path that reads these fields but drops the notes.
   Flag a new reader of these five ids that uses `pv()` or `parseFloat`, or a new `type="text"` money field
   read by `pv()`. `pv()` itself is unchanged and stays right for `type="number"` fields, whose `value` is
   already a plain number or `''`.
