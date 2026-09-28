@@ -122,7 +122,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   Flag a new reader of these five ids that uses `pv()` or `parseFloat`, or a new `type="text"` money field
   read by `pv()`. `pv()` itself is unchanged and stays right for `type="number"` fields, whose `value` is
   already a plain number or `''`.
-- **Comps table cells go through `readComp()` (v8.11).** Sq Ft, Sold $ and Adjustments are free text, read by
+- **Comps table cells go through `readComp()` (v8.12).** Sq Ft, Sold $ and Adjustments are free text, read by
   `readCompCell()` with `parseRuleValue()`'s rules plus three comps-only allowances: "(40,000)" is −40,000, a
   leading "+" is fine, and Sq Ft may end in "sf" / "sq ft". The old `compNum()` stripped every comma and ran
   `parseFloat`, so "352.5k" was a $352.50 sale and "352,5" was $3,525, and they fed the median that Apply median
@@ -134,7 +134,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   the PDF or `collectModelInputs().comps`, comes from `readComp()` via `compPPSF()` / `compStats()`. Flag a new
   reader that parses a comp cell another way, or an export that drops `compIssues()`. The notes exist only when
   there's a problem, so a clean comps table gives the same report data and files as before.
-- **Plan-comparison ARV overrides are text, read by `readMoneyText()` (v8.11),** the same reader behind `mv()`.
+- **Plan-comparison ARV overrides are text, read by `readMoneyText()` (v8.12),** the same reader behind `mv()`.
   Blank, unreadable and negative all mean "use the deal's ARV" (`readCmpArv().use` is false), but unreadable and
   negative also get a red cell and a note under the comparison table. They were `type="number"`, which hands back
   `''` for "$265", so the override was dropped with no sign. Don't turn them back into number inputs.
@@ -143,6 +143,32 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   has. A field added in a later version therefore opens at its shipped default, not at the previous
   deal's value. Consequence: a `.page` field's shipped default must be in its HTML (`value`,
   `checked`, `selected`), not set by JS at startup, or a restore will blank it.
+  **Validate, then commit (v8.9).** Step 0 only runs once the file passes a check: every `fields`
+  entry is an object, at least one is a `.page` input/select, and the collections have the shapes
+  `serializeDeal()` writes. The blanket restore writes only `.page` fields. A restore that still throws
+  part-way leaves the page half-loaded, so its catch cancels the pending autosave and asks for a
+  reload; it doesn't re-run the pipeline to "roll back" (that can't put back data-manual flags or
+  entry-time state, and a code error would throw again). Step 0 also clears the previous deal's
+  panels outside `.page`: the county GIS card, its status line, and the comps box with its Apply
+  button. The offer letter isn't cleared on restore: it's keyed to the address it was opened for
+  (`ol-amount.dataset.sig`), so it starts over for any other deal, however that deal arrived. A
+  restore also bumps `_dealGen`, so a GIS lookup or comps pull still in flight is dropped instead of
+  landing on the new deal (flag a new async county call that doesn't check it), and it dismisses the
+  resume bar, whose offer is stale once the autosave writes the new deal.
+- **In `restoreDeal()`, saved values land last (v8.9).** Fills that derive fields from other fields
+  run *before* the blanket restore: `onCountyChange()` (zone list, taps) and `onZoneChange()` (the
+  zone table's setbacks), so an adjusted setback survives. After it, blank setbacks and the read-only
+  `sb-minw` / `sb-garage` come from today's `SETBACKS`, because those were never choices. `onPlanChange()`
+  has to run after the blanket restore (step 7 needs the rebuilt plan list), so every saved field it
+  writes is re-applied afterwards: `units` (plus `updateAttachedBuild()`) and `rot-slider`. The
+  entry-time auto-defaults are restored, not guessed. `serializeDeal()` saves `tapSig` / `rankSig`
+  (what `applyTapDefaults()` / `applyRankedPlanDefault()` last applied) and `restoreDeal()` puts them
+  back, so a switch that was still due when the deal was saved still happens on entering The Underwrite.
+  Older files count the taps as applied and a restored plan as the ranking's choice; if no plan could
+  be re-selected, the ranking stays open. A GIS re-run on the parcel already loaded (same PID, same
+  zone) leaves the setbacks alone too (`setGisZoning`). Flag a table fill moved after the blanket
+  restore, a field `onPlanChange()` writes without a re-apply, or an entry-time auto-default whose
+  signature isn't saved and restored: each one silently changes a reopened deal's numbers.
 
 ### Architecture & footguns
 - **Stay single-file & buildless.** Flag any added framework, bundler, npm build step, or
