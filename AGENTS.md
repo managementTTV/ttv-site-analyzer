@@ -92,6 +92,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   has. A field added in a later version therefore opens at its shipped default, not at the previous
   deal's value. Consequence: a `.page` field's shipped default must be in its HTML (`value`,
   `checked`, `selected`), not set by JS at startup, or a restore will blank it.
+  Step 0 only runs once the file passes a check (its `fields` must include at least one `.page` id),
+  and a restore that throws puts back the deal that was on screen (`restoreDeal(snapshot, true)`), so
+  a bad file can't leave a half-reset page for the autosave to save. Deal values that live outside
+  `.page` (the offer letter's `ol-amount` / `ol-date`) are cleared by hand in step 0 (v8.4).
 - **In `restoreDeal()`, saved values land last (v8.4).** Anything that fills fields from other fields
   runs *before* the blanket restore: `onCountyChange()` (zone list, taps) and `onZoneChange()` (the
   zone table's setbacks), so a saved, adjusted setback survives. The auto-defaults that fire when The

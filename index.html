@@ -5061,10 +5061,15 @@ function serializeDeal(){
     comps:COMPS.map(c=>Object.assign({},c)),
     gis:(typeof window!=='undefined'&&window._lastGis)||null};
 }
-function restoreDeal(d){
-  if(!d||!d.fields){showToast('That file doesn\u2019t look like a saved deal.','warn');return;}
+function restoreDeal(d,_rollback){
+  // check the file before step 0 wipes the page: a saved deal carries at least one of this page's fields
+  const vals=d&&d.fields;
+  if(!vals||typeof vals!=='object'||!Object.keys(vals).some(id=>{const e=$(id);return !!(e&&e.closest('.page'));})){
+    showToast('That file doesn\u2019t look like a saved deal.','warn');return;
+  }
+  // the deal on screen now, put back if this restore throws part-way (step 0 has reset the page by then)
+  const onScreen=_rollback?null:serializeDeal();
   try{
-    const vals=d.fields;
     const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else e.value=f.v;}};
     // 0) start from a fresh page's defaults. The blanket restore below only writes fields the file has, so a
     //    field added after the deal was saved would otherwise keep whatever the previous deal left on screen.
@@ -5074,6 +5079,8 @@ function restoreDeal(d){
       else if(e.tagName==='SELECT'){const o=Array.from(e.options).find(x=>x.defaultSelected)||e.options[0];if(o)e.value=o.value;}
       else e.value=e.defaultValue;
     });
+    // the offer letter's amount and date sit outside .page, so clear them too, or deal B's letter keeps deal A's price
+    {const oa=$('ol-amount'),od=$('ol-date');if(oa){oa.value='';delete oa.dataset.auto;}if(od)od.value='';}
     _tapSig=null;   // taps were just reset, so let the jurisdiction autofill in step 1 run again
     // A deal saved before v8.2 has no profit-rule fields; it was underwritten on the SOP, so pin that rather than
     // today's default, which may have moved since. Reopening an old deal must not move its Max land.
@@ -5126,8 +5133,13 @@ function restoreDeal(d){
     calcLF();calcBuildable();calcAll();calcFinancing();
     if(typeof renderFitCheck==='function')renderFitCheck();
     updateDealPulse();
-    showToast('Deal restored: '+(d.address||'saved deal'),'ok');
-  }catch(e){console.error('restore',e);showToast('Restore failed: '+e.message,'warn');}
+    if(!_rollback)showToast('Deal restored: '+(d.address||'saved deal'),'ok');
+  }catch(e){
+    console.error('restore',e);
+    // don't leave a half-reset page for the autosave to write over the resume slot
+    if(onScreen)restoreDeal(onScreen,true);
+    showToast('Restore failed: '+e.message+(onScreen?' \u2014 the deal you had open is back.':''),'warn');
+  }
 }
 function downloadDealJSON(){
   try{
@@ -5185,6 +5197,8 @@ const RELEASE_NOTES=[
  {v:'8.4',date:'Sep 2026',name:'Reopened deals keep their setbacks and their plan',items:[
    'A saved deal now reopens with the setbacks it was saved with. Before, reopening put the zone’s table setbacks back, so a deal with an adjusted front setback (an established or contextual one, say) came back with a different buildable envelope and plan fit.',
    'A deal underwritten on its 2nd- or 3rd-ranked plan now stays on that plan when you open The Underwrite after resuming it. Before, the app switched to the 1st-ranked plan and reset the units, so cost, profit and Max land no longer matched the saved deal.',
+   'The offer letter’s amount and date no longer carry over from the deal you had open before, so a new deal’s letter can’t go out at the last deal’s price.',
+   'Opening a file that isn’t a saved deal no longer clears the page, and if a saved deal fails to open part-way, the deal you had open comes back.',
    'Nothing changes while you build a deal: picking a zone still fills in its setbacks, and re-ranking plans still moves The Underwrite to your new 1st choice.',
    'A deal that was reopened and saved again before this version may already hold the zone’s setbacks or the 1st-ranked plan, because that is what it was saved with. Check the setbacks and plan on those.']},
  {v:'8.3',date:'Sep 2026',name:'Irregular lots: buildable area now respects setbacks',items:[
@@ -5392,9 +5406,9 @@ updateDealPulse();
     <div class="field"><label>Property Address <span style="color:var(--text-dim);font-weight:400;font-size:10px">(auto-filled from Step 1)</span></label>
       <input type="text" id="ol-address" placeholder="e.g. 6627 Nevin Glen Dr, Charlotte NC 28269" style="width:100%"></div>
     <div class="field"><label>Offer Amount</label>
-      <div class="input-wrap"><span class="pfx">$</span><input type="text" id="ol-amount" placeholder="e.g. 150,000" oninput="formatOfferAmt(this)"></div></div>
+      <div class="input-wrap"><span class="pfx">$</span><input type="text" id="ol-amount" placeholder="e.g. 150,000" autocomplete="off" oninput="formatOfferAmt(this)"></div></div>
     <div class="field"><label>Date</label>
-      <input type="text" id="ol-date" placeholder="e.g. May 28, 2026" style="width:100%"></div>
+      <input type="text" id="ol-date" placeholder="e.g. May 28, 2026" autocomplete="off" style="width:100%"></div>
     <div style="display:flex;gap:10px;margin-top:20px">
       <button class="btn btn-primary" onclick="previewOfferLetter()" style="flex:1">Preview &amp; Print</button>
       <button class="btn btn-ghost" onclick="closeOfferLetter()" style="flex:1">Cancel</button>
