@@ -722,7 +722,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.3 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.4 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -5081,8 +5081,9 @@ function restoreDeal(d){
     // 1) jurisdiction first (rebuilds zones, autofills taps)
     setV('addr-city');setV('county-sel');
     onCountyChange();
-    // 2) blanket restore (overwrites any autofill with saved values)
-    Object.keys(vals).forEach(id=>{const f=vals[id],e=$(id);if(!e)return;if(f.t==='checkbox')e.checked=!!f.c;else e.value=f.v;});
+    // then the zone: onZoneChange() writes the zone table's setbacks, so it must run before the blanket restore, or
+    // a deal saved with an adjusted setback (an established front setback, say) reopens on the table value
+    setV('zone-sel');
     // saved zone may be a GIS-added option not in the default list
     if(vals['zone-sel']&&vals['zone-sel'].v&&$('zone-sel').value!==vals['zone-sel'].v){
       const sel=$('zone-sel'),o=document.createElement('option');
@@ -5090,6 +5091,8 @@ function restoreDeal(d){
       sel.appendChild(o);sel.value=vals['zone-sel'].v;
     }
     onZoneChange();
+    // 2) blanket restore (overwrites any autofill, the zone's setbacks included, with saved values)
+    Object.keys(vals).forEach(id=>{const f=vals[id],e=$(id);if(!e)return;if(f.t==='checkbox')e.checked=!!f.c;else e.value=f.v;});
     // every restored value was deliberate — protect them from any auto-fill
     markAllManual();
     // 3) lock tap signature so step-5 entry doesn't clobber restored taps
@@ -5107,6 +5110,9 @@ function restoreDeal(d){
     if(d.plan){const o=Array.from($('plan-sel').options).find(x=>(x.value||'').split('|')[0]===d.plan);if(o)$('plan-sel').value=o.value;}
     // 6) collections
     CHOICES[0]=(d.choices||[])[0]||null;CHOICES[1]=(d.choices||[])[1]||null;CHOICES[2]=(d.choices||[])[2]||null;
+    // lock the ranking signature like the taps in step 3, or entering The Underwrite re-selects the 1st-ranked plan
+    // and resets units, moving a deal underwritten on its 2nd choice. No saved plan: leave it open so the ranking picks one.
+    _rankSig=$('plan-sel').value?CHOICES.join('|'):null;
     selectedUpgrades.clear();(d.upgrades||[]).forEach(u=>selectedUpgrades.add(u));
     COMPS.length=0;(d.comps||[]).forEach(c=>COMPS.push(Object.assign({},c)));
     try{window._lastGis=d.gis||null;}catch(_){ }
@@ -5174,8 +5180,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.3', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.4', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.4',date:'Sep 2026',name:'Reopened deals keep their setbacks and their plan',items:[
+   'A saved deal now reopens with the setbacks it was saved with. Before, reopening put the zone’s table setbacks back, so a deal with an adjusted front setback (an established or contextual one, say) came back with a different buildable envelope and plan fit.',
+   'A deal underwritten on its 2nd- or 3rd-ranked plan now stays on that plan when you open The Underwrite after resuming it. Before, the app switched to the 1st-ranked plan and reset the units, so cost, profit and Max land no longer matched the saved deal.',
+   'Nothing changes while you build a deal: picking a zone still fills in its setbacks, and re-ranking plans still moves The Underwrite to your new 1st choice.',
+   'A deal that was reopened and saved again before this version may already hold the zone’s setbacks or the 1st-ranked plan, because that is what it was saved with. Check the setbacks and plan on those.']},
  {v:'8.3',date:'Sep 2026',name:'Irregular lots: buildable area now respects setbacks',items:[
    'Fixed: on irregular (polygon) lots, including every lot filled by the County GIS auto-fill, the Buildable Envelope card reported the whole lot area as buildable. The dashed setback outline on the diagram was right; the number was not.',
    'The buildable figure now equals the area inside that dashed outline, on the Buildable Envelope card, the summary bar and the PDF report\u2019s Buildable Area line. Example: 2723 Dellinger Dr went from 7,170 sf (the whole lot) to 3,327 sf.',

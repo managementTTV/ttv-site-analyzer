@@ -92,6 +92,13 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   has. A field added in a later version therefore opens at its shipped default, not at the previous
   deal's value. Consequence: a `.page` field's shipped default must be in its HTML (`value`,
   `checked`, `selected`), not set by JS at startup, or a restore will blank it.
+- **In `restoreDeal()`, saved values land last (v8.4).** Anything that fills fields from other fields
+  runs *before* the blanket restore: `onCountyChange()` (zone list, taps) and `onZoneChange()` (the
+  zone table's setbacks), so a saved, adjusted setback survives. The auto-defaults that fire when The
+  Underwrite is entered are locked after the restore: `_tapSig` (taps) and `_rankSig` (the 1st-ranked
+  plan, left unlocked only when no plan was saved). Flag a table fill moved after the blanket restore,
+  or a new entry-time auto-default that the restore doesn't lock; either one silently changes a
+  reopened deal's numbers.
 
 ### Architecture & footguns
 - **Stay single-file & buildless.** Flag any added framework, bundler, npm build step, or
