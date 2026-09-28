@@ -3890,7 +3890,7 @@ function openProfitRule(){
 // it. A term the browser can't read also gets the default, and one under 1 month (the fields' min) is
 // raised to 1; both say so on screen (a blank is silent, as with the profit rule). {w, b, best, issues}; issues
 // are {id, msg}, as in getProfitRule().
-// v8.9: a term over the field's max (36) still applies, but gets a note, the way an implausible profit rule does
+// v8.10: a term over the field's max (36) still applies, but gets a note, the way an implausible profit rule does
 // ("80" typed for "8" used to flow into every figure silently).
 function termDefaults(){
   const d=k=>parseFloat(($('term-'+k)||{}).defaultValue)||0;
@@ -3911,19 +3911,23 @@ function getTerms(){
   });
   return {w:t.w,b:t.b,best:t.best,issues};
 }
-// The profit-rule and loan-term warning lines. A field's own note waits until you leave the field, so typing
+// The profit-rule and loan-term warning lines. A field's own note waits while you're typing in it, so typing
 // "70,000" or "75000" doesn't flash notes about the half-typed "70," or "75"; the math still updates as you
-// type. v8.9: one document-level focusout listener re-renders them once focus has actually moved on (on a
-// timeout), so any field that reports {id, msg} issues gets both halves without its own handler. When the
-// window itself loses focus (switching apps or tabs) the field stays activeElement, so nothing is held then.
+// type. v8.10: a note is held only once you've typed in the field (tracked by the capture-phase input listener
+// below, which runs before the field's own oninput render), not merely because it has focus, so clicking into
+// a flagged field (or "Change the profit rule") keeps its note up. One document-level focusout listener ends the
+// edit and re-renders once focus has moved on. Nothing is held while the window itself is unfocused.
+const _editingFields=new Set();
 function renderInputWarnings(rule,terms){
+  const held=id=>document.hasFocus()&&_editingFields.has(id)&&$(id)===document.activeElement;
   [['profit-rule-warn',(rule||getProfitRule()).issues],['term-warn',(terms||getTerms()).issues]].forEach(([wid,issues])=>{
     const w=$(wid);if(!w)return;
-    const t=issues.filter(i=>!document.hasFocus()||$(i.id)!==document.activeElement).map(i=>i.msg).join(' ');
-    w.textContent=t;w.style.display=t?'':'none';
+    const t=issues.filter(i=>!held(i.id)).map(i=>i.msg).join(' ');
+    if(w.textContent!==t)w.textContent=t; w.style.display=t?'':'none';
   });
 }
-document.addEventListener('focusout',()=>setTimeout(()=>renderInputWarnings()));
+document.addEventListener('input',e=>{if(e.target&&e.target.id)_editingFields.add(e.target.id);},true);
+document.addEventListener('focusout',e=>{if(e.target&&e.target.id)_editingFields.delete(e.target.id);setTimeout(()=>renderInputWarnings());});
 
 // ═══════════════════ SCENARIOS (Page 7) ═══════════════════
 function calcScenarios(){
@@ -4137,12 +4141,9 @@ function getReportData(){
     buildTotal:(currentPlanCost||0)*u,upgrades:upgPerUnit*u,soft:softFixed,
     allInExLand:allInExLand||0,total:(allInExLand||0)+landCost};
   // Build cost = base × (1 + GC fee); break out for the memo
-  {const selName=planNameFromVal(($('plan-sel')||{}).value||'');
-   const po=PLANS.find(p=>p.n===selName);
-   // v8.9: a custom plan's Build Cost is the whole build (no Slate base / GC fee split), so it all counts as
-   // base; the PDF used to call the entire custom build the "Slate GC Fee"
-   cost.gcFeePct=po?GC_BUILD_FEE:0;
-   cost.baseBuild=po?Math.round(po.base||0)*u:cost.buildTotal;
+  {const sp=planCostSplit();
+   cost.customBuild=sp.custom; cost.gcFeePct=sp.feePct;
+   cost.baseBuild=Math.round(sp.baseUnit)*u;
    cost.gcFee=Math.max(0,cost.buildTotal-cost.baseBuild);}
   // Tap breakout (water / sewer / septic) for the memo
   {const skipW=$('skip-water')&&$('skip-water').checked;
@@ -4265,8 +4266,9 @@ function buildReportHTML(canvasDataUrl){
   (d.lfItems||[]).forEach(it=>costRows.push(['\u2514 '+it.l,it.v,'sub']));
   costRows.push(['Water Tap',c.tapWater]);costRows.push(['Sewer Tap',c.tapSewer]);
   if(c.septic>0)costRows.push(['Septic Install (per lot)',c.septic]);
-  costRows.push(['Base Build Cost ('+d.units+' × plan)',c.baseBuild]);
-  costRows.push(['Slate GC Fee ('+c.gcFeePct+'%)',c.gcFee]);
+  if(c.customBuild)costRows.push(['Build Cost ('+d.units+' × custom plan, as entered)',c.baseBuild]);
+  else{costRows.push(['Base Build Cost ('+d.units+' × plan)',c.baseBuild]);
+       costRows.push(['Slate GC Fee ('+c.gcFeePct+'%)',c.gcFee]);}
   costRows.push(['Upgrades',c.upgrades]);
   costRows.push(['Soft Costs (survey/appraisal/ins.)',c.soft]);
   const costBuild=secHdr('COST BUILD-UP')
@@ -4484,17 +4486,26 @@ function generateSheet(){
     document.head.appendChild(sc);
   }
 }
+// v8.10: how the per-unit build splits into base + GC fee, for the PDF memo and the Excel model. Keyed on the
+// plan dropdown, as calcAll() is, so it can't disagree with the build the app uses. A Slate plan is its base
+// × (1 + GC fee). A custom plan's Build Cost is the whole build: no Slate base, no fee (the Excel model used to
+// get base 0 and leave the build out; the PDF called it all "Slate GC Fee"). No plan is 0.
+function planCostSplit(){
+  const val=($('plan-sel')||{}).value||'';
+  const po=val&&val!=='__CUSTOM__'?PLANS.find(p=>p.n===planNameFromVal(val)):null;
+  return po?{custom:false,baseUnit:po.base||0,feePct:GC_BUILD_FEE}
+           :{custom:val==='__CUSTOM__',baseUnit:currentPlanCost||0,feePct:0};
+}
 function collectModelInputs(d){
   const rawW=pv('arv-w'), rawBest=pv('arv-best');
   const upgUnit=Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);
-  const planObj=PLANS.find(p=>p.n===d.plan)||null;
+  const sp=planCostSplit();
   const skipW=$('skip-water')&&$('skip-water').checked, skipS=$('skip-sewer')&&$('skip-sewer').checked;
   return {
     address:d.address,county:d.county,zone:d.zone,units:Math.max(1,units),
     planName:d.plan,sf:sfPerUnit,buildUnit:currentPlanCost,
-    // v8.9: a custom plan has no Slate base; its Build Cost goes in as the base with no fee, so the workbook's
-    // Build Cost / Unit (= base × (1+fee)) equals the app's. It used to be 0, which left the build out of Excel.
-    customBuild:!planObj,baseUnit:planObj?(planObj.base||0):(currentPlanCost||0),gcFeePct:planObj?GC_BUILD_FEE/100:0,
+    // v8.10: planCostSplit(), so the workbook's Build Cost / Unit (= base × (1+fee)) equals the app's
+    customBuild:sp.custom,baseUnit:sp.baseUnit,gcFeePct:sp.feePct/100,
     upgUnit:upgUnit,
     lotFactor:lotFactor||0,
     lf:{demoSqft:pv('demo-sqft'),demoRate:pv('demo-rate'),herTrees:pv('her-trees'),
@@ -4512,7 +4523,7 @@ function collectModelInputs(d){
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
     arvBase:pv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
-    termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,termDefaults:termDefaults(),
+    termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,termDefaults:termDefaults(),termMax:parseFloat(($('term-b')||{}).max)||36,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     dateStr:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
     comps:(typeof COMPS!=='undefined'?COMPS:[]).filter(c=>compNum(c.sqft)>0&&compNum(c.sold)>0)
@@ -4549,8 +4560,9 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   const der=(key,label,formula,fmt)=>{ir++;wsI.getCell('A'+ir).value=label;wsI.getCell('A'+ir).font={italic:true,color:{argb:'FF566B82'},name:'Arial'};const c=wsI.getCell('B'+ir);c.value={formula};if(fmt)c.numFmt=fmt;c.font={name:'Arial',bold:true};c.fill=fill(CREAM);if(key)IN[key]='B'+ir;return 'B'+ir;};
   sec('DEAL'); inp('addr','Property Address',M.address); inp('county','County',M.county); inp('zone','Zone',M.zone); inp('units','Units',M.units);
   sec('PLAN'); inp('plan','Plan',M.planName); inp('sf','Sq Ft / Unit',M.sf,SF);
-  inp('base',M.customBuild?'Build Cost / Unit (custom plan, as entered)':'Slate Base Cost / Unit',M.baseUnit,MONEY); inp('gcfee','GC Fee % (on build)',M.gcFeePct,PCT);
-  der('build','Build Cost / Unit (= base \u00d7 (1+fee))',`ROUND(${IN['base']}*(1+${IN['gcfee']}),0)`,MONEY);
+  inp('base',M.customBuild?'Custom Plan Build Cost / Unit (as entered)':'Slate Base Cost / Unit',M.baseUnit,MONEY); inp('gcfee','GC Fee % (on build)',M.gcFeePct,PCT);
+  // v8.10: a custom Build Cost is used exactly as the app does (no rounding to whole dollars)
+  der('build','Build Cost / Unit (= base \u00d7 (1+fee))',M.customBuild?`${IN['base']}*(1+${IN['gcfee']})`:`ROUND(${IN['base']}*(1+${IN['gcfee']}),0)`,MONEY);
   sec('LOT FACTOR (site work)');
   inp('demoS','Demo Sq Ft',M.lf.demoSqft,SF); inp('demoR','Demo $/sf',M.lf.demoRate,MONEY2);
   const dDemo=der(null,'\u2514 Demo / Teardown',`B${ir-1}*B${ir}`,MONEY);
@@ -4573,6 +4585,11 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   sec('OTHER COSTS'); inp('upg','Upgrades / Unit',M.upgUnit,MONEY); inp('survey','Survey',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
   sec('FINANCING'); inp('ltc','LTC %',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
   sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
+  // v8.10: a note beside each term cell, like the rule cells', when it isn't used as typed (Scenarios row 16 applies
+  // the default and the 1-month floor) or is over the app's max; a text term like "12 mo" is otherwise silent
+  ['termW','termB','termBest'].forEach(k=>{const x=IN[k], c=wsI.getCell(x.replace('B','C'));
+    c.value={formula:`IF(ISBLANK(${x}),"",IF(NOT(ISNUMBER(${x})),"Not a number: default used",IF(${x}<1,"Under 1 month: 1 used",IF(${x}>${M.termMax},"Over ${M.termMax} months: typo?",""))))`};
+    c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};});
   // v8.2: appended last so every existing Inputs cell keeps its address
   sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY2); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT2);
   // v8.7: the rule Max Land actually uses, after getProfitRule()'s defaults and limits (PROFIT_RULE_LIMITS):
@@ -4613,7 +4630,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   F('D14',`${I('arvB')}`,MONEY2,false,true);
   F('E14',`IF(${I('arvBest')}="",${I('arvB')}*1.1,${I('arvBest')})`,MONEY2);
   ws.getCell('A15').value='ARV / Unit ($)'; ['C','D','E'].forEach(col=>F(col+15,`${col}14*${I('sf')}`,MONEY,true));
-  // v8.9: the terms as used, the same as getTerms(): a blank or non-numeric Inputs cell means the app's default,
+  // v8.10: the terms as used, the same as getTerms(): a blank or non-numeric Inputs cell means the app's default,
   // and nothing under 1 month. Every term formula below (holding, Max Land, Sensitivity) reads this row.
   {const T=(key,dflt)=>`MAX(1,IF(ISNUMBER(${I(key)}),${I(key)},${dflt}))`, TD=M.termDefaults;
    ws.getCell('A16').value='Loan Term (mo)'; F('C16',T('termW',TD.w),null,false,true);F('D16',T('termB',TD.b),null,false,true);F('E16',T('termBest',TD.best),null,false,true);}
@@ -4671,7 +4688,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
    offs.forEach((o,r)=>{
      // v8.7: the rows around the base never go under 1 month, like the PDF's grid; a 2-month base term
      // gave a -1 mo row whose negative interest showed the best profit on the sheet
-     // v8.9: the base is the term as used (Scenarios!D16), so a blank Inputs term can't make it 0 either
+     // v8.10: the base is the term as used (Scenarios!D16), so a blank Inputs term can't make it 0 either
      const t=o===0?'Scenarios!$D$16':`MAX(1,Scenarios!$D$16${o>=0?'+':''}${o})`;
      const lc=wsS.getCell(5+r,1);lc.value={formula:t};lc.numFmt='0" mo"';lc.font={bold:true,name:'Arial'};lc.fill=fill(CREAM);lc.alignment={horizontal:'center'};
      deltas.forEach((dv,ci)=>{
@@ -5261,11 +5278,11 @@ const RELEASE_NOTES=[
  {v:'8.10',date:'Sep 2026',name:'Excel loan terms and custom plans match the app',items:[
    'Excel model: clearing a loan term on the Inputs sheet now means the default (10, 8 or 6 months), as in the app, instead of 0 months. Scenarios row 16 shows the term each scenario uses, and the holding cost, Max Land and the Sensitivity grid all read it, so no row can drop below 1 month.',
    'A loan term over 36 months still applies, but gets a note, so an “80” typed for “8” doesn’t slip through.',
-   'Custom plans: the Excel model left the build cost out (Build Cost / Unit came out $0, so Max Land was too high by the build cost), and the PDF listed the whole custom build as the “Slate GC Fee”. Both now use the Build Cost you enter.',
-   'Smaller fixes: the plan comparison’s “Plan drawing” row shows its View button again, a profit rule or loan term note now shows even if you switch to another app mid-edit, the PDF’s sensitivity grid stars only the base row, and the Excel rule cells show cents, so $999.50 no longer displays as $1,000 next to its “Under $1,000” note.']},
+   'Custom plans: the Excel model left the build cost out (Build Cost / Unit came out $0, so Max Land was too high by the build cost), and the PDF listed the whole custom build as the “Slate GC Fee”. Both now use the Build Cost you enter, and the PDF lists it as one custom build line.',
+   'Smaller fixes: the plan comparison’s “Plan drawing” row now shows its View button, a profit rule or loan term note now shows even if you switch to another app mid-edit, the PDF’s sensitivity grid stars only the base row, and the Excel rule cells show cents, so $999.50 no longer displays as $1,000 next to its “Under $1,000” note.']},
  {v:'8.7',date:'Sep 2026',name:'Loan terms and profit rule notes: steadier',items:[
    'A blank loan term now means the field’s default (10, 8 or 6 months, shown greyed in the empty field) everywhere: the scenario cards, Max land, the profit tiles, the PDF and the Excel model. It used to count as 0 months, which left out the whole carry. A term under 1 month is raised to 1, with a note.',
-   'The profit rule and loan term notes wait until you leave the field, so they no longer flash while you type “70,000”. “70,000.” with a trailing period now reads as 70,000, and the notes show the value as it was read, to the cent.',
+   'The profit rule and loan term notes wait until you leave the field, so they no longer flash while you type “70,000”. “70,000.” with a trailing period now reads as 70,000, and the notes show the value as it was read (to the cent, or 4 significant digits for a %).',
    'Excel model: Inputs now shows the profit rule Max Land actually uses, under the two rule cells, and the notes beside them fit on a printout. The Sensitivity rows never go below 1 month; a 2-month base term used to give a −1 month row with negative interest.']},
  {v:'8.5',date:'Sep 2026',name:'Profit rule and exports: fewer silent surprises',items:[
    'The profit rule fields catch likely typos instead of quietly using them. A comma used as a decimal point (“7,5”) is reported as unreadable, and a minimum profit under $1,000 or a % under 1% gets a “did you mean…?” note, so “70.000” can’t slip through as $70.',
