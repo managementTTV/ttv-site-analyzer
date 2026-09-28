@@ -127,8 +127,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   leading "+" is fine, and Sq Ft may end in "sf" / "sq ft". The old `compNum()` stripped every comma and ran
   `parseFloat`, so "352.5k" was a $352.50 sale and "352,5" was $3,525, and they fed the median that Apply median
   writes into `arv-b`. A cell that can't be read, or a negative Sq Ft / Sold $, leaves that comp out of
-  `compStats()` and out of the Excel Comps sheet, so the workbook's `MEDIAN` matches the screen. The cell is
-  marked, and `compIssues()` lists it in `#comps-warn` under the table, as a "Check comps" line on the PDF comps
+  `compStats()`. The Excel Comps sheet holds exactly the comps `compStats()` counts, so the workbook's `MEDIAN`
+  matches the screen. The cell is marked, and `compIssues()` lists it in `#comps-warn` under the table, as a "Check comps" line on the PDF comps
   page and under the Excel stats. Readable but implausible values (a sale under $1,000, an adjusted $/sf of
   $1,000 or more) still count, with a note. Every comps number, whether the table, Apply median, `getReportData()`,
   the PDF or `collectModelInputs().comps`, comes from `readComp()` via `compPPSF()` / `compStats()`. Flag a new

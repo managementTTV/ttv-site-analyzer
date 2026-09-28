@@ -1731,7 +1731,7 @@ function readComp(c){
   r.ppsf=!bad.length&&r.sqft>0&&ap>0?ap/r.sqft:0;
   r.left=bad.length>0||(r.sqft>0&&r.sold>0&&ap<=0);
   if(bad.length)r.notes.push(bad.join('; ')+', so it’s left out of the $/sf stats.');
-  else if(r.left)r.notes.push(`Sold $ + Adjustments is ${fmtRuleUSD(ap)}, so it’s left out of the $/sf stats.`);
+  else if(r.left)r.notes.push(`Sold $ + Adjustments is ${ap<0?'−'+fmtRuleUSD(-ap):fmtRuleUSD(ap)}, so it’s left out of the $/sf stats.`);
   if(r.sold>0&&r.sold<COMP_FIELDS.sold.typoBelow){
     r.odd.sold=`Sold $ is ${fmtRuleUSD(r.sold)}. Did you mean ${fmtRuleUSD(r.sold*1000)}?`;r.notes.push(r.odd.sold);}
   if(r.ppsf>=COMP_PPSF_TYPO_FROM){
@@ -4603,9 +4603,9 @@ function collectModelInputs(d){
     termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     dateStr:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
-    // v8.11: read like the screen (readComp); a comp the screen leaves out for an unreadable cell stays out of
-    // the workbook too, so its MEDIAN matches the app, and compNotes says which one and why
-    comps:(typeof COMPS!=='undefined'?COMPS:[]).map(c=>({c,r:readComp(c)})).filter(({r})=>!Object.keys(r.bad).length&&r.sqft>0&&r.sold>0)
+    // v8.11: read like the screen (readComp). The workbook holds exactly the comps the screen counts, so its MEDIAN
+    // matches the app; one left out (a cell it can't read, Sold $ + Adjustments at $0 or less) is named in compNotes
+    comps:(typeof COMPS!=='undefined'?COMPS:[]).map(c=>({c,r:readComp(c)})).filter(({r})=>r.ppsf>0)
       .map(({c,r})=>({addr:c.addr||'',sqft:r.sqft,sold:r.sold,adj:r.adj,date:c.date||'',dist:c.dist||'',mom:c.mom||'',notes:c.notes||'',url:c.url||''})),
     compNotes:typeof COMPS!=='undefined'?compIssues().map(x=>x.msg):[]
   };
@@ -4823,7 +4823,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   wcb.pageSetup={printArea:'A1:B'+cr};
 
   // ---------- Comps ----------
-  // v8.11: M.compNotes (a cell the app couldn't read, so that comp is left out here too; a likely typo) goes under
+  // v8.11: M.compNotes (why a comp the app leaves out isn't here either; a likely typo) goes under
   // the stats. Notes alone still make the sheet, so a table whose every comp was left out says why.
   const compNotes=M.compNotes||[], compRows=M.comps||[];
   if(compRows.length||compNotes.length){
