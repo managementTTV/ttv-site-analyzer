@@ -78,14 +78,19 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   path that re-hardcodes 50000 or 1.15 / 0.15, or computes or words the rule a second way.
   `PRE_V82_PROFIT_RULE` is not a default: it's the rule every pre-v8.2 deal was underwritten on, which
   `restoreDeal()` pins for saves without the fields. Never change it.
-  The two fields are `type="text"` on purpose, read by `parseRuleValue()` (accepts `$`, commas, `k`,
-  `%`): a number input returns `''` for text the browser can't parse, which silently became the
-  default. A value that can't be read, or has to be limited (floor ≥ 0, % within 0–99), must show
-  in `#profit-rule-warn`, never be applied quietly. The Excel formula mirrors the same semantics
-  (blank cell = the default, same limits); flag a change to one side that isn't made on the other.
-- **Exports read the same raw values the screen uses.** `getReportData().fin` and
-  `collectModelInputs()` take LTC, rate, points, fees, tax and sale cost straight from the fields,
-  as `calcLoanBase()` / `holdingCost()` do. Flag a `pv(x)||default` fallback on a field where 0 is a
+  The two fields are `type="text"` on purpose, read by `parseRuleValue()` (accepts `$`, `k`, `%` and
+  commas **only as thousands groups**, so a decimal comma like "7,5" is unreadable, not 75): a number
+  input returns `''` for text the browser can't parse, which silently became the default. A value
+  that can't be read, or has to be limited (floor ≥ 0, % within 0–99), must show in
+  `#profit-rule-warn`, never be applied quietly; an implausible one (floor under $1,000, % under 1%)
+  applies but also shows a "did you mean…?" note. The Excel formula mirrors the same semantics
+  (a blank **or non-numeric** cell = the default via `ISNUMBER`, same limits, and a note in column C
+  beside each rule cell with the same thresholds); flag a change to one side that isn't made on
+  the other.
+- **Exports read the same raw values the screen uses.** `getReportData()` (`fin` and `terms`),
+  `collectModelInputs()` and the plan-compare header take LTC, rate, points, fees, tax, sale cost
+  and the three loan terms straight from the fields, as `calcLoanBase()` / `holdingCost()` /
+  `calcScenarios()` do. Flag a `pv(x)||default` fallback on a field where 0 is a
   real answer (0 points, 0% sale cost): it makes the PDF and Excel Max Land disagree with the tile.
 - **`restoreDeal()` starts from a fresh page (v8.2).** Step 0 resets every `.page` input/select to its
   HTML default before anything else, because the blanket restore only writes fields the saved file
