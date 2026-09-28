@@ -123,8 +123,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   read by `pv()`. `pv()` itself is unchanged and stays right for `type="number"` fields, whose `value` is
   already a plain number or `''`.
 - **Comps table cells go through `readComp()` (v8.12).** Sq Ft, Sold $ and Adjustments are free text, read by
-  `readCompCell()` with `parseRuleValue()`'s rules plus three comps-only allowances: "(40,000)" is −40,000, a
-  leading "+" is fine, and Sq Ft may end in "sf" / "sq ft". The old `compNum()` stripped every comma and ran
+  `readCompCell()` through `parseMoneyValue()`, the same step `readMoneyText()` uses for the five money fields
+  (`parseRuleValue()`'s rules, `%` refused, and a Unicode minus or en dash counts as "-"), plus three comps-only
+  allowances: "(40,000)" is −40,000, a leading "+" is fine, and Sq Ft may end in "sf" / "sq ft". A comp needs a
+  Sq Ft and a Sold $ to count; an adjustment alone doesn't make one. The old `compNum()` stripped every comma and ran
   `parseFloat`, so "352.5k" was a $352.50 sale and "352,5" was $3,525, and they fed the median that Apply median
   writes into `arv-b`. A cell that can't be read, or a negative Sq Ft / Sold $, leaves that comp out of
   `compStats()`. The Excel Comps sheet holds exactly the comps `compStats()` counts, so the workbook's `MEDIAN`

@@ -1705,10 +1705,9 @@ function onComp(i,f,v){if(COMPS[i]){COMPS[i][f]=v;renderComps();}}
 // Readable but implausible values still count, with a note, as the money levers do (v8.8): a sale under $1,000
 // ("did you mean $352,500?") or an adjusted $/sf of $1,000 or more (Sq Ft typed short, e.g. 185 for 1,850).
 const COMP_FIELDS={
-  sqft:{label:'Sq Ft',unit:/\s*(?:sq\.?\s*ft\.?|sqft|sf|ft²)$/i},
+  sqft:{label:'Sq Ft',unit:/\s*(?:sq\.?\s*ft|sqft|sf|ft²)\.?$/i},
   sold:{label:'Sold $',typoBelow:1000},
   adj:{label:'Adjustments',signed:true}};
-const COMP_PPSF_TYPO_FROM=1000;
 // {v} for a readable or blank cell, {v:0, msg} for one that can't be used
 function readCompCell(c,f){
   const F=COMP_FIELDS[f], t=String(c[f]==null?'':c[f]).trim();
@@ -1716,33 +1715,36 @@ function readCompCell(c,f){
   const m=t.match(/^\((.*)\)$/), neg=!!m;
   let s=m?m[1]:t.replace(/^\+/,'');
   if(F.unit)s=s.replace(F.unit,'');
-  const p=s.includes('%')?{bad:true}:parseRuleValue(s);
+  const p=parseMoneyValue(s);
   if(p.blank||p.bad||(neg&&p.v<0))return {v:0,msg:`couldn’t read ${F.label} “${t}”`};
   const v=neg?-p.v:p.v;
   if(v<0&&!F.signed)return {v:0,msg:`${F.label} can’t be negative`};
   return {v};
 }
 // One comp as the stats see it: {sqft, sold, adj, ppsf, bad:{field:msg}, odd:{field:msg}, left, notes}. ppsf is 0
-// (not counted) when the row is incomplete, has a cell that can't be read, or its adjusted price is $0 or less.
+// (not counted) when the row is incomplete (no Sq Ft or no Sold $, even with an adjustment typed), has a cell that
+// can't be read, or its adjusted price is $0 or less.
 // left: the row is complete enough to count but is left out; notes: the sentences for compIssues().
 function readComp(c){
   const r={bad:{},odd:{},notes:[]};
   Object.keys(COMP_FIELDS).forEach(f=>{const x=readCompCell(c,f);r[f]=x.v;if(x.msg)r.bad[f]=x.msg;});
   const bad=Object.values(r.bad), ap=r.sold+r.adj;
-  r.ppsf=!bad.length&&r.sqft>0&&ap>0?ap/r.sqft:0;
+  r.ppsf=!bad.length&&r.sqft>0&&r.sold>0&&ap>0?ap/r.sqft:0;
   r.left=bad.length>0||(r.sqft>0&&r.sold>0&&ap<=0);
   if(bad.length)r.notes.push(bad.join('; ')+', so it’s left out of the $/sf stats.');
   else if(r.left)r.notes.push(`Sold $ + Adjustments is ${ap<0?'−'+fmtRuleUSD(-ap):fmtRuleUSD(ap)}, so it’s left out of the $/sf stats.`);
   if(r.sold>0&&r.sold<COMP_FIELDS.sold.typoBelow){
     r.odd.sold=`Sold $ is ${fmtRuleUSD(r.sold)}. Did you mean ${fmtRuleUSD(r.sold*1000)}?`;r.notes.push(r.odd.sold);}
-  if(r.ppsf>=COMP_PPSF_TYPO_FROM){
+  if(r.ppsf>=MONEY_FIELDS['arv-b'].typoFrom){   // the ARV fields' "looks like a sale price" line
     r.odd.ppsf=`Adj $/SF is $${Math.round(r.ppsf).toLocaleString('en-US')}. Check Sq Ft and Sold $.`;r.notes.push(r.odd.ppsf);}
   return r;
 }
 function compPPSF(c){return readComp(c).ppsf;}
 // [{i, msg}] for every comp with a note, in table order; the screen, the PDF and the Excel Comps sheet show these
-function compIssues(){
-  return COMPS.map((c,i)=>{const n=readComp(c).notes, a=String(c.addr||'').trim();
+// R: COMPS already read by readComp(), when the caller has them
+function compIssues(R){
+  R=R||COMPS.map(readComp);
+  return COMPS.map((c,i)=>{const n=R[i].notes, a=String(c.addr||'').trim();
     return n.length?{i,msg:`Comp ${i+1}${a?' ('+a+')':''}: ${n.join(' ')}`}:null;}).filter(Boolean);
 }
 function compStats(){
@@ -1756,8 +1758,9 @@ function renderComps(){
   const t=$('comps-table');if(!t)return;
   let h='<thead><tr><th>Address / Label</th><th>Sq Ft</th><th>Sold $</th><th>Adjustments</th><th>Adj $/SF</th><th>Sold Date</th><th>Distance</th><th>Mo. on Mkt</th><th>Other Notes</th><th>Zillow</th><th></th></tr></thead><tbody>';
   if(!COMPS.length){h+='<tr><td colspan="11" class="note" style="padding:10px">No comps yet \u2014 click \u201cAdd comp\u201d to start.</td></tr>';}
+  const R=COMPS.map(readComp);
   COMPS.forEach((c,i)=>{
-    const r=readComp(c), ppsf=r.ppsf;
+    const r=R[i], ppsf=r.ppsf;
     // a cell that can't be used is marked red and one that looks like a typo amber; the title says why
     const mark=(f,title)=>{const m=r.bad[f]||r.odd[f];return m?` class="${r.bad[f]?'comp-bad':'comp-odd'}"${r.bad[f]?' aria-invalid="true"':''} title="${escAttr(m)}"`:(title?` title="${title}"`:'');};
     h+='<tr>'
@@ -1776,8 +1779,8 @@ function renderComps(){
   });
   h+='</tbody>'; t.innerHTML=h;
   const warn=$('comps-warn');
-  if(warn){const w=compIssues().map(x=>x.msg).join(' ');warn.textContent=w;warn.style.display=w?'':'none';}
-  const st=compStats(), sum=$('comps-summary'), left=COMPS.filter(c=>readComp(c).left).length;
+  if(warn){const w=compIssues(R).map(x=>x.msg).join(' ');warn.textContent=w;warn.style.display=w?'':'none';}
+  const st=compStats(), sum=$('comps-summary'), left=R.filter(r=>r.left).length;
   if(sum){
     if(!st.n){sum.innerHTML=left?'No comp can be counted yet \u2014 see the note under the table.':'Add comps to see blended adjusted $/sf.';}
     else{
@@ -1973,7 +1976,7 @@ function readMoney(id){
 // F is shaped like a MONEY_FIELDS entry.
 function readMoneyText(raw,F){
   const t=raw.trim();
-  const p=raw.includes('%')?{bad:true}:parseRuleValue(raw);
+  const p=parseMoneyValue(raw);
   if(p.blank)return {v:0};
   if(p.bad)return {v:0,msg:`${F.label}: couldn’t read “${t}”, ${F.blank}.`,note:`App couldn’t read “${t}”`};
   if(p.v<0)return {v:0,msg:`${F.label} can’t be negative, ${F.blank}.`,note:'Negative: left blank'};
@@ -1984,6 +1987,13 @@ function readMoneyText(raw,F){
   return {v:p.v};
 }
 const mv=id=>readMoney(id).v;
+// parseRuleValue() for a dollar figure: a % sign is refused, and a Unicode minus or en dash ("−40,000", "–40,000",
+// as the app's own notes and many spreadsheets write it) counts as a minus sign. Used by readMoneyText() and the
+// comps table's readCompCell() (v8.12), so the money levers and the comps read the same text the same way.
+function parseMoneyValue(s){
+  s=String(s==null?'':s);
+  return s.includes('%')?{bad:true}:parseRuleValue(s.replace(/[\u2212\u2013]/g,'-'));
+}
 // [{id, msg}] for #lever-warn, in the shape renderInputWarnings() takes
 const moneyIssues=()=>Object.keys(MONEY_FIELDS).map(id=>({id,msg:readMoney(id).msg})).filter(i=>i.msg);
 // Readable plan name from a dropdown value (maps the custom-footprint sentinel).
@@ -4302,6 +4312,8 @@ function buildReportHTML(canvasDataUrl){
     +'<span>Confidential \u2014 internal use only &nbsp;\u00b7&nbsp; Sheet '+n+' of '+t+'</span></div>';
   const sheet=(label,inner,n,t)=>'<div class="sheet">'+head(label)+'<div class="body">'+inner+'</div>'+foot(n,t)+'</div>';
   const secHdr=(t,cls)=>'<div class="sec-hdr'+(cls?' '+cls:'')+'">'+t+'</div>';
+  // the amber "Check …" box for input notes (v8.8) and comps notes (v8.12); nothing when there's no note
+  const noteBox=(label,text)=>text?'<div class="avoid" style="border-left:3px solid #b26b00;background:#fdf3e1;color:#6b4000;padding:6px 10px;margin:6px 0 10px;font-size:10px;line-height:1.4"><b>'+label+':</b> '+esc(text)+'</div>':'';
 
   /* ── SHEET 1: COVER / DEAL SUMMARY + SITE DIAGRAM ── */
   const base=d.scenarios.find(s=>s.key==='b');
@@ -4313,7 +4325,7 @@ function buildReportHTML(canvasDataUrl){
   const inputNotes=moneyIssues().map(i=>i.msg).join(' ');
   const cover=
     '<div class="addr-bar"><div class="addr-text">'+esc(d.address)+'</div><div class="date-text">'+d.date+'</div></div>'
-    +(inputNotes?'<div class="avoid" style="border-left:3px solid #b26b00;background:#fdf3e1;color:#6b4000;padding:6px 10px;margin:6px 0 10px;font-size:10px;line-height:1.4"><b>Check inputs:</b> '+esc(inputNotes)+'</div>':'')
+    +noteBox('Check inputs',inputNotes)
     +'<div class="metric-row">'
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'%'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
@@ -4485,7 +4497,7 @@ function buildReportHTML(canvasDataUrl){
   // v8.12: the comps table's notes (cells that couldn't be read, likely typos), only when there are any
   const compNotes=compIssues().map(x=>x.msg).join(' ');
   const compsSheet=secHdr('COMPARABLE SALES')+compsTbl+compSummary
-    +(compNotes?'<div class="avoid" style="border-left:3px solid #b26b00;background:#fdf3e1;color:#6b4000;padding:6px 10px;margin:6px 0 10px;font-size:10px;line-height:1.4"><b>Check comps:</b> '+esc(compNotes)+'</div>':'')
+    +noteBox('Check comps',compNotes)
     +secHdr('UNDERWRITING NOTES')
     +'<div class="notes-box">'
       +'Figures generated by the TTV Site Analyzer and are estimates for internal screening only. '
@@ -4868,7 +4880,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
       const t='Check comps: '+compNotes.join(' '), nr=++rr; rr++;
       wco.mergeCells('A'+nr+':J'+nr); const nc=wco.getCell('A'+nr); nc.value=t;
       nc.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}}; nc.alignment={wrapText:true,vertical:'top'};
-      wco.getRow(nr).height=Math.min(409,13*Math.ceil(t.length/150)+4);
+      wco.getRow(nr).height=Math.min(409,13*Math.ceil(t.length/110)+4);   // generous: a clipped note is worse than a tall row
     }
     wco.pageSetup={printArea:'A1:J'+(rr-1),orientation:'landscape'};
   }
@@ -5435,7 +5447,7 @@ const APP_VERSION='8.12', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
  {v:'8.12',date:'Sep 2026',name:'Comps and plan comparison read what you type',items:[
    'Sales comps: Sq Ft, Sold $ and Adjustments now read “352.5k” as $352,500 and “1,850 sf” as 1,850 sf, and “(40,000)” still means −$40,000. Before, “352.5k” counted as a $352.50 sale and “352,5” as $3,525, and either one moved the median $/sf that Apply median writes into Base ARV.',
-   'A comp cell the table can’t read (a decimal comma like “352,5”, a word after the number) is outlined in red, the comp shows “left out” and isn’t counted in the median, average or range, and a note under the table names the cell. The PDF comps page and the Excel Comps sheet carry the same note, and the Excel sheet leaves that comp out too, so its median matches. A sale under $1,000, or an adjusted $/sf of $1,000 or more, still counts, with a “did you mean…?” note.',
+   'A comp cell the table can’t read (a decimal comma like “352,5”, a word after the number) is outlined in red, the comp shows “left out” and isn’t counted in the median, average or range, and a note under the table names the cell. The PDF comps page and the Excel Comps sheet carry the same note, and the Excel sheet leaves that comp out too, so its median matches. A sale under $1,000, or an adjusted $/sf of $1,000 or more, still counts, with a “did you mean…?” note. A row with an adjustment but no sale price no longer counts as a comp.',
    'Plan comparison: the per-plan ARV $/sf boxes take “$265” like the main ARV fields. Before, “$265” was dropped without a word and the deal’s ARV was used. A value the box can’t read still falls back to the deal’s ARV, but it’s outlined in red with a note under the table.']},
  {v:'8.9',date:'Sep 2026',name:'Reopened deals come back exactly as saved',items:[
    'Setbacks: a saved deal reopens with the setbacks it was saved with. Before, reopening put the zone’s table setbacks back, so a deal with an adjusted front setback (an established or contextual one, say) came back with a different buildable envelope and plan fit. Re-running the County GIS auto-fill on the same parcel keeps them too.',
