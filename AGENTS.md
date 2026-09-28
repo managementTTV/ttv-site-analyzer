@@ -51,6 +51,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Footprint convention:** Slate publishes footprints as **(D′ × W′)**; `PLANS` store
   them **corrected** to `w=W, d=D`. Flag any new/edited plan whose width/depth looks
   transposed — a swap silently breaks every fit-check and BUA calc.
+- **Exports take the plan from the `plan-sel` value, not the plan card (v8.11).** `getReportData()`
+  gets `plan` from `planNameFromVal()` and `footprint` from `planFootprintFromVal()` (custom =
+  `cust-w` × `cust-d`; an attached townhome is the per-unit W×D). The `#plan-info-*` text is written
+  only for a Slate plan, so on a custom or no-plan deal it still shows the last Slate plan, and
+  `collectModelInputs()` looks up the Slate base cost by that name. Flag a new read of `#plan-info-*`
+  text as data.
 - **Upgrades are NOT marked up.** The GC fee applies to the Slate base build only; upgrades are
   added at their flat menu price (Brian, 2026-09-22). Flag any path that applies the fee to upgrades.
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
