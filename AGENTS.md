@@ -97,13 +97,27 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `collectModelInputs()` and the plan-compare header take LTC, rate, points, fees, tax and sale cost
   straight from the fields, as `calcLoanBase()` / `holdingCost()` / `calcScenarios()` do. Flag a
   `pv(x)||default` fallback on a field where 0 is a real answer (0 points, 0% sale cost): it makes
-  the PDF and Excel Max Land disagree with the tile.
+  the PDF and Excel Max Land disagree with the tile. Where blank should mean a default, test for the blank
+  field instead, as `calcBUA()` does for `bua-hardscape` since v8.8 (blank = its HTML default, 500 sf; 0 = none).
 - **Loan terms go through `getTerms()` (v8.7)**, the one reader for `term-w` / `term-b` / `term-best`:
   the scenario cards, Max land, the hero (via `getReportData().terms`), the PDF, the Excel inputs and
   the plan comparison. A blank or unreadable term is the field's HTML default (10 / 8 / 6, also its
   placeholder), not 0 months; a term under 1 month is raised to 1; both show in `#term-warn`. Flag a
   direct `pv('term-…')` read. The sensitivity grids never show a row under 1 month (PDF
   `Math.max(1,…)`, Excel `MAX(1,…)`); keep the two in step.
+- **Money text fields are read with `mv()`, never `pv()` (v8.8).** Land cost, asking price and the three
+  ARV $/sf fields (`land-cost`, `asking-price`, `arv-w`, `arv-b`, `arv-best`) are `type="text"` so "$185,000"
+  can be typed or pasted. `pv()` drops every comma and runs `parseFloat`, which read "$185,000" as 0, "185k"
+  as 185 and "385,5" as 3,855 with no warning, and the PDF and Excel then ran on those numbers. `mv()` /
+  `readMoney()` parse them with `parseRuleValue()`'s rules (`$`, `k`, commas only as thousands groups; `%` is
+  refused). Blank, unreadable and negative all give 0, which every reader already treats as "not entered"
+  (no land, no asking line, no base ARV, auto ∓10% for Worst/Best), but unreadable and negative values also
+  show in `#lever-warn`, never silently. Readable but implausible values (land or asking under $1,000, an ARV
+  of $1,000/sf or more) apply and get a "did you mean…?" note. `renderInputWarnings()` draws `#lever-warn`
+  with the other warning lines, so a field's note waits until focus leaves it; keep the `onblur` on all five.
+  Flag a new reader of these five ids that uses `pv()` or `parseFloat`, or a new `type="text"` money field
+  read by `pv()`. `pv()` itself is unchanged and stays right for `type="number"` fields, whose `value` is
+  already a plain number or `''`.
 - **`restoreDeal()` starts from a fresh page (v8.2).** Step 0 resets every `.page` input/select to its
   HTML default before anything else, because the blanket restore only writes fields the saved file
   has. A field added in a later version therefore opens at its shipped default, not at the previous
