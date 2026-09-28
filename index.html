@@ -1998,6 +1998,14 @@ function parseMoneyValue(s){
 const moneyIssues=()=>Object.keys(MONEY_FIELDS).map(id=>({id,msg:readMoney(id).msg})).filter(i=>i.msg);
 // Readable plan name from a dropdown value (maps the custom-footprint sentinel).
 const planNameFromVal=v=>v==='__CUSTOM__'?'Custom footprint':((v||'').split('|')[0]||'');
+// v8.11: footprint text from a dropdown value (custom: cust-w × cust-d), for the plan card and the PDF. The
+// report used to read #plan-info-fp, which only a Slate plan writes, so custom and no-plan deals printed the
+// last Slate plan's footprint. An attached townhome gives the per-unit footprint; the Units row has the count.
+function planFootprintFromVal(v){
+  const custom=v==='__CUSTOM__',p=(v||'').split('|');
+  const w=custom?pv('cust-w'):(parseFloat(p[4])||0),d=custom?pv('cust-d'):(parseFloat(p[5])||0);
+  return w>0&&d>0?`${w}'W×${d}'D`:(v&&!custom?'N/A':'—');
+}
 
 // ═══════════════════ NAVIGATION ═══════════════════
 // v8: two screens replace the seven-step wizard. Screen 1 (Site Intelligence) holds sections
@@ -3738,7 +3746,7 @@ function onPlanChange(){
     du=parseInt(parts[3])||0;fpW=parseFloat(parts[4])||0;fpD=parseFloat(parts[5])||0;
     $('plan-info-name').textContent=name;$('plan-info-cost').textContent=fmt(currentPlanCost);
     $('plan-info-sf').textContent=sfPerUnit>0?sfPerUnit.toLocaleString()+' sf':'N/A';
-    $('plan-info-fp').textContent=fpW&&fpD?`${fpW}'W×${fpD}'D`:'N/A';
+    $('plan-info-fp').textContent=planFootprintFromVal(val);
     info.style.display='';
     {const pii=$('plan-info-img');if(pii)pii.innerHTML=planImg(name)?`<button class="plan-img-btn" onclick="openPlanImg('${name}')">${IMG_ICON} View plan drawing</button>`:'';}
     if(du>0){$('units').value=du;$('units').style.borderColor='var(--teal)';setTimeout(()=>$('units').style.borderColor='',1200);}
@@ -4277,10 +4285,12 @@ function getReportData(){
   });
 
   const planVal=($('plan-sel')||{}).value||'';
-  const planName=planNameFromVal(planVal)||($('plan-info-name')||{}).textContent||'—';
+  // v8.11: both from the dropdown value, not the plan card's text: with no plan selected that text still named
+  // the last Slate plan, which the PDF, the hero and the Excel model (its Slate base cost) then picked up
+  const planName=planNameFromVal(planVal)||'—';
 
   return {address,county,zone:zoneName||'—',units:u,plan:planName,sf:sfPerUnit||0,
-    footprint:($('plan-info-fp')||{}).textContent||'—',buildable_sf:buildableArea||0,
+    footprint:planFootprintFromVal(planVal),buildable_sf:buildableArea||0,
     lotMode,lotW:pv('lot-w'),lotD:pv('lot-d'),
     date:new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),
     fin,cost,scenarios,psf,terms,
@@ -5449,6 +5459,9 @@ const RELEASE_NOTES=[
    'Sales comps: Sq Ft, Sold $ and Adjustments now read “352.5k” as $352,500 and “1,850 sf” as 1,850 sf, and “(40,000)” still means −$40,000. Before, “352.5k” counted as a $352.50 sale and “352,5” as $3,525, and either one moved the median $/sf that Apply median writes into Base ARV.',
    'A comp cell the table can’t read (a decimal comma like “352,5”, a word after the number) is outlined in red, the comp shows “left out” and isn’t counted in the median, average or range, and a note under the table names the cell. The PDF comps page and the Excel Comps sheet carry the same note, and the Excel sheet leaves that comp out too, so its median matches. A sale under $1,000, or an adjusted $/sf of $1,000 or more, still counts, with a “did you mean…?” note. A row with an adjustment but no sale price no longer counts as a comp.',
    'Plan comparison: the per-plan ARV $/sf boxes take “$265” like the main ARV fields. Before, “$265” was dropped without a word and the deal’s ARV was used. A value the box can’t read still falls back to the deal’s ARV, but it’s outlined in red with a note under the table.']},
+ {v:'8.11',date:'Sep 2026',name:'PDF plan and footprint match the deal',items:[
+   'PDF memo: a custom-dimensions deal now prints its own footprint (the width \u00d7 depth you entered) in the Footprint row. It used to print the last Slate plan you\u2019d picked, or \u201c\u2014\u201d if there wasn\u2019t one.',
+   'With no plan selected, the PDF, The Underwrite\u2019s plan summary and the Excel model no longer name the last Slate plan you looked at. The Excel model also stopped pricing that plan\u2019s build cost into a deal the app had at $0 build.']},
  {v:'8.9',date:'Sep 2026',name:'Reopened deals come back exactly as saved',items:[
    'Setbacks: a saved deal reopens with the setbacks it was saved with. Before, reopening put the zone’s table setbacks back, so a deal with an adjusted front setback (an established or contextual one, say) came back with a different buildable envelope and plan fit. Re-running the County GIS auto-fill on the same parcel keeps them too.',
    'Plan: a deal underwritten on its 2nd- or 3rd-ranked plan, or on a plan you picked yourself, stays on it when you open The Underwrite after reopening it. Before, the app switched to the 1st-ranked plan and reset the units, so cost, profit and Max land no longer matched. A re-rank you hadn’t taken to The Underwrite yet still applies, custom-footprint deals reopen on their custom plan, and tap fees still due for a newly typed city still land.',
