@@ -431,6 +431,9 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .comps-table .ppsf{font-family:var(--f-num);font-size:12px;color:var(--teal-light);white-space:nowrap}
 .comps-table .comp-rm{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px 6px}
 .comps-table .comp-rm:hover{color:var(--red)}
+.comps-table input.comp-bad,.cmp-arv-input.comp-bad{border-color:var(--red);box-shadow:0 0 0 1px var(--red)}
+.comps-table input.comp-odd,.cmp-arv-input.comp-odd{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
+.comps-table .ppsf.comp-left{color:var(--red)}.comps-table .ppsf.comp-odd{color:var(--amber)}
 .comp-link{color:var(--teal-light);text-decoration:none}
 /* Inclusions (#9) */
 .incl-cat{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--amber);font-weight:600;margin:14px 0 3px}
@@ -722,7 +725,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.8 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.11 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1374,6 +1377,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <p class="note" style="margin-bottom:10px">Enter comparable sales to derive your ARV $/sf. <b>Adj $/SF</b> = (Sold + Adjustments) &divide; Sq Ft &mdash; use a negative adjustment (e.g. <code>-40,000</code>) to dock a superior comp. Suggested ARV multiplies the blended $/sf by the selected plan&rsquo;s Sq Ft. Apply median/avg to Base ARV below.</p>
     <div id="comps-summary" class="comps-summary"></div>
     <div style="overflow-x:auto"><table class="comps-table" id="comps-table"></table></div>
+    <div id="comps-warn" class="warn" style="display:none" role="status"></div>
     <div id="county-comps-msg" style="display:none;margin-top:10px;border:1px solid rgba(94,128,149,0.35);border-radius:8px;padding:10px 12px;background:rgba(94,128,149,0.08);font-size:12.5px"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn btn-ghost" id="county-comps-btn" onclick="pullCountyComps()" title="Recent new-construction sales from Mecklenburg County records">&#128225; Pull new-build comps (Meck)</button>
@@ -1690,9 +1694,56 @@ function renderShortlist(){
 function addComp(){COMPS.push({addr:'',sqft:'',sold:'',adj:'',date:'',dist:'',mom:'',notes:'',url:''});renderComps();renderShortlist();}
 function removeComp(i){COMPS.splice(i,1);renderComps();}
 function onComp(i,f,v){if(COMPS[i]){COMPS[i][f]=v;renderComps();}}
-function compNum(x){let s=String(x==null?'':x).trim();const neg=/^\(.*\)$/.test(s);s=s.replace(/[()$,\s]/g,'');const n=parseFloat(s);return isNaN(n)?0:(neg?-n:n);}
-function compAdjPrice(c){return compNum(c.sold)+compNum(c.adj);}
-function compPPSF(c){const sf=compNum(c.sqft),ap=compAdjPrice(c);return sf>0&&ap>0?ap/sf:0;}
+// v8.11 COMPS TABLE CELLS. Sq Ft, Sold $ and Adjustments are free text, so a pasted "$352,500" works. The old
+// compNum() stripped "$", commas and spaces and ran parseFloat, so "352.5k" was a $352.50 sale and "352,5" was
+// $3,525, and either one fed the median $/sf that "Apply median" writes into Base ARV, with no warning. The cells
+// are now read with parseRuleValue()'s rules ($, k, commas only as thousands groups; a % is refused), plus what
+// only comps need: "(40,000)" is a negative adjustment, a leading "+" is allowed, and Sq Ft may end in "sf" /
+// "sq ft". A cell that can't be read, or a negative Sq Ft or Sold $, leaves that comp out of the stats and out of
+// the Excel Comps sheet; the cell is marked and compIssues() says so under the table, on the PDF and in Excel.
+// Readable but implausible values still count, with a note, as the money levers do (v8.8): a sale under $1,000
+// ("did you mean $352,500?") or an adjusted $/sf of $1,000 or more (Sq Ft typed short, e.g. 185 for 1,850).
+const COMP_FIELDS={
+  sqft:{label:'Sq Ft',unit:/\s*(?:sq\.?\s*ft\.?|sqft|sf|ft²)$/i},
+  sold:{label:'Sold $',typoBelow:1000},
+  adj:{label:'Adjustments',signed:true}};
+const COMP_PPSF_TYPO_FROM=1000;
+// {v} for a readable or blank cell, {v:0, msg} for one that can't be used
+function readCompCell(c,f){
+  const F=COMP_FIELDS[f], t=String(c[f]==null?'':c[f]).trim();
+  if(t==='')return {v:0};
+  const m=t.match(/^\((.*)\)$/), neg=!!m;
+  let s=m?m[1]:t.replace(/^\+/,'');
+  if(F.unit)s=s.replace(F.unit,'');
+  const p=s.includes('%')?{bad:true}:parseRuleValue(s);
+  if(p.blank||p.bad||(neg&&p.v<0))return {v:0,msg:`couldn’t read ${F.label} “${t}”`};
+  const v=neg?-p.v:p.v;
+  if(v<0&&!F.signed)return {v:0,msg:`${F.label} can’t be negative`};
+  return {v};
+}
+// One comp as the stats see it: {sqft, sold, adj, ppsf, bad:{field:msg}, odd:{field:msg}, left, notes}. ppsf is 0
+// (not counted) when the row is incomplete, has a cell that can't be read, or its adjusted price is $0 or less.
+// left: the row is complete enough to count but is left out; notes: the sentences for compIssues().
+function readComp(c){
+  const r={bad:{},odd:{},notes:[]};
+  Object.keys(COMP_FIELDS).forEach(f=>{const x=readCompCell(c,f);r[f]=x.v;if(x.msg)r.bad[f]=x.msg;});
+  const bad=Object.values(r.bad), ap=r.sold+r.adj;
+  r.ppsf=!bad.length&&r.sqft>0&&ap>0?ap/r.sqft:0;
+  r.left=bad.length>0||(r.sqft>0&&r.sold>0&&ap<=0);
+  if(bad.length)r.notes.push(bad.join('; ')+', so it’s left out of the $/sf stats.');
+  else if(r.left)r.notes.push(`Sold $ + Adjustments is ${fmtRuleUSD(ap)}, so it’s left out of the $/sf stats.`);
+  if(r.sold>0&&r.sold<COMP_FIELDS.sold.typoBelow){
+    r.odd.sold=`Sold $ is ${fmtRuleUSD(r.sold)}. Did you mean ${fmtRuleUSD(r.sold*1000)}?`;r.notes.push(r.odd.sold);}
+  if(r.ppsf>=COMP_PPSF_TYPO_FROM){
+    r.odd.ppsf=`Adj $/SF is $${Math.round(r.ppsf).toLocaleString('en-US')}. Check Sq Ft and Sold $.`;r.notes.push(r.odd.ppsf);}
+  return r;
+}
+function compPPSF(c){return readComp(c).ppsf;}
+// [{i, msg}] for every comp with a note, in table order; the screen, the PDF and the Excel Comps sheet show these
+function compIssues(){
+  return COMPS.map((c,i)=>{const n=readComp(c).notes, a=String(c.addr||'').trim();
+    return n.length?{i,msg:`Comp ${i+1}${a?' ('+a+')':''}: ${n.join(' ')}`}:null;}).filter(Boolean);
+}
 function compStats(){
   const v=COMPS.map(compPPSF).filter(x=>x>0).sort((a,b)=>a-b);
   const avg=v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
@@ -1705,13 +1756,15 @@ function renderComps(){
   let h='<thead><tr><th>Address / Label</th><th>Sq Ft</th><th>Sold $</th><th>Adjustments</th><th>Adj $/SF</th><th>Sold Date</th><th>Distance</th><th>Mo. on Mkt</th><th>Other Notes</th><th>Zillow</th><th></th></tr></thead><tbody>';
   if(!COMPS.length){h+='<tr><td colspan="11" class="note" style="padding:10px">No comps yet \u2014 click \u201cAdd comp\u201d to start.</td></tr>';}
   COMPS.forEach((c,i)=>{
-    const ppsf=compPPSF(c);
+    const r=readComp(c), ppsf=r.ppsf;
+    // a cell that can't be used is marked red and one that looks like a typo amber; the title says why
+    const mark=(f,title)=>{const m=r.bad[f]||r.odd[f];return m?` class="${r.bad[f]?'comp-bad':'comp-odd'}"${r.bad[f]?' aria-invalid="true"':''} title="${escAttr(m)}"`:(title?` title="${title}"`:'');};
     h+='<tr>'
       +`<td><input type="text" value="${escAttr(c.addr)}" placeholder="123 Main St" onchange="onComp(${i},'addr',this.value)"></td>`
-      +`<td><input type="text" value="${escAttr(c.sqft)}" placeholder="1,800" onchange="onComp(${i},'sqft',this.value)" style="width:74px"></td>`
-      +`<td><input type="text" value="${escAttr(c.sold)}" placeholder="$352,500" onchange="onComp(${i},'sold',this.value)" style="width:98px"></td>`
-      +`<td><input type="text" value="${escAttr(c.adj)}" placeholder="-40,000" onchange="onComp(${i},'adj',this.value)" style="width:84px" title="Signed dollar adjustment added to Sold price (e.g. -40000)"></td>`
-      +`<td class="ppsf">${ppsf>0?'$'+ppsf.toFixed(0):'\u2014'}</td>`
+      +`<td><input type="text" value="${escAttr(c.sqft)}" placeholder="1,800" onchange="onComp(${i},'sqft',this.value)" style="width:74px"${mark('sqft')}></td>`
+      +`<td><input type="text" value="${escAttr(c.sold)}" placeholder="$352,500" onchange="onComp(${i},'sold',this.value)" style="width:98px"${mark('sold')}></td>`
+      +`<td><input type="text" value="${escAttr(c.adj)}" placeholder="-40,000" onchange="onComp(${i},'adj',this.value)" style="width:84px"${mark('adj','Signed dollar adjustment added to Sold price (e.g. -40,000 or (40,000))')}></td>`
+      +(r.left?'<td class="ppsf comp-left">left out</td>':`<td class="ppsf${r.odd.ppsf?' comp-odd':''}">${ppsf>0?'$'+ppsf.toFixed(0):'\u2014'}</td>`)
       +`<td><input type="date" value="${escAttr(c.date)}" onchange="onComp(${i},'date',this.value)" style="width:138px"></td>`
       +`<td><input type="text" value="${escAttr(c.dist)}" placeholder="0.4 mi" onchange="onComp(${i},'dist',this.value)" style="width:64px"></td>`
       +`<td><input type="text" value="${escAttr(c.mom)}" placeholder="3" onchange="onComp(${i},'mom',this.value)" style="width:56px"></td>`
@@ -1721,13 +1774,15 @@ function renderComps(){
       +'</tr>';
   });
   h+='</tbody>'; t.innerHTML=h;
-  const st=compStats(), sum=$('comps-summary');
+  const warn=$('comps-warn');
+  if(warn){const w=compIssues().map(x=>x.msg).join(' ');warn.textContent=w;warn.style.display=w?'':'none';}
+  const st=compStats(), sum=$('comps-summary'), left=COMPS.filter(c=>readComp(c).left).length;
   if(sum){
-    if(!st.n){sum.innerHTML='Add comps to see blended adjusted $/sf.';}
+    if(!st.n){sum.innerHTML=left?'No comp can be counted yet \u2014 see the note under the table.':'Add comps to see blended adjusted $/sf.';}
     else{
       const subjSf=(typeof sfPerUnit!=='undefined'?sfPerUnit:0)||0;
       const arv=subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf): <b>$${Math.round(st.median*subjSf).toLocaleString()}</b>`:'';
-      sum.innerHTML=`Comps: <b>${st.n}</b> &nbsp;\u00b7&nbsp; Median adj $/SF: <b>$${st.median.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Avg: <b>$${st.avg.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Range: <b>$${st.min.toFixed(0)}\u2013$${st.max.toFixed(0)}</b>${arv}`;
+      sum.innerHTML=`Comps: <b>${st.n}</b>${left?` (${left} left out)`:''} &nbsp;\u00b7&nbsp; Median adj $/SF: <b>$${st.median.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Avg: <b>$${st.avg.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Range: <b>$${st.min.toFixed(0)}\u2013$${st.max.toFixed(0)}</b>${arv}`;
     }
   }
 }
@@ -1806,7 +1861,7 @@ function applyCountyArv(psf){
 }
 function applyCompsArv(stat){
   const st=compStats(), v=stat==='median'?st.median:st.avg;
-  if(!(v>0)){alert('Add at least one comp with Sq Ft and Sold price first.');return;}
+  if(!(v>0)){alert(compIssues().length?'No comp can be counted yet: see the note under the comps table.':'Add at least one comp with Sq Ft and Sold price first.');return;}
   const f=$('arv-b'); if(f){f.value=Math.round(v); if(typeof calcScenarios==='function')calcScenarios();}
 }
 let buildableArea=0, allInExLand=0, sfPerUnit=0, units=1, currentPlanCost=0;
@@ -1908,7 +1963,13 @@ const MONEY_FIELDS={
 // {v, msg, note}: v is what the math uses; msg, when set, is the sentence for #lever-warn and the PDF, and note the
 // short form for the Excel cell beside the input. An id missing from MONEY_FIELDS still parses, but has no note.
 function readMoney(id){
-  const e=$(id), F=MONEY_FIELDS[id]||{label:id,blank:'so 0 is used'}, raw=e?String(e.value):'', t=raw.trim();
+  const e=$(id);
+  return readMoneyText(e?String(e.value):'',MONEY_FIELDS[id]||{label:id,blank:'so 0 is used'});
+}
+// The same reading for a value that isn't one of the five fields (v8.11: the plan comparison's ARV overrides).
+// F is shaped like a MONEY_FIELDS entry.
+function readMoneyText(raw,F){
+  const t=raw.trim();
   const p=raw.includes('%')?{bad:true}:parseRuleValue(raw);
   if(p.blank)return {v:0};
   if(p.bad)return {v:0,msg:`${F.label}: couldn’t read “${t}”, ${F.blank}.`,note:`App couldn’t read “${t}”`};
@@ -4407,7 +4468,10 @@ function buildReportHTML(canvasDataUrl){
       +' &nbsp;·&nbsp; Avg <b>$'+st.avg.toFixed(0)+'</b> &nbsp;·&nbsp; Range <b>$'+st.min.toFixed(0)+'–$'+st.max.toFixed(0)+'</b>'
       +(subjSf>0?(' &nbsp;·&nbsp; Suggested ARV (median × '+subjSf.toLocaleString()+' sf) <b>$'+Math.round(st.median*subjSf).toLocaleString()+'</b>'):'')+'</div>'
     : '<div class="comp-sum muted">Add comps with Sq Ft and Sold price to compute blended adjusted $/SF.</div>';
+  // v8.11: the comps table's notes (cells that couldn't be read, likely typos), only when there are any
+  const compNotes=compIssues().map(x=>x.msg).join(' ');
   const compsSheet=secHdr('COMPARABLE SALES')+compsTbl+compSummary
+    +(compNotes?'<div class="avoid" style="border-left:3px solid #b26b00;background:#fdf3e1;color:#6b4000;padding:6px 10px;margin:6px 0 10px;font-size:10px;line-height:1.4"><b>Check comps:</b> '+esc(compNotes)+'</div>':'')
     +secHdr('UNDERWRITING NOTES')
     +'<div class="notes-box">'
       +'Figures generated by the TTV Site Analyzer and are estimates for internal screening only. '
@@ -4539,8 +4603,11 @@ function collectModelInputs(d){
     termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     dateStr:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
-    comps:(typeof COMPS!=='undefined'?COMPS:[]).filter(c=>compNum(c.sqft)>0&&compNum(c.sold)>0)
-      .map(c=>({addr:c.addr||'',sqft:compNum(c.sqft),sold:compNum(c.sold),adj:compNum(c.adj),date:c.date||'',dist:c.dist||'',mom:c.mom||'',notes:c.notes||'',url:c.url||''}))
+    // v8.11: read like the screen (readComp); a comp the screen leaves out for an unreadable cell stays out of
+    // the workbook too, so its MEDIAN matches the app, and compNotes says which one and why
+    comps:(typeof COMPS!=='undefined'?COMPS:[]).map(c=>({c,r:readComp(c)})).filter(({r})=>!Object.keys(r.bad).length&&r.sqft>0&&r.sold>0)
+      .map(({c,r})=>({addr:c.addr||'',sqft:r.sqft,sold:r.sold,adj:r.adj,date:c.date||'',dist:c.dist||'',mom:c.mom||'',notes:c.notes||'',url:c.url||''})),
+    compNotes:typeof COMPS!=='undefined'?compIssues().map(x=>x.msg):[]
   };
 }
 async function buildAndDownloadXLSX(d, slug){
@@ -4756,13 +4823,16 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   wcb.pageSetup={printArea:'A1:B'+cr};
 
   // ---------- Comps ----------
-  if(M.comps && M.comps.length){
+  // v8.11: M.compNotes (a cell the app couldn't read, so that comp is left out here too; a likely typo) goes under
+  // the stats. Notes alone still make the sheet, so a table whose every comp was left out says why.
+  const compNotes=M.compNotes||[], compRows=M.comps||[];
+  if(compRows.length||compNotes.length){
     const wco=wb.addWorksheet('Comps'); wco.getColumn(1).width=24; wco.getColumn(2).width=8; wco.getColumn(3).width=12; wco.getColumn(4).width=13; wco.getColumn(5).width=11; wco.getColumn(6).width=12; wco.getColumn(7).width=10; wco.getColumn(8).width=11; wco.getColumn(9).width=18; wco.getColumn(10).width=14;
     titleBar(wco,1,'J','SALES COMPS — live formulas');
     ['Address','Sq Ft','Sold $','Adjustments','Adj $/SF','Sold Date','Distance','Mo. on Mkt','Other Notes','Sugg. ARV (PPSF)'].forEach((t,i)=>{const c=wco.getRow(3).getCell(1+i);c.value=t;c.font={bold:true,color:{argb:WHITE},name:'Arial'};c.fill=fill(STEEL);});
     for(let i=1;i<=10;i++){wco.getRow(3).getCell(i).border={bottom:{style:'thin',color:{argb:NAVY}}};wco.getRow(3).getCell(i).alignment={vertical:'middle'};}wco.getRow(3).height=16;
     const first=4; let rr=first;
-    M.comps.forEach(cp=>{const row=wco.getRow(rr);
+    compRows.forEach(cp=>{const row=wco.getRow(rr);
       const blue=cell=>{cell.font={color:{argb:BLUE},name:'Arial'};};
       if(cp.url){row.getCell(1).value={text:cp.addr||cp.url,hyperlink:cp.url};row.getCell(1).font={color:{argb:'FF1155CC'},underline:true,name:'Arial'};}
       else{row.getCell(1).value=cp.addr||''; blue(row.getCell(1));}
@@ -4774,10 +4844,18 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
       const c10=row.getCell(10);c10.value={formula:`IF(E${rr}<>"",E${rr}*${I('sf')},"")`};c10.numFmt=MONEY;
       if((rr-first)%2===1){for(let i=2;i<=10;i++){row.getCell(i).fill=fill('FFF7F5F0');}}
       rr++;});
+    if(compRows.length){
     const last=rr-1, rng=`E${first}:E${last}`;
     rr++; const stat=(lbl,formula,hi)=>{const r=rr++;wco.mergeCells('C'+r+':D'+r);const lc=wco.getCell('C'+r);lc.value=lbl;lc.font={bold:true,name:'Arial'};lc.alignment={horizontal:'right'};const c=wco.getCell('E'+r);c.value={formula};c.numFmt=MONEY2;if(hi)c.font={bold:true,color:{argb:GREEN},name:'Arial'};};
     stat('Median $/SF',`MEDIAN(${rng})`); stat('Average $/SF',`AVERAGE(${rng})`); stat('Min $/SF',`MIN(${rng})`); stat('Max $/SF',`MAX(${rng})`);
     const sr=rr++;wco.mergeCells('C'+sr+':D'+sr);const slc=wco.getCell('C'+sr);slc.value='Suggested ARV (median)';slc.font={bold:true,name:'Arial'};slc.alignment={horizontal:'right'};const c=wco.getCell('E'+sr);c.value={formula:`MEDIAN(${rng})*${I('sf')}`};c.numFmt=MONEY;c.font={bold:true,color:{argb:GREEN},name:'Arial'};
+    }
+    if(compNotes.length){
+      const t='Check comps: '+compNotes.join(' '), nr=++rr; rr++;
+      wco.mergeCells('A'+nr+':J'+nr); const nc=wco.getCell('A'+nr); nc.value=t;
+      nc.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}}; nc.alignment={wrapText:true,vertical:'top'};
+      wco.getRow(nr).height=Math.min(409,13*Math.ceil(t.length/150)+4);
+    }
     wco.pageSetup={printArea:'A1:J'+(rr-1),orientation:'landscape'};
   }
   const TABS={'Inputs':STEEL,'Scenarios':NAVY,'Sensitivity':'FFF0A93C','Cover':NAVY,'Cost Build-Up':GREEN,'Comps':'FF46C08A'};
@@ -4996,11 +5074,23 @@ function buildComparePickers(){
 }
 function setCmpPlan(i,name){CMP[i]=name||null;renderCompare();}
 function onCmpArv(i,k,v){CMP_ARV[i][k]=v;renderCompare();}
+// v8.11: the per-plan ARV overrides are text inputs read like the ARV levers (readMoneyText), so a pasted "$265"
+// works. They were type="number", which hands back '' for "$265" or "2,65", so the override was dropped without a
+// word and the deal's ARV used. Blank still means "use the deal's ARV"; so does a value that can't be read or is
+// negative, and that one gets a note under the table and a red cell. {use, v, msg}: use says the override applies.
+const CMP_CASE={w:'Worst',b:'Base',best:'Best'};
+function readCmpArv(i,k){
+  const raw=String(CMP_ARV[i][k]==null?'':CMP_ARV[i][k]);
+  if(raw.trim()==='')return {use:false,v:0};
+  const r=readMoneyText(raw,{label:`${CMP[i]||'Plan'} ${CMP_CASE[k]} $/sf`,blank:`so the deal’s ${CMP_CASE[k]} ARV is used`,typoFrom:MONEY_FIELDS['arv-b'].typoFrom});
+  return {use:!(r.msg&&r.v===0),v:r.v,msg:r.msg};
+}
 function resolveCmpArv(i){
   const gB=mv('arv-b'),gW=mv('arv-w'),gBest=mv('arv-best');
-  const b=CMP_ARV[i].b!==''?(parseFloat(CMP_ARV[i].b)||0):gB;
-  const w=CMP_ARV[i].w!==''?(parseFloat(CMP_ARV[i].w)||0):(gW||(b?b*0.9:0));
-  const best=CMP_ARV[i].best!==''?(parseFloat(CMP_ARV[i].best)||0):(gBest||(b?b*1.1:0));
+  const o=k=>{const r=readCmpArv(i,k);return r.use?r.v:null;}, ob=o('b'), ow=o('w'), obest=o('best');
+  const b=ob!==null?ob:gB;
+  const w=ow!==null?ow:(gW||(b?b*0.9:0));
+  const best=obest!==null?obest:(gBest||(b?b*1.1:0));
   return{w,b,best};
 }
 function renderCompare(){
@@ -5024,7 +5114,13 @@ function renderCompare(){
   const th=cols.map(c=>'<th'+wc(c.i)+'>'+c.plan.n+(c.i===winI?'<span class="cmp-winbadge">BEST BASE PROFIT</span>':'')+'</th>').join('');
   const row=(lbl,fn)=>'<tr><td>'+lbl+'</td>'+cols.map(c=>'<td'+wc(c.i)+'>'+fn(c)+'</td>').join('')+'</tr>';
   const sect=t=>'<tr class="cmp-sect"><td colspan="'+(cols.length+1)+'">'+t+'</td></tr>';
-  const arvInput=(c,k)=>'<input class="cmp-arv-input" type="number" value="'+(CMP_ARV[c.i][k]!==''?CMP_ARV[c.i][k]:'')+'" placeholder="'+(c.psf[k]?Math.round(c.psf[k]):'')+'" onchange="onCmpArv('+c.i+',\''+k+'\',this.value)">';
+  const arvNotes=[];
+  const arvInput=(c,k)=>{
+    const r=readCmpArv(c.i,k), bad=r.msg&&!r.use;
+    if(r.msg)arvNotes.push(r.msg);
+    return '<input class="cmp-arv-input'+(r.msg?(bad?' comp-bad':' comp-odd'):'')+'" type="text" inputmode="decimal" value="'+escAttr(CMP_ARV[c.i][k])+'" placeholder="'+(c.psf[k]?Math.round(c.psf[k]):'')+'"'
+      +(r.msg?' title="'+escAttr(r.msg)+'"'+(bad?' aria-invalid="true"':''):'')+' onchange="onCmpArv('+c.i+',\''+k+'\',this.value)">';
+  };
   let h='<table class="cmp-table"><thead><tr><th></th>'+th+'</tr></thead><tbody>';
   h+=sect('Plan');
   h+=row('Plan drawing',c=>planImg(c.name)?`<button class="plan-img-btn" style="margin:0;padding:3px 8px" onclick="openPlanImg('${c.name}')">View</button>`:'\u2014');
@@ -5049,6 +5145,7 @@ function renderCompare(){
     h+=row('Cash-on-Cash',c=>c.deal.scen[k].arv>0?c.deal.scen[k].coc.toFixed(1)+'%':'\u2014');
   });
   h+='</tbody></table>';
+  if(arvNotes.length)h+='<div class="warn" role="status">'+escAttr(arvNotes.join(' '))+'</div>';
   body.innerHTML=h;
 }
 /* ════════ V7.4 UX LAYER (additive — no math functions modified) ════════ */
@@ -5280,8 +5377,12 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.8', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.11', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.11',date:'Sep 2026',name:'Comps and plan comparison read what you type',items:[
+   'Sales comps: Sq Ft, Sold $ and Adjustments now read “352.5k” as $352,500 and “1,850 sf” as 1,850 sf, and “(40,000)” still means −$40,000. Before, “352.5k” counted as a $352.50 sale and “352,5” as $3,525, and either one moved the median $/sf that Apply median writes into Base ARV.',
+   'A comp cell the table can’t read (a decimal comma like “352,5”, a word after the number) is outlined in red, the comp shows “left out” and isn’t counted in the median, average or range, and a note under the table names the cell. The PDF comps page and the Excel Comps sheet carry the same note, and the Excel sheet leaves that comp out too, so its median matches. A sale under $1,000, or an adjusted $/sf of $1,000 or more, still counts, with a “did you mean…?” note.',
+   'Plan comparison: the per-plan ARV $/sf boxes take “$265” like the main ARV fields. Before, “$265” was dropped without a word and the deal’s ARV was used. A value the box can’t read still falls back to the deal’s ARV, but it’s outlined in red with a note under the table.']},
  {v:'8.8',date:'Sep 2026',name:'Land, asking and ARV read what you type',items:[
    'Land cost, asking price and the three ARV $/sf fields now read “$185,000”, “185,000” and “185k” as $185,000. Before, “$185,000” counted as $0 (so the whole underwrite, the PDF and the Excel model ran on free land), “185k” counted as $185 and an ARV of “385,5” as $3,855/sf.',
    'Anything those fields can’t read (a decimal comma like “385,5”, a stray letter) now shows a note under the ARV fields instead of silently counting as 0, and the same note appears on the PDF and beside the cell in the Excel model. The on-screen note waits until you leave the field. A land or asking price under $1,000 gets a “did you mean $185,000?” note, and an ARV of $1,000/sf or more a “looks like a sale price” note.',

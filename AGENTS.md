@@ -122,6 +122,22 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   Flag a new reader of these five ids that uses `pv()` or `parseFloat`, or a new `type="text"` money field
   read by `pv()`. `pv()` itself is unchanged and stays right for `type="number"` fields, whose `value` is
   already a plain number or `''`.
+- **Comps table cells go through `readComp()` (v8.11).** Sq Ft, Sold $ and Adjustments are free text, read by
+  `readCompCell()` with `parseRuleValue()`'s rules plus three comps-only allowances: "(40,000)" is −40,000, a
+  leading "+" is fine, and Sq Ft may end in "sf" / "sq ft". The old `compNum()` stripped every comma and ran
+  `parseFloat`, so "352.5k" was a $352.50 sale and "352,5" was $3,525, and they fed the median that Apply median
+  writes into `arv-b`. A cell that can't be read, or a negative Sq Ft / Sold $, leaves that comp out of
+  `compStats()` and out of the Excel Comps sheet, so the workbook's `MEDIAN` matches the screen. The cell is
+  marked, and `compIssues()` lists it in `#comps-warn` under the table, as a "Check comps" line on the PDF comps
+  page and under the Excel stats. Readable but implausible values (a sale under $1,000, an adjusted $/sf of
+  $1,000 or more) still count, with a note. Every comps number, whether the table, Apply median, `getReportData()`,
+  the PDF or `collectModelInputs().comps`, comes from `readComp()` via `compPPSF()` / `compStats()`. Flag a new
+  reader that parses a comp cell another way, or an export that drops `compIssues()`. The notes exist only when
+  there's a problem, so a clean comps table gives the same report data and files as before.
+- **Plan-comparison ARV overrides are text, read by `readMoneyText()` (v8.11),** the same reader behind `mv()`.
+  Blank, unreadable and negative all mean "use the deal's ARV" (`readCmpArv().use` is false), but unreadable and
+  negative also get a red cell and a note under the comparison table. They were `type="number"`, which hands back
+  `''` for "$265", so the override was dropped with no sign. Don't turn them back into number inputs.
 - **`restoreDeal()` starts from a fresh page (v8.2).** Step 0 resets every `.page` input/select to its
   HTML default before anything else, because the blanket restore only writes fields the saved file
   has. A field added in a later version therefore opens at its shipped default, not at the previous
