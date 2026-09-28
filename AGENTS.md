@@ -65,9 +65,33 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   because purchase closing (1% of the loan) is itself inside the loan base. Flag any
   naive `loan = LTC% × costBase` that drops the closed-form term.
 - **Max-supportable-land back-solve** targets the Deal Analyst **PROFIT RULE** (v7.12,
-  2026-09-22): base profit/unit must clear the **greater of $50,000 or 15% of all-in per unit**.
-  It solves both rules and takes the lower land ceiling. Don't change either constant silently;
-  if they change, it's a deliberate, called-out change.
+  2026-09-22): base profit/unit must clear the **greater of a flat floor or a % of all-in per
+  unit**. It solves both rules and takes the lower land ceiling.
+- **The profit rule is an input since v8.2** (Financing › Profit Rule: `profit-floor`, `profit-pct`).
+  The shipped default is the SOP, **$50,000 and 15%**, and it lives **only in the two inputs' `value`
+  attributes** (`getProfitRule()` falls back to `defaultValue` for a blank field, so blank means the
+  default, not zero). Don't change the default silently; if it changes, it's a deliberate, called-out
+  change (the Sept 2026 offers backtest found the team really offers at about $70k / 23%, so expect
+  this to be debated). Every reader goes through `getProfitRule()` and `profitRuleLabels()`: the Max
+  land card, `getReportData().fin.profitRule`, the PDF label, the Financing summary and the Excel
+  model, whose two thresholds are Inputs cells referenced by the Scenarios max-land formula. Flag a
+  path that re-hardcodes 50000 or 1.15 / 0.15, or computes or words the rule a second way.
+  `PRE_V82_PROFIT_RULE` is not a default: it's the rule every pre-v8.2 deal was underwritten on, which
+  `restoreDeal()` pins for saves without the fields. Never change it.
+  The two fields are `type="text"` on purpose, read by `parseRuleValue()` (accepts `$`, commas, `k`,
+  `%`): a number input returns `''` for text the browser can't parse, which silently became the
+  default. A value that can't be read, or has to be limited (floor ≥ 0, % within 0–99), must show
+  in `#profit-rule-warn`, never be applied quietly. The Excel formula mirrors the same semantics
+  (blank cell = the default, same limits); flag a change to one side that isn't made on the other.
+- **Exports read the same raw values the screen uses.** `getReportData().fin` and
+  `collectModelInputs()` take LTC, rate, points, fees, tax and sale cost straight from the fields,
+  as `calcLoanBase()` / `holdingCost()` do. Flag a `pv(x)||default` fallback on a field where 0 is a
+  real answer (0 points, 0% sale cost): it makes the PDF and Excel Max Land disagree with the tile.
+- **`restoreDeal()` starts from a fresh page (v8.2).** Step 0 resets every `.page` input/select to its
+  HTML default before anything else, because the blanket restore only writes fields the saved file
+  has. A field added in a later version therefore opens at its shipped default, not at the previous
+  deal's value. Consequence: a `.page` field's shipped default must be in its HTML (`value`,
+  `checked`, `selected`), not set by JS at startup, or a restore will blank it.
 
 ### Architecture & footguns
 - **Stay single-file & buildless.** Flag any added framework, bundler, npm build step, or
