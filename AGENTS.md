@@ -65,9 +65,17 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   because purchase closing (1% of the loan) is itself inside the loan base. Flag any
   naive `loan = LTC% × costBase` that drops the closed-form term.
 - **Max-supportable-land back-solve** targets the Deal Analyst **PROFIT RULE** (v7.12,
-  2026-09-22): base profit/unit must clear the **greater of $50,000 or 15% of all-in per unit**.
-  It solves both rules and takes the lower land ceiling. Don't change either constant silently;
-  if they change, it's a deliberate, called-out change.
+  2026-09-22): base profit/unit must clear the **greater of a flat floor or a % of all-in per
+  unit**. It solves both rules and takes the lower land ceiling.
+- **The profit rule is an input since v8.2** (Financing › Profit Rule: `profit-floor`, `profit-pct`).
+  The shipped defaults are the SOP, **$50,000 and 15%** (`PROFIT_RULE_DEFAULT`; the two inputs'
+  `value` attributes must match it). Don't change the
+  defaults silently; if they change, it's a deliberate, called-out change (the Sept 2026 offers
+  backtest found the team really offers at about $70k / 23%, so expect this to be debated).
+  Every reader goes through `getProfitRule()`: the Max land card, `getReportData().fin`, the PDF label
+  and the Excel model, whose two thresholds are Inputs cells referenced by the Scenarios max-land
+  formula. Flag a path that re-hardcodes 50000 or 1.15 / 0.15, or computes the rule a second way.
+  A blank field means the SOP default, not zero, and a deal saved before v8.2 restores to the SOP.
 
 ### Architecture & footguns
 - **Stay single-file & buildless.** Flag any added framework, bundler, npm build step, or
