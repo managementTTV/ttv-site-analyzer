@@ -722,7 +722,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.4 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.6 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -3829,10 +3829,13 @@ function calcFinancing(){
 // The fields are text, not type=number: a number input hands back '' for text the browser can't parse
 // (Safari/Firefox "70,000"), which would silently become the default, and Chrome turns "70k" into 70.
 // "$70,000", "70000", "70k" -> 70000; "23", "23%" -> 23. Blank -> {blank}; anything else -> {bad}.
+// v8.5: a comma only counts as a thousands separator in groups of three ("70,000"). A decimal comma
+// ("7,5", "70,00") is reported as unreadable instead of silently becoming 75 or 7,000.
 function parseRuleValue(s){
-  const t=String(s==null?'':s).replace(/[$,%\s]/g,'');
+  const t=String(s==null?'':s).replace(/[$%\s]/g,'');
   if(t==='')return {blank:true};
-  const m=t.match(/^(-?(?:\d+\.?\d*|\.\d+))(k)?$/i);
+  if(t.includes(',')&&!/^-?\d{1,3}(,\d{3})+(\.\d+)?k?$/i.test(t))return {bad:true};
+  const m=t.replace(/,/g,'').match(/^(-?(?:\d+\.?\d*|\.\d+))(k)?$/i);
   return m?{v:parseFloat(m[1])*(m[2]?1000:1)}:{bad:true};
 }
 const fmtRulePct=v=>(+v.toFixed(2))+'%';
@@ -3841,17 +3844,21 @@ function profitRuleDefaults(){
   return {floor:d('floor'),pct:d('pct')};
 }
 // {floor, pct, issues}: issues say, in words, when a value couldn't be read or had to be limited, so the
-// screen never quietly uses a rule other than the one typed.
+// screen never quietly uses a rule other than the one typed. v8.5 also flags values that are readable but
+// implausible (a floor under $1,000, a % under 1%): they still apply, but the card asks "did you mean…?",
+// which catches "70.000" typed as seventy thousand and "0.23" typed for 23%.
 function getProfitRule(){
   const issues=[], dflt=profitRuleDefaults();
-  const read=(k,label,max,show)=>{
+  const read=(k,label,max,show,typo)=>{
     const e=$('profit-'+k), p=parseRuleValue(e&&e.value);
     if(p.bad)issues.push(`${label}: couldn’t read “${String(e.value).trim()}”, so the default ${show(dflt[k])} applies.`);
     const v=p.blank||p.bad?dflt[k]:p.v, c=Math.min(max,Math.max(0,v));
     if(c!==v)issues.push(`${label} ${c<v?'is capped at':'can’t be below'} ${show(c)}.`);
+    else if(!p.blank&&!p.bad&&typo(c))issues.push(typo(c));
     return c;
   };
-  return {floor:read('floor','Minimum profit',Infinity,fmt),pct:read('pct','% of all-in',99,fmtRulePct),issues};
+  return {floor:read('floor','Minimum profit',Infinity,fmt,v=>v>0&&v<1000?`Minimum profit is ${fmt(v)} per unit. Did you mean ${fmt(v*1000)}?`:''),
+          pct:read('pct','% of all-in',99,fmtRulePct,v=>v>0&&v<1?`% of all-in is ${fmtRulePct(v)}. Did you mean ${fmtRulePct(v*100)}?`:''),issues};
 }
 // Labels that always match the number the math uses: "$50k" / "$72.5k" for round hundreds from $1,000 up,
 // full dollars otherwise; "15%" / "22.45%"; and the one sentence every surface shows.
@@ -4060,7 +4067,8 @@ function getReportData(){
   // ARV $/sf with auto ±10% fallback off base
   const basePSF=pv('arv-b')||0;
   const psf={w:pv('arv-w')||(basePSF?basePSF*0.90:0),b:basePSF,best:pv('arv-best')||(basePSF?basePSF*1.10:0)};
-  const terms={w:pv('term-w')||12,b:pv('term-b')||9,best:pv('term-best')||6};
+  // v8.5: raw, like calcScenarios(); `||12/||9/||6` made a blank term 9 months in the report but 0 on screen
+  const terms={w:pv('term-w'),b:pv('term-b'),best:pv('term-best')};
 
   // Financing
   const lb=calcLoanBase(landCost);
@@ -4449,7 +4457,7 @@ function collectModelInputs(d){
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
     arvBase:pv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
-    termW:pv('term-w')||12,termB:pv('term-b')||9,termBest:pv('term-best')||6,
+    termW:pv('term-w'),termB:pv('term-b'),termBest:pv('term-best'),
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     dateStr:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
     comps:(typeof COMPS!=='undefined'?COMPS:[]).filter(c=>compNum(c.sqft)>0&&compNum(c.sold)>0)
@@ -4512,6 +4520,12 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo)',M.termW); inp('termB','Term Base (mo)',M.termB); inp('termBest','Term Best (mo)',M.termBest);
   // v8.2: appended last so every existing Inputs cell keeps its address
   sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT);
+  // v8.5: the workbook can't show the app's warning line, so each rule cell gets a note beside it when its
+  // value won't be used as typed (not a number, out of range) or looks like a typo (same thresholds as the app)
+  {const note=(key,formula)=>{const c=wsI.getCell(IN[key].replace('B','C'));c.value={formula};c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};};
+   const f=IN['pfloor'], p=IN['ppct'];
+   note('pfloor',`IF(ISBLANK(${f}),"",IF(NOT(ISNUMBER(${f})),"Not a number: using the default",IF(${f}<0,"Below $0: using $0",IF(${f}<1000,IF(${f}>0,"Under $1,000: typo?",""),""))))`);
+   note('ppct',`IF(ISBLANK(${p}),"",IF(NOT(ISNUMBER(${p})),"Not a number: using the default",IF(${p}>0.99,"Over 99%: using 99%",IF(${p}<0,"Below 0%: using 0%",IF(${p}<0.01,IF(${p}>0,"Under 1%: typo?",""),"")))))`);}
   const I=k=>'Inputs!'+IN[k];
   wsI.pageSetup={printArea:'A1:C'+ir};
 
@@ -4569,10 +4583,12 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   ws.getCell('A30').value='Max Land Cost (profit rule)';
   {
     const U=I('units'), S=I('sale'), DEN=`(1/${U}+B26*B27/${U})`;
-    // same semantics as getProfitRule(): a blank cell means the app's default, the floor can't go below 0,
-    // and the % stays within 0–99%
-    const FL=`MAX(0,IF(${I('pfloor')}="",${M.profitFloorDefault},${I('pfloor')}))`;
-    const PC=`MIN(0.99,MAX(0,IF(${I('ppct')}="",${M.profitPctDefault},${I('ppct')})))`;
+    // same semantics as getProfitRule(): a blank or non-numeric cell means the app's default, the floor
+    // can't go below 0, and the % stays within 0–99%
+    // v8.5: ISNUMBER, not ="": text typed into the cell (e.g. "$70k") also means the default, where MAX/MIN
+    // would otherwise skip the text and silently use 0
+    const FL=`MAX(0,IF(ISNUMBER(${I('pfloor')}),${I('pfloor')},${M.profitFloorDefault}))`;
+    const PC=`MIN(0.99,MAX(0,IF(ISNUMBER(${I('ppct')}),${I('ppct')},${M.profitPctDefault})))`;
     const ruleA=`(B29*(1-${S})-${FL}-B4/${U}-B28-B26*B4*B27/${U})/${DEN}`;   // >= floor/unit
     const ruleB=`(B29/(1+${PC})-B4/${U}-B28-B29*${S}-B26*B4*B27/${U})/${DEN}`;  // >= % of all-in
     F('B30',`MIN(${ruleA},${ruleB})`,MONEY,true);
@@ -4902,7 +4918,7 @@ function renderCompare(){
   const cc=$('cmp-constants');
   if(cc){
     const upgPerUnit=Array.from(selectedUpgrades).reduce((acc,id)=>{const u=UPGRADES.find(x=>x.id===id);return acc+(u?u.cost:0);},0);
-    cc.innerHTML='Held constant — Land '+fmt(pv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+(pv('ltc-pct')||93)+'% \u00b7 Rate '+(pv('fin-rate')||10)+'% \u00b7 Term '+pv('term-w')+'/'+pv('term-b')+'/'+pv('term-best')+'. Loan size & ARV $/sf vary by plan.';
+    cc.innerHTML='Held constant — Land '+fmt(pv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+pv('ltc-pct')+'% \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+pv('term-w')+'/'+pv('term-b')+'/'+pv('term-best')+'. Loan size & ARV $/sf vary by plan.';
   }
   const cols=[0,1,2].filter(i=>CMP[i]).map(i=>{
     const plan=PLANS.find(p=>p.n===CMP[i]);if(!plan)return null;
@@ -5192,15 +5208,19 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.4', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.6', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
- {v:'8.4',date:'Sep 2026',name:'Reopened deals keep their setbacks and their plan',items:[
+ {v:'8.6',date:'Sep 2026',name:'Reopened deals keep their setbacks and their plan',items:[
    'A saved deal now reopens with the setbacks it was saved with. Before, reopening put the zone’s table setbacks back, so a deal with an adjusted front setback (an established or contextual one, say) came back with a different buildable envelope and plan fit.',
    'A deal underwritten on its 2nd- or 3rd-ranked plan now stays on that plan when you open The Underwrite after resuming it. Before, the app switched to the 1st-ranked plan and reset the units, so cost, profit and Max land no longer matched the saved deal.',
    'The offer letter’s amount and date no longer carry over from the deal you had open before, so a new deal’s letter can’t go out at the last deal’s price.',
    'Opening a file that isn’t a saved deal no longer clears the page, and if a saved deal fails to open part-way, the deal you had open comes back.',
    'Nothing changes while you build a deal: picking a zone still fills in its setbacks, and re-ranking plans still moves The Underwrite to your new 1st choice.',
    'A deal that was reopened and saved again before this version may already hold the zone’s setbacks or the 1st-ranked plan, because that is what it was saved with. Check the setbacks and plan on those.']},
+ {v:'8.5',date:'Sep 2026',name:'Profit rule and exports: fewer silent surprises',items:[
+   'The profit rule fields catch likely typos instead of quietly using them. A comma used as a decimal point (“7,5”) is reported as unreadable, and a minimum profit under $1,000 or a % under 1% gets a “did you mean…?” note, so “70.000” can’t slip through as $70.',
+   'Excel model: typing text such as “$70k” into a Profit Rule cell now falls back to the default instead of counting as $0, and a note beside each cell says when its value isn’t a number, is out of range, or looks like a typo.',
+   'The PDF, the Excel model and the plan comparison now use the loan term, LTC and rate exactly as entered. A blank loan term used to count as 12, 9 or 6 months in the exports while the screen used 0.']},
  {v:'8.3',date:'Sep 2026',name:'Irregular lots: buildable area now respects setbacks',items:[
    'Fixed: on irregular (polygon) lots, including every lot filled by the County GIS auto-fill, the Buildable Envelope card reported the whole lot area as buildable. The dashed setback outline on the diagram was right; the number was not.',
    'The buildable figure now equals the area inside that dashed outline, on the Buildable Envelope card, the summary bar and the PDF report\u2019s Buildable Area line. Example: 2723 Dellinger Dr went from 7,170 sf (the whole lot) to 3,327 sf.',
