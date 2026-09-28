@@ -51,6 +51,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Footprint convention:** Slate publishes footprints as **(D′ × W′)**; `PLANS` store
   them **corrected** to `w=W, d=D`. Flag any new/edited plan whose width/depth looks
   transposed — a swap silently breaks every fit-check and BUA calc.
+- **Exports take the plan from the `plan-sel` value, not the plan card (v8.11).** `getReportData()`
+  gets `plan` from `planNameFromVal()` and `footprint` from `planFootprintFromVal()` (custom =
+  `cust-w` × `cust-d`; an attached townhome is the per-unit W×D). `onPlanChange()` writes the
+  `#plan-info-*` text only for a Slate plan, so on a custom or no-plan deal it still shows the last
+  Slate plan, and every reader of `getReportData().plan` / `.footprint` (the PDF, the hero, the Excel
+  model) would print that plan. Flag a new read of `#plan-info-*` text as data.
 - **Upgrades are NOT marked up.** The GC fee applies to the Slate base build only; upgrades are
   added at their flat menu price (Brian, 2026-09-22). Flag any path that applies the fee to upgrades.
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
@@ -106,7 +112,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   the plan comparison. A blank term is the field's HTML default (10 / 8 / 6, also its placeholder), not
   0 months, and is silent, as with the profit rule. An unreadable term also gets the default, a term under
   1 month is raised to 1, and one over the field's max (36) applies as typed; each of those shows a note in
-  `#term-warn`. Flag a direct `pv('term-…')` read. The Excel model mirrors this once (v8.10): Scenarios row
+  `#term-warn`. Flag a direct `pv('term-…')` read. The Excel model mirrors this once (v8.12): Scenarios row
   16 holds the terms as used (`MAX(1, IF(ISNUMBER(x), x, default))`), and every term formula (holding,
   Max Land's B27/B28, all five Sensitivity rows) reads that row, never the Inputs term cells; a note in
   column C beside each Inputs term cell says when it isn't used as typed or is over the max. The
