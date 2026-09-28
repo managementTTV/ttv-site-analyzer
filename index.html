@@ -922,7 +922,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="bua-block">
             <div class="bua-title">Mecklenburg BUA / Watershed Check</div>
             <div class="fr2">
-              <div class="field"><label>Estimated Hardscape (sf)</label><input type="number" id="bua-hardscape" value="500" oninput="calcBUA()"><p class="note">Driveway + walks. Default 500 sf.</p></div>
+              <div class="field"><label>Estimated Hardscape (sf)</label><input type="number" id="bua-hardscape" value="500" placeholder="500" oninput="calcBUA()"><p class="note">Driveway + walks. Default 500 sf; blank uses the default, 0 means none.</p></div>
               <div style="padding-top:20px" id="bua-result"></div>
             </div>
             <div class="bua-meter"><div class="bua-fill" id="bua-fill"></div></div>
@@ -1034,10 +1034,10 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="card-title"><span class="dot"></span>Live levers</div>
     <div class="lever-grid">
       <div class="field lever-land"><label for="land-cost">Land cost</label>
-        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="calcAll();calcScenarios()"></div>
+        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="calcAll();calcScenarios()" onblur="setTimeout(()=>renderInputWarnings())"></div>
       </div>
       <div class="field"><label for="asking-price">Asking price</label>
-        <div class="input-wrap"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" oninput="calcScenarios()"></div>
+        <div class="input-wrap"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" oninput="calcScenarios()" onblur="setTimeout(()=>renderInputWarnings())"></div>
         <div class="ask-gap" id="ask-gap"></div>
       </div>
       <div class="lever-stats">
@@ -1049,11 +1049,12 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="lever-arv">
       <div class="lever-arv-head">ARV &mdash; sale price per sq ft <span>Base is required. Worst fills at &minus;10% and Best at +10% if left blank. Pull comps in <a href="#" onclick="goTo(8);return false">Sales comps</a>.</span></div>
       <div class="fr3">
-        <div class="field"><label for="arv-w">Worst ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-w" placeholder="auto −10%" oninput="calcScenarios()"></div></div>
-        <div class="field"><label for="arv-b">Base ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-b" placeholder="your comp $/sf" oninput="calcScenarios()"></div></div>
-        <div class="field"><label for="arv-best">Best ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()"></div></div>
+        <div class="field"><label for="arv-w">Worst ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-w" placeholder="auto −10%" oninput="calcScenarios()" onblur="setTimeout(()=>renderInputWarnings())"></div></div>
+        <div class="field"><label for="arv-b">Base ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-b" placeholder="your comp $/sf" oninput="calcScenarios()" onblur="setTimeout(()=>renderInputWarnings())"></div></div>
+        <div class="field"><label for="arv-best">Best ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()" onblur="setTimeout(()=>renderInputWarnings())"></div></div>
       </div>
     </div>
+    <div id="lever-warn" class="warn" style="display:none" role="status"></div>
   </div>
 
   <div class="board-head">Worst &middot; Base &middot; Best <span>Scenarios differ by loan term and ARV $/sf. Terms are set under Financing.</span></div>
@@ -1891,6 +1892,39 @@ const $=id=>document.getElementById(id);
 const fmt=n=>(!n&&n!==0)||isNaN(n)?'—':'$'+Math.round(n).toLocaleString();
 const fmtN=n=>isNaN(n)?'—':Math.round(n).toLocaleString();
 const pv=id=>{const e=$(id);if(!e)return 0;const v=parseFloat((e.value||'').replace(/,/g,''));return isNaN(v)?0:v;};
+// v8.8 MONEY TEXT FIELDS. Land cost, asking price and the three ARV $/sf fields are type="text", so "$185,000"
+// can be typed or pasted. pv() can't read that: it drops every comma and runs parseFloat, so "$185,000" was 0,
+// "185k" was 185 and "385,5" was 3,855, with no warning. mv() reads these five with parseRuleValue()'s rules
+// ($, k, commas only as thousands groups; a % sign is refused). pv() stays as it is for the number fields.
+// Blank or unreadable is 0, which each reader already treats as "not entered": no land, no asking-price line,
+// no base ARV, and Worst/Best at the auto ∓10%. An unreadable or negative value also shows in #lever-warn, and
+// a readable but implausible one (land or asking under $1,000; an ARV of $1,000/sf or more) applies with a note.
+// The notes go through renderInputWarnings(), so, like the profit rule's, a field's note waits until you leave it.
+// The PDF memo and the Excel Inputs sheet carry the same notes, so an export can't quietly run on a misread value.
+// typoBelow: a dollar figure this low was probably typed in thousands; typoFrom: a $/sf this high is a sale price.
+const MONEY_FIELDS={
+  'land-cost':{label:'Land cost',blank:'so the deal is running on $0 land',typoBelow:1000},
+  'asking-price':{label:'Asking price',blank:'so there’s no asking-price comparison',typoBelow:1000},
+  'arv-w':{label:'Worst ARV',blank:'so Worst uses the auto −10%',typoFrom:1000},
+  'arv-b':{label:'Base ARV',blank:'so there’s no base ARV',typoFrom:1000},
+  'arv-best':{label:'Best ARV',blank:'so Best uses the auto +10%',typoFrom:1000}};
+// {v, msg, note}: v is what the math uses; msg, when set, is the sentence for #lever-warn and the PDF, and note the
+// short form for the Excel cell beside the input. An id missing from MONEY_FIELDS still parses, but has no note.
+function readMoney(id){
+  const e=$(id), F=MONEY_FIELDS[id]||{label:id,blank:'so 0 is used'}, raw=e?String(e.value):'', t=raw.trim();
+  const p=raw.includes('%')?{bad:true}:parseRuleValue(raw);
+  if(p.blank)return {v:0};
+  if(p.bad)return {v:0,msg:`${F.label}: couldn’t read “${t}”, ${F.blank}.`,note:`App couldn’t read “${t}”`};
+  if(p.v<0)return {v:0,msg:`${F.label} can’t be negative, ${F.blank}.`,note:'Negative: left blank'};
+  if(F.typoBelow&&p.v>0&&p.v<F.typoBelow)
+    return {v:p.v,msg:`${F.label} is ${fmtRuleUSD(p.v)}. Did you mean ${fmtRuleUSD(p.v*1000)}?`,note:`Under ${fmtRuleUSD(F.typoBelow)}: typo?`};
+  if(F.typoFrom&&p.v>=F.typoFrom)
+    return {v:p.v,msg:`${F.label} is ${fmtRuleUSD(p.v)}/sf. That looks like a sale price, not $/sf.`,note:`${fmtRuleUSD(F.typoFrom)}/sf or more: typo?`};
+  return {v:p.v};
+}
+const mv=id=>readMoney(id).v;
+// [{id, msg}] for #lever-warn, in the shape renderInputWarnings() takes
+const moneyIssues=()=>Object.keys(MONEY_FIELDS).map(id=>({id,msg:readMoney(id).msg})).filter(i=>i.msg);
 // Readable plan name from a dropdown value (maps the custom-footprint sentinel).
 const planNameFromVal=v=>v==='__CUSTOM__'?'Custom footprint':((v||'').split('|')[0]||'');
 
@@ -2945,7 +2979,8 @@ function calcBUA(){
   if(val==='__CUSTOM__'){fpW=pv('cust-w');fpD=pv('cust-d');}
   else{const parts=val.split('|');fpW=parseFloat(parts[4])||0;fpD=parseFloat(parts[5])||0;}
   const footprint=fpW&&fpD?fpW*fpD:0;
-  const hardscape=pv('bua-hardscape')||500;
+  // v8.8: blank means the field's default (500 sf); a deliberate 0 (no driveway or walks) stays 0, where `||500` made it 500
+  const hsEl=$('bua-hardscape'), hardscape=hsEl&&hsEl.value.trim()!==''?pv('bua-hardscape'):(parseFloat(hsEl&&hsEl.defaultValue)||500);
   const estBUA=footprint+hardscape;
   const pct=buaLimit>0?Math.min(estBUA/buaLimit,1):0;
   const fill=$('bua-fill');if(fill){fill.style.width=(pct*100)+'%';fill.style.background=pct>1?'var(--red)':pct>0.9?'var(--amber)':'var(--green)';}
@@ -3805,7 +3840,7 @@ function holdingCost(loan,term){
 }
 
 function calcFinancing(){
-  const landCost=pv('land-cost');
+  const landCost=mv('land-cost');
   const {loan,costBase,purchaseClosing,cash}=calcLoanBase(landCost);
 
   // Update loan summary sidebar
@@ -3917,11 +3952,11 @@ function getTerms(){
   });
   return {w:t.w,b:t.b,best:t.best,issues};
 }
-// The profit-rule and loan-term warning lines. A field's own note waits until you leave the field, so typing
-// "70,000" or "75000" doesn't flash notes about the half-typed "70," or "75"; the math still updates as you
-// type. Each field's onblur re-renders on a timeout, once focus has actually moved on.
+// The profit-rule, loan-term and (v8.8) land/asking/ARV warning lines. A field's own note waits until you leave
+// the field, so typing "70,000" or "75000" doesn't flash notes about the half-typed "70," or "75"; the math
+// still updates as you type. Each field's onblur re-renders on a timeout, once focus has actually moved on.
 function renderInputWarnings(rule,terms){
-  [['profit-rule-warn',(rule||getProfitRule()).issues],['term-warn',(terms||getTerms()).issues]].forEach(([wid,issues])=>{
+  [['profit-rule-warn',(rule||getProfitRule()).issues],['term-warn',(terms||getTerms()).issues],['lever-warn',moneyIssues()]].forEach(([wid,issues])=>{
     const w=$(wid);if(!w)return;
     const t=issues.filter(i=>$(i.id)!==document.activeElement).map(i=>i.msg).join(' ');
     w.textContent=t;w.style.display=t?'':'none';
@@ -3930,8 +3965,8 @@ function renderInputWarnings(rule,terms){
 
 // ═══════════════════ SCENARIOS (Page 7) ═══════════════════
 function calcScenarios(){
-  const landCost=pv('land-cost');
-  const basePSF=pv('arv-b');
+  const landCost=mv('land-cost');
+  const basePSF=mv('arv-b');
   const {loan,purchaseClosing}=calcLoanBase(landCost);
   const loanPerUnit=loan/units;
   const salePct=pv('sale-cost-pct')/100;
@@ -3940,7 +3975,7 @@ function calcScenarios(){
 
   ['w','b','best'].forEach(k=>{
     const arvId=k==='w'?'arv-w':k==='b'?'arv-b':'arv-best';
-    let arvPSF=pv(arvId);
+    let arvPSF=mv(arvId);
     if(!arvPSF&&basePSF){if(k==='w')arvPSF=basePSF*0.90;if(k==='best')arvPSF=basePSF*1.10;}
     const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit:0;
     const term=T[k];
@@ -3976,7 +4011,7 @@ function calcScenarios(){
   // v7.12: asking-price anchor (SOP addendum 2026-09-21) — show the land offer as a % of asking
   const askEl=$('ask-gap');
   if(askEl){
-    const ask=pv('asking-price');
+    const ask=mv('asking-price');
     if(ask>0&&landCost>0){
       const diff=landCost-ask;
       askEl.textContent=`Offer ${fmt(landCost)} = ${(landCost/ask*100).toFixed(0)}% of asking (${diff<0?'-':'+'}${fmt(Math.abs(diff))})`;
@@ -4115,12 +4150,12 @@ function getReportData(){
   const county=($('county-sel')||{}).value||'—';
   const address=[($('addr-street')||{}).value||'',($('addr-city')||{}).value||'',
                  ($('addr-state')||{}).value||'',($('addr-zip')||{}).value||''].filter(Boolean).join(' ')||'—';
-  const landCost=pv('land-cost')||0;
+  const landCost=mv('land-cost')||0;
   const u=Math.max(1,units);
 
   // ARV $/sf with auto ±10% fallback off base
-  const basePSF=pv('arv-b')||0;
-  const psf={w:pv('arv-w')||(basePSF?basePSF*0.90:0),b:basePSF,best:pv('arv-best')||(basePSF?basePSF*1.10:0)};
+  const basePSF=mv('arv-b')||0;
+  const psf={w:mv('arv-w')||(basePSF?basePSF*0.90:0),b:basePSF,best:mv('arv-best')||(basePSF?basePSF*1.10:0)};
   // v8.7: getTerms(), the reader the screen uses (a blank term is the field's default, not 0 or `||9`)
   const {w:tW,b:tB,best:tBest}=getTerms(), terms={w:tW,b:tB,best:tBest};
 
@@ -4213,8 +4248,11 @@ function buildReportHTML(canvasDataUrl){
     +'<div class="mcard-val'+(big?' big':'')+'">'+val+'</div>'+(sub?'<div class="mcard-sub">'+sub+'</div>':'')+'</div>';
   const baseProfit=base.hasArv?sign(base.profit):'<span style="color:#647a8e">Enter ARV</span>';
   const baseCoc=base.hasArv?signPct(base.coc):'—';
+  // v8.8: the same notes as the screen's #lever-warn, so the memo can't quietly run on a misread land or ARV
+  const inputNotes=moneyIssues().map(i=>i.msg).join(' ');
   const cover=
     '<div class="addr-bar"><div class="addr-text">'+esc(d.address)+'</div><div class="date-text">'+d.date+'</div></div>'
+    +(inputNotes?'<div class="avoid" style="border-left:3px solid #b26b00;background:#fdf3e1;color:#6b4000;padding:6px 10px;margin:6px 0 10px;font-size:10px;line-height:1.4"><b>Check inputs:</b> '+esc(inputNotes)+'</div>':'')
     +'<div class="metric-row">'
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'%'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
@@ -4486,7 +4524,7 @@ function generateSheet(){
   }
 }
 function collectModelInputs(d){
-  const rawW=pv('arv-w'), rawBest=pv('arv-best');
+  const rawW=mv('arv-w'), rawBest=mv('arv-best');
   const upgUnit=Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);
   const planObj=PLANS.find(p=>p.n===d.plan)||null;
   const skipW=$('skip-water')&&$('skip-water').checked, skipS=$('skip-sewer')&&$('skip-sewer').checked;
@@ -4506,11 +4544,12 @@ function collectModelInputs(d){
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
     // same raw values the screen uses; `||6` etc. would turn a deliberate 0 into a default and move Max Land
-    land:pv('land-cost'),ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
+    land:mv('land-cost'),ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
     docFee:pv('fin-doc-fee'),annTax:pv('fin-tax'),salePct:pv('sale-cost-pct')/100,
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
-    arvBase:pv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
+    arvBase:mv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
+    moneyNotes:{land:readMoney('land-cost').note||'',arvB:readMoney('arv-b').note||'',arvW:readMoney('arv-w').note||'',arvBest:readMoney('arv-best').note||''},
     termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     dateStr:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
@@ -4572,6 +4611,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   sec('OTHER COSTS'); inp('upg','Upgrades / Unit',M.upgUnit,MONEY); inp('survey','Survey',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
   sec('FINANCING'); inp('ltc','LTC %',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
   sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo)',M.termW); inp('termB','Term Base (mo)',M.termB); inp('termBest','Term Best (mo)',M.termBest);
+  // v8.8: a land or ARV the app couldn't read (the cell holds what it used) or that looks like a typo gets a
+  // note beside it, in the same style as the rule notes below; no note, no cell, so a clean deal's sheet is unchanged
+  {const mn=M.moneyNotes||{};
+   ['land','arvB','arvW','arvBest'].forEach(k=>{if(!mn[k])return;const c=wsI.getCell(IN[k].replace('B','C'));c.value=mn[k];c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};});}
   // v8.2: appended last so every existing Inputs cell keeps its address
   sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT2);
   // v8.7: the rule Max Land actually uses, after getProfitRule()'s defaults and limits (PROFIT_RULE_LIMITS):
@@ -4916,7 +4959,7 @@ function fitStatus(fpW,fpD){
 // Holds land, lot factor, soft costs, tap fee/unit, upgrades/unit and all financing
 // (LTC, rate, points, doc fee, tax, term) constant; loan SIZE and ARV vary by plan.
 function dealForPlan(plan,psf){
-  const landCost=pv('land-cost');
+  const landCost=mv('land-cost');
   const softFixed=pv('survey')+pv('appraisal')+pv('insurance');
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
@@ -4971,7 +5014,7 @@ function buildComparePickers(){
 function setCmpPlan(i,name){CMP[i]=name||null;renderCompare();}
 function onCmpArv(i,k,v){CMP_ARV[i][k]=v;renderCompare();}
 function resolveCmpArv(i){
-  const gB=pv('arv-b'),gW=pv('arv-w'),gBest=pv('arv-best');
+  const gB=mv('arv-b'),gW=mv('arv-w'),gBest=mv('arv-best');
   const b=CMP_ARV[i].b!==''?(parseFloat(CMP_ARV[i].b)||0):gB;
   const w=CMP_ARV[i].w!==''?(parseFloat(CMP_ARV[i].w)||0):(gW||(b?b*0.9:0));
   const best=CMP_ARV[i].best!==''?(parseFloat(CMP_ARV[i].best)||0):(gBest||(b?b*1.1:0));
@@ -4982,7 +5025,7 @@ function renderCompare(){
   const cc=$('cmp-constants'), T=getTerms();
   if(cc){
     const upgPerUnit=Array.from(selectedUpgrades).reduce((acc,id)=>{const u=UPGRADES.find(x=>x.id===id);return acc+(u?u.cost:0);},0);
-    cc.innerHTML='Held constant — Land '+fmt(pv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+pv('ltc-pct')+'% \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+T.w+'/'+T.b+'/'+T.best+'. Loan size & ARV $/sf vary by plan.';
+    cc.innerHTML='Held constant — Land '+fmt(mv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+pv('ltc-pct')+'% \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+T.w+'/'+T.b+'/'+T.best+'. Loan size & ARV $/sf vary by plan.';
   }
   const cols=[0,1,2].filter(i=>CMP[i]).map(i=>{
     const plan=PLANS.find(p=>p.n===CMP[i]);if(!plan)return null;
@@ -5301,6 +5344,10 @@ const RELEASE_NOTES=[
    'A blank Slate GC fee stays 0% when the deal reopens, as it was on screen, and a townhome row reopens at its saved number of units on the site diagram.',
    'Opening a file that isn’t a saved deal no longer clears the page. If a deal still fails part-way, the app says so and asks you to reload; your last session stays in the resume bar.',
    'A deal that was reopened and saved again before this version may already hold the zone’s setbacks or the 1st-ranked plan, because that is what it was saved with. Check the setbacks and plan on those.']},
+ {v:'8.8',date:'Sep 2026',name:'Land, asking and ARV read what you type',items:[
+   'Land cost, asking price and the three ARV $/sf fields now read “$185,000”, “185,000” and “185k” as $185,000. Before, “$185,000” counted as $0 (so the whole underwrite, the PDF and the Excel model ran on free land), “185k” counted as $185 and an ARV of “385,5” as $3,855/sf.',
+   'Anything those fields can’t read (a decimal comma like “385,5”, a stray letter) now shows a note under the ARV fields instead of silently counting as 0, and the same note appears on the PDF and beside the cell in the Excel model. The on-screen note waits until you leave the field. A land or asking price under $1,000 gets a “did you mean $185,000?” note, and an ARV of $1,000/sf or more a “looks like a sale price” note.',
+   'BUA check: a hardscape of 0 sf now means none. It used to become the 500 sf default; a blank field still means 500.']},
  {v:'8.7',date:'Sep 2026',name:'Loan terms and profit rule notes: steadier',items:[
    'A blank loan term now means the field’s default (10, 8 or 6 months, shown greyed in the empty field) everywhere: the scenario cards, Max land, the profit tiles, the PDF and the Excel model. It used to count as 0 months, which left out the whole carry. A term under 1 month is raised to 1, with a note.',
    'The profit rule and loan term notes wait until you leave the field, so they no longer flash while you type “70,000”. “70,000.” with a trailing period now reads as 70,000, and the notes show the value exactly as it was read.',
