@@ -922,7 +922,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="bua-block">
             <div class="bua-title">Mecklenburg BUA / Watershed Check</div>
             <div class="fr2">
-              <div class="field"><label>Estimated Hardscape (sf)</label><input type="number" id="bua-hardscape" value="500" oninput="calcBUA()"><p class="note">Driveway + walks. Default 500 sf.</p></div>
+              <div class="field"><label>Estimated Hardscape (sf)</label><input type="number" id="bua-hardscape" value="500" placeholder="500" oninput="calcBUA()"><p class="note">Driveway + walks. Default 500 sf; blank uses the default, 0 means none.</p></div>
               <div style="padding-top:20px" id="bua-result"></div>
             </div>
             <div class="bua-meter"><div class="bua-fill" id="bua-fill"></div></div>
@@ -1054,6 +1054,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="field"><label for="arv-best">Best ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()"></div></div>
       </div>
     </div>
+    <div id="lever-warn" class="warn" style="display:none" role="status"></div>
   </div>
 
   <div class="board-head">Worst &middot; Base &middot; Best <span>Scenarios differ by loan term and ARV $/sf. Terms are set under Financing.</span></div>
@@ -1667,10 +1668,11 @@ const COMPS=[];
 const CHOICES=[null,null,null];
 function setChoice(rank,name){const i=rank-1;for(let j=0;j<3;j++){if(j!==i&&CHOICES[j]===name)CHOICES[j]=null;}CHOICES[i]=(CHOICES[i]===name)?null:name;if(typeof renderFitCheck==='function')renderFitCheck();renderShortlist();}
 function clearChoices(){CHOICES[0]=CHOICES[1]=CHOICES[2]=null;if(typeof renderFitCheck==='function')renderFitCheck();renderShortlist();}
-let _rankSig=null;
+let _rankSig=null;                            // the ranking last applied; saved with the deal
+const rankSig=()=>CHOICES.join('|');
 function applyRankedPlanDefault(){
   const ranked=CHOICES.find(c=>c);            // highest available rank (1st, else 2nd, else 3rd)
-  const sig=CHOICES.join('|');
+  const sig=rankSig();
   if(!ranked){_rankSig=sig;return;}           // no rankings -> keep last-highlighted plan
   if(sig===_rankSig)return;                    // rankings unchanged -> respect a manual Step-5 pick
   _rankSig=sig;
@@ -1751,10 +1753,12 @@ async function pullCountyComps(){
   const sf=sfPerUnit>0?sfPerUnit:'';
   if(btn){btn.disabled=true;btn.textContent='Pulling\u2026';}
   say('Searching county sales records\u2026');
+  const gen=_dealGen;
   try{
     const url='/api/comps?pid='+encodeURIComponent(pid)+'&radius=0.5&months=24'+(sf?('&sf='+sf):'');
     const r=await fetch(url);
     const d=await r.json();
+    if(gen!==_dealGen)return;   // another deal was opened meanwhile: these comps are the old one's
     if(d.error){ say('Comps lookup failed: '+d.error,'var(--red)'); return; }
     const rows=(d.comps||[]).filter(c=>c.tier==='solid'||c.tier==='context');
     if(!rows.length){
@@ -1797,7 +1801,7 @@ async function pullCountyComps(){
     (d.flags||[]).forEach(f=>{h+='<div style="color:var(--amber);margin-top:4px">\u26a0 '+f+'</div>';});
     h+='<div style="color:var(--text-dim);font-size:11px;margin-top:6px">County deed records only \u2014 no MLS status, concessions or photos. Recording lags closing by 1\u20133 weeks. Check each row before you lean on it.</div>';
     say(h);
-  }catch(e){ say('Comps lookup failed: '+e.message,'var(--red)'); }
+  }catch(e){ if(gen===_dealGen)say('Comps lookup failed: '+e.message,'var(--red)'); }
   finally{ if(btn){btn.disabled=false;btn.innerHTML='\ud83d\udce1 Pull new-build comps (Meck)';} }
 }
 function applyCountyArv(psf){
@@ -1888,6 +1892,39 @@ const $=id=>document.getElementById(id);
 const fmt=n=>(!n&&n!==0)||isNaN(n)?'—':'$'+Math.round(n).toLocaleString();
 const fmtN=n=>isNaN(n)?'—':Math.round(n).toLocaleString();
 const pv=id=>{const e=$(id);if(!e)return 0;const v=parseFloat((e.value||'').replace(/,/g,''));return isNaN(v)?0:v;};
+// v8.8 MONEY TEXT FIELDS. Land cost, asking price and the three ARV $/sf fields are type="text", so "$185,000"
+// can be typed or pasted. pv() can't read that: it drops every comma and runs parseFloat, so "$185,000" was 0,
+// "185k" was 185 and "385,5" was 3,855, with no warning. mv() reads these five with parseRuleValue()'s rules
+// ($, k, commas only as thousands groups; a % sign is refused). pv() stays as it is for the number fields.
+// Blank or unreadable is 0, which each reader already treats as "not entered": no land, no asking-price line,
+// no base ARV, and Worst/Best at the auto ∓10%. An unreadable or negative value also shows in #lever-warn, and
+// a readable but implausible one (land or asking under $1,000; an ARV of $1,000/sf or more) applies with a note.
+// The notes go through renderInputWarnings(), so, like the profit rule's, a field's note waits until you leave it.
+// The PDF memo and the Excel Inputs sheet carry the same notes, so an export can't quietly run on a misread value.
+// typoBelow: a dollar figure this low was probably typed in thousands; typoFrom: a $/sf this high is a sale price.
+const MONEY_FIELDS={
+  'land-cost':{label:'Land cost',blank:'so the deal is running on $0 land',typoBelow:1000},
+  'asking-price':{label:'Asking price',blank:'so there’s no asking-price comparison',typoBelow:1000},
+  'arv-w':{label:'Worst ARV',blank:'so Worst uses the auto −10%',typoFrom:1000},
+  'arv-b':{label:'Base ARV',blank:'so there’s no base ARV',typoFrom:1000},
+  'arv-best':{label:'Best ARV',blank:'so Best uses the auto +10%',typoFrom:1000}};
+// {v, msg, note}: v is what the math uses; msg, when set, is the sentence for #lever-warn and the PDF, and note the
+// short form for the Excel cell beside the input. An id missing from MONEY_FIELDS still parses, but has no note.
+function readMoney(id){
+  const e=$(id), F=MONEY_FIELDS[id]||{label:id,blank:'so 0 is used'}, raw=e?String(e.value):'', t=raw.trim();
+  const p=raw.includes('%')?{bad:true}:parseRuleValue(raw);
+  if(p.blank)return {v:0};
+  if(p.bad)return {v:0,msg:`${F.label}: couldn’t read “${t}”, ${F.blank}.`,note:`App couldn’t read “${t}”`};
+  if(p.v<0)return {v:0,msg:`${F.label} can’t be negative, ${F.blank}.`,note:'Negative: left blank'};
+  if(F.typoBelow&&p.v>0&&p.v<F.typoBelow)
+    return {v:p.v,msg:`${F.label} is ${fmtRuleUSD(p.v)}. Did you mean ${fmtRuleUSD(p.v*1000)}?`,note:`Under ${fmtRuleUSD(F.typoBelow)}: typo?`};
+  if(F.typoFrom&&p.v>=F.typoFrom)
+    return {v:p.v,msg:`${F.label} is ${fmtRuleUSD(p.v)}/sf. That looks like a sale price, not $/sf.`,note:`${fmtRuleUSD(F.typoFrom)}/sf or more: typo?`};
+  return {v:p.v};
+}
+const mv=id=>readMoney(id).v;
+// [{id, msg}] for #lever-warn, in the shape renderInputWarnings() takes
+const moneyIssues=()=>Object.keys(MONEY_FIELDS).map(id=>({id,msg:readMoney(id).msg})).filter(i=>i.msg);
 // Readable plan name from a dropdown value (maps the custom-footprint sentinel).
 const planNameFromVal=v=>v==='__CUSTOM__'?'Custom footprint':((v||'').split('|')[0]||'');
 
@@ -2066,25 +2103,33 @@ function fullAddr(){return[$('addr-street').value,$('addr-city').value,$('addr-s
 
 // ── GIS AUTO-FILL (Charlotte / Mecklenburg via the /api/gis proxy) ──────────
 function setGisStatus(msg){const e=$('gis-status');if(e)e.textContent=msg||'';}
+// restoreDeal() bumps this, so a county lookup still in flight when another deal is opened is dropped, not applied to it
+let _dealGen=0;
 async function gisLookup(){
   const addr=fullAddr();
   if(!addr){setGisStatus('Enter a street address first.');return;}
   const btn=$('gis-btn');if(btn)btn.disabled=true;
   setGisStatus('Looking up parcel\u2026');
+  const gen=_dealGen;
   try{
     const res=await fetch('/api/gis?address='+encodeURIComponent(addr));
     if(!res.ok)throw new Error('HTTP '+res.status);
-    applyGisData(await res.json());
+    const data=await res.json();
+    if(gen!==_dealGen)return;
+    applyGisData(data);
   }catch(e){
+    if(gen!==_dealGen)return;
     setGisStatus('Lookup failed \u2014 '+e.message+'. (Auto-fill needs the deployed site; it won\u2019t run from a local file.)');
   }finally{ if(btn)btn.disabled=false; }
 }
-function setGisZoning(zoneVal){
+function setGisZoning(zoneVal,sameParcel){
   const sel=$('zone-sel');if(!sel||!zoneVal)return false;
   const county=$('county-sel').value||'Mecklenburg';
   const Z=String(zoneVal).toUpperCase().trim();
   let opt=Array.from(sel.options).find(o=>((o.value.split('|')[1]||'').toUpperCase())===Z);
   if(!opt){opt=document.createElement('option');opt.value=county+'|'+zoneVal;opt.textContent=zoneVal+' (from GIS)';sel.appendChild(opt);}
+  // a re-run on the parcel already loaded keeps its setbacks (an adjusted one is deliberate) unless the zone changed
+  if(sameParcel&&sel.value===opt.value)return true;
   sel.value=opt.value;onZoneChange();return true;
 }
 function loadParcelPolygon(rings,edgeInfo){
@@ -2145,7 +2190,9 @@ function applyGisData(d){
     if(det){$('county-sel').value=det;onCountyChange();}
   }
   const filled=[];
-  if(d.zoning&&d.zoning.value&&setGisZoning(d.zoning.value))filled.push('zoning '+d.zoning.value);
+  // same parcel as the cached lookup? (a restore brings its deal's back; editing the address drops it)
+  const prev=window._lastGis, sameParcel=!!(prev&&prev.pid&&d.parcel&&d.parcel.pid===prev.pid);
+  if(d.zoning&&d.zoning.value&&setGisZoning(d.zoning.value,sameParcel))filled.push('zoning '+d.zoning.value);
   if(d.parcel&&d.parcel.geometry&&d.parcel.geometry.rings&&loadParcelPolygon(d.parcel.geometry.rings,d.parcel.edges))filled.push('lot polygon + area'+(d.parcel.edges&&d.parcel.edges.front_index!=null?' + front edge':''));
   const lf=applyCountyDefaults(d);
   if(lf.length)filled.push('lot factor \u2014 '+lf.join(', '));
@@ -2932,7 +2979,8 @@ function calcBUA(){
   if(val==='__CUSTOM__'){fpW=pv('cust-w');fpD=pv('cust-d');}
   else{const parts=val.split('|');fpW=parseFloat(parts[4])||0;fpD=parseFloat(parts[5])||0;}
   const footprint=fpW&&fpD?fpW*fpD:0;
-  const hardscape=pv('bua-hardscape')||500;
+  // v8.8: blank means the field's default (500 sf); a deliberate 0 (no driveway or walks) stays 0, where `||500` made it 500
+  const hsEl=$('bua-hardscape'), hardscape=hsEl&&hsEl.value.trim()!==''?pv('bua-hardscape'):(parseFloat(hsEl&&hsEl.defaultValue)||500);
   const estBUA=footprint+hardscape;
   const pct=buaLimit>0?Math.min(estBUA/buaLimit,1):0;
   const fill=$('bua-fill');if(fill){fill.style.width=(pct*100)+'%';fill.style.background=pct>1?'var(--red)':pct>0.9?'var(--amber)':'var(--green)';}
@@ -3696,14 +3744,15 @@ const CITY_TAP={
   'mt holly':{w:1200,s:1200},
   'mount holly':{w:1200,s:1200},
 };
-let _tapSig=null;
+let _tapSig=null;   // the jurisdiction the tap defaults last ran for; saved with the deal
+function tapSig(){return (($('county-sel')||{}).value||'')+'|'+((($('addr-city')||{}).value||'').toLowerCase().trim());}
 function titleCase(s){return String(s||'').replace(/\b\w/g,m=>m.toUpperCase());}
 function setTapHint(msg){const h=$('tap-hint');if(!h)return;if(msg){h.innerHTML='\u26a0 '+msg;h.style.display='';}else{h.style.display='none';h.innerHTML='';}}
 function applyTapDefaults(force){
   const wf=$('tap-water'),sf=$('tap-sewer');if(!wf||!sf)return;
   const county=($('county-sel')||{}).value||'';
   const city=(($('addr-city')||{}).value||'').toLowerCase().trim();
-  const sig=county+'|'+city;
+  const sig=tapSig();
   if(!force&&sig===_tapSig)return;   // respect manual overrides until the jurisdiction changes
   _tapSig=sig;
   let rec=null,label='';
@@ -3791,7 +3840,7 @@ function holdingCost(loan,term){
 }
 
 function calcFinancing(){
-  const landCost=pv('land-cost');
+  const landCost=mv('land-cost');
   const {loan,costBase,purchaseClosing,cash}=calcLoanBase(landCost);
 
   // Update loan summary sidebar
@@ -3911,7 +3960,7 @@ function getTerms(){
   });
   return {w:t.w,b:t.b,best:t.best,issues};
 }
-// The profit-rule and loan-term warning lines. A field's own note waits while you're typing in it, so typing
+// The profit-rule, loan-term and (v8.8) land/asking/ARV warning lines. A field's own note waits while you're typing in it, so typing
 // "70,000" or "75000" doesn't flash notes about the half-typed "70," or "75"; the math still updates as you
 // type. v8.10: a note is held only once you've typed in the field (tracked by the capture-phase input listener
 // below, which runs before the field's own oninput render), not merely because it has focus, so clicking into
@@ -3920,7 +3969,7 @@ function getTerms(){
 const _editingFields=new Set();
 function renderInputWarnings(rule,terms){
   const held=id=>document.hasFocus()&&_editingFields.has(id)&&$(id)===document.activeElement;
-  [['profit-rule-warn',(rule||getProfitRule()).issues],['term-warn',(terms||getTerms()).issues]].forEach(([wid,issues])=>{
+  [['profit-rule-warn',(rule||getProfitRule()).issues],['term-warn',(terms||getTerms()).issues],['lever-warn',moneyIssues()]].forEach(([wid,issues])=>{
     const w=$(wid);if(!w)return;
     const t=issues.filter(i=>!held(i.id)).map(i=>i.msg).join(' ');
     if(w.textContent!==t)w.textContent=t; w.style.display=t?'':'none';
@@ -3931,8 +3980,8 @@ document.addEventListener('focusout',e=>{if(e.target&&e.target.id)_editingFields
 
 // ═══════════════════ SCENARIOS (Page 7) ═══════════════════
 function calcScenarios(){
-  const landCost=pv('land-cost');
-  const basePSF=pv('arv-b');
+  const landCost=mv('land-cost');
+  const basePSF=mv('arv-b');
   const {loan,purchaseClosing}=calcLoanBase(landCost);
   const loanPerUnit=loan/units;
   const salePct=pv('sale-cost-pct')/100;
@@ -3941,7 +3990,7 @@ function calcScenarios(){
 
   ['w','b','best'].forEach(k=>{
     const arvId=k==='w'?'arv-w':k==='b'?'arv-b':'arv-best';
-    let arvPSF=pv(arvId);
+    let arvPSF=mv(arvId);
     if(!arvPSF&&basePSF){if(k==='w')arvPSF=basePSF*0.90;if(k==='best')arvPSF=basePSF*1.10;}
     const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit:0;
     const term=T[k];
@@ -3977,7 +4026,7 @@ function calcScenarios(){
   // v7.12: asking-price anchor (SOP addendum 2026-09-21) — show the land offer as a % of asking
   const askEl=$('ask-gap');
   if(askEl){
-    const ask=pv('asking-price');
+    const ask=mv('asking-price');
     if(ask>0&&landCost>0){
       const diff=landCost-ask;
       askEl.textContent=`Offer ${fmt(landCost)} = ${(landCost/ask*100).toFixed(0)}% of asking (${diff<0?'-':'+'}${fmt(Math.abs(diff))})`;
@@ -4116,12 +4165,12 @@ function getReportData(){
   const county=($('county-sel')||{}).value||'—';
   const address=[($('addr-street')||{}).value||'',($('addr-city')||{}).value||'',
                  ($('addr-state')||{}).value||'',($('addr-zip')||{}).value||''].filter(Boolean).join(' ')||'—';
-  const landCost=pv('land-cost')||0;
+  const landCost=mv('land-cost')||0;
   const u=Math.max(1,units);
 
   // ARV $/sf with auto ±10% fallback off base
-  const basePSF=pv('arv-b')||0;
-  const psf={w:pv('arv-w')||(basePSF?basePSF*0.90:0),b:basePSF,best:pv('arv-best')||(basePSF?basePSF*1.10:0)};
+  const basePSF=mv('arv-b')||0;
+  const psf={w:mv('arv-w')||(basePSF?basePSF*0.90:0),b:basePSF,best:mv('arv-best')||(basePSF?basePSF*1.10:0)};
   // v8.7: getTerms(), the reader the screen uses (a blank term is the field's default, not 0 or `||9`)
   const {w:tW,b:tB,best:tBest}=getTerms(), terms={w:tW,b:tB,best:tBest};
 
@@ -4213,8 +4262,11 @@ function buildReportHTML(canvasDataUrl){
     +'<div class="mcard-val'+(big?' big':'')+'">'+val+'</div>'+(sub?'<div class="mcard-sub">'+sub+'</div>':'')+'</div>';
   const baseProfit=base.hasArv?sign(base.profit):'<span style="color:#647a8e">Enter ARV</span>';
   const baseCoc=base.hasArv?signPct(base.coc):'—';
+  // v8.8: the same notes as the screen's #lever-warn, so the memo can't quietly run on a misread land or ARV
+  const inputNotes=moneyIssues().map(i=>i.msg).join(' ');
   const cover=
     '<div class="addr-bar"><div class="addr-text">'+esc(d.address)+'</div><div class="date-text">'+d.date+'</div></div>'
+    +(inputNotes?'<div class="avoid" style="border-left:3px solid #b26b00;background:#fdf3e1;color:#6b4000;padding:6px 10px;margin:6px 0 10px;font-size:10px;line-height:1.4"><b>Check inputs:</b> '+esc(inputNotes)+'</div>':'')
     +'<div class="metric-row">'
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'%'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
@@ -4497,7 +4549,7 @@ function planCostSplit(){
            :{custom:val==='__CUSTOM__',baseUnit:currentPlanCost||0,feePct:0};
 }
 function collectModelInputs(d){
-  const rawW=pv('arv-w'), rawBest=pv('arv-best');
+  const rawW=mv('arv-w'), rawBest=mv('arv-best');
   const upgUnit=Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);
   const sp=planCostSplit();
   const skipW=$('skip-water')&&$('skip-water').checked, skipS=$('skip-sewer')&&$('skip-sewer').checked;
@@ -4518,11 +4570,12 @@ function collectModelInputs(d){
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
     // same raw values the screen uses; `||6` etc. would turn a deliberate 0 into a default and move Max Land
-    land:pv('land-cost'),ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
+    land:mv('land-cost'),ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
     docFee:pv('fin-doc-fee'),annTax:pv('fin-tax'),salePct:pv('sale-cost-pct')/100,
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
-    arvBase:pv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
+    arvBase:mv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
+    moneyNotes:{land:readMoney('land-cost').note||'',arvB:readMoney('arv-b').note||'',arvW:readMoney('arv-w').note||'',arvBest:readMoney('arv-best').note||''},
     termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,termDefaults:termDefaults(),termMax:parseFloat(($('term-b')||{}).max)||36,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     dateStr:new Date().toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}),
@@ -4590,6 +4643,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   ['termW','termB','termBest'].forEach(k=>{const x=IN[k], c=wsI.getCell(x.replace('B','C'));
     c.value={formula:`IF(ISBLANK(${x}),"",IF(NOT(ISNUMBER(${x})),"Not a number: default used",IF(${x}<1,"Under 1 month: 1 used",IF(${x}>${M.termMax},"Over ${M.termMax} months: typo?",""))))`};
     c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};});
+  // v8.8: a land or ARV the app couldn't read (the cell holds what it used) or that looks like a typo gets a
+  // note beside it, in the same style as the rule notes below; no note, no cell, so a clean deal's sheet is unchanged
+  {const mn=M.moneyNotes||{};
+   ['land','arvB','arvW','arvBest'].forEach(k=>{if(!mn[k])return;const c=wsI.getCell(IN[k].replace('B','C'));c.value=mn[k];c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};});}
   // v8.2: appended last so every existing Inputs cell keeps its address
   sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY2); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT2);
   // v8.7: the rule Max Land actually uses, after getProfitRule()'s defaults and limits (PROFIT_RULE_LIMITS):
@@ -4833,11 +4890,14 @@ function generateOfferLetter(){
     const pts=[st,ci&&z?ci+", "+s+" "+z:ci||s].filter(Boolean);
     addrEl.value=pts.join(", ");
   }
-  const de=document.getElementById("ol-date");
+  const de=document.getElementById("ol-date"), ae=document.getElementById("ol-amount");
+  // A letter belongs to the address it was opened for. Opened for another one (a new address typed over the old, a
+  // restored or resumed deal, a browser form restore), it starts over, so deal B's letter can't go out at deal A's price.
+  const sig=gisAddressSignature();
+  if(ae&&ae.dataset.sig!==sig){ae.value='';delete ae.dataset.auto;if(de)de.value='';ae.dataset.sig=sig;}
   if(de&&!de.value)de.value=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
   // Refill from the current Max land each time unless the analyst typed their own amount: the rule or any
   // input may have changed since the letter was last opened, and a stale ceiling could go out in writing.
-  const ae=document.getElementById("ol-amount");
   if(ae&&(!ae.value||ae.dataset.auto==='1')){
     const n=parseFloat((($("max-land-display")||{}).textContent||"").replace(/[$,]/g,""));
     if(n>0){ae.value=Math.round(n).toLocaleString();ae.dataset.auto='1';}
@@ -4935,7 +4995,7 @@ function fitStatus(fpW,fpD){
 // Holds land, lot factor, soft costs, tap fee/unit, upgrades/unit and all financing
 // (LTC, rate, points, doc fee, tax, term) constant; loan SIZE and ARV vary by plan.
 function dealForPlan(plan,psf){
-  const landCost=pv('land-cost');
+  const landCost=mv('land-cost');
   const softFixed=pv('survey')+pv('appraisal')+pv('insurance');
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
@@ -4990,7 +5050,7 @@ function buildComparePickers(){
 function setCmpPlan(i,name){CMP[i]=name||null;renderCompare();}
 function onCmpArv(i,k,v){CMP_ARV[i][k]=v;renderCompare();}
 function resolveCmpArv(i){
-  const gB=pv('arv-b'),gW=pv('arv-w'),gBest=pv('arv-best');
+  const gB=mv('arv-b'),gW=mv('arv-w'),gBest=mv('arv-best');
   const b=CMP_ARV[i].b!==''?(parseFloat(CMP_ARV[i].b)||0):gB;
   const w=CMP_ARV[i].w!==''?(parseFloat(CMP_ARV[i].w)||0):(gW||(b?b*0.9:0));
   const best=CMP_ARV[i].best!==''?(parseFloat(CMP_ARV[i].best)||0):(gBest||(b?b*1.1:0));
@@ -5001,7 +5061,7 @@ function renderCompare(){
   const cc=$('cmp-constants'), T=getTerms();
   if(cc){
     const upgPerUnit=Array.from(selectedUpgrades).reduce((acc,id)=>{const u=UPGRADES.find(x=>x.id===id);return acc+(u?u.cost:0);},0);
-    cc.innerHTML='Held constant — Land '+fmt(pv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+pv('ltc-pct')+'% \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+T.w+'/'+T.b+'/'+T.best+'. Loan size & ARV $/sf vary by plan.';
+    cc.innerHTML='Held constant — Land '+fmt(mv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+pv('ltc-pct')+'% \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+T.w+'/'+T.b+'/'+T.best+'. Loan size & ARV $/sf vary by plan.';
   }
   const cols=[0,1,2].filter(i=>CMP[i]).map(i=>{
     const plan=PLANS.find(p=>p.n===CMP[i]);if(!plan)return null;
@@ -5156,15 +5216,26 @@ function serializeDeal(){
     polyPoints:polyPoints.map(p=>({x:p.x,y:p.y})),
     edges:edgeDesignations.slice(),
     choices:CHOICES.slice(),
+    tapSig:_tapSig,rankSig:_rankSig,   // what the entry-time defaults last applied, so a reopen replays one still due
     upgrades:Array.from(selectedUpgrades),
     comps:COMPS.map(c=>Object.assign({},c)),
     gis:(typeof window!=='undefined'&&window._lastGis)||null};
 }
 function restoreDeal(d){
-  if(!d||!d.fields){showToast('That file doesn\u2019t look like a saved deal.','warn');return;}
+  // Check the file before step 0 resets the page: every field entry is an object, at least one is this page's, and
+  // each collection has the shape serializeDeal() writes. Anything else is turned away with the page untouched.
+  const vals=d&&d.fields;
+  const isField=id=>{const e=$(id);return !!(e&&e.type!=='file'&&e.matches('.page input[id], .page select[id]'));};
+  const list=(k,ok)=>d[k]==null||(Array.isArray(d[k])&&d[k].every(ok));
+  if(!vals||typeof vals!=='object'||!Object.values(vals).every(f=>f&&typeof f==='object')||!Object.keys(vals).some(isField)
+     ||!list('polyPoints',p=>p&&typeof p==='object')||!list('edges',x=>x==null||typeof x==='string')
+     ||!list('choices',x=>x==null||typeof x==='string')||!list('upgrades',x=>typeof x==='string')
+     ||!list('comps',x=>x&&typeof x==='object')){
+    showToast('That file doesn’t look like a saved deal.','warn');return;
+  }
   try{
-    const vals=d.fields;
-    const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else e.value=f.v;}};
+    _dealGen++;   // drop any county lookup still in flight: its answer belongs to the page being replaced
+    const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else if(f.v!=null)e.value=f.v;}};
     // 0) start from a fresh page's defaults. The blanket restore below only writes fields the file has, so a
     //    field added after the deal was saved would otherwise keep whatever the previous deal left on screen.
     document.querySelectorAll('.page input[id], .page select[id]').forEach(e=>{
@@ -5173,6 +5244,9 @@ function restoreDeal(d){
       else if(e.tagName==='SELECT'){const o=Array.from(e.options).find(x=>x.defaultSelected)||e.options[0];if(o)e.value=o.value;}
       else e.value=e.defaultValue;
     });
+    // The previous deal's county card, its status line and its comps box (whose Apply button carries that deal's
+    // $/sf) sit outside .page, so clear them too. The offer letter resets itself for a new address (generateOfferLetter).
+    {const g=$('gis-result'),m=$('county-comps-msg');if(g)g.style.display='none';if(m)m.style.display='none';setGisStatus('');}
     _tapSig=null;   // taps were just reset, so let the jurisdiction autofill in step 1 run again
     // A deal saved before v8.2 has no profit-rule fields; it was underwritten on the SOP, so pin that rather than
     // today's default, which may have moved since. Reopening an old deal must not move its Max land.
@@ -5180,32 +5254,46 @@ function restoreDeal(d){
     // 1) jurisdiction first (rebuilds zones, autofills taps)
     setV('addr-city');setV('county-sel');
     onCountyChange();
-    // 2) blanket restore (overwrites any autofill with saved values)
-    Object.keys(vals).forEach(id=>{const f=vals[id],e=$(id);if(!e)return;if(f.t==='checkbox')e.checked=!!f.c;else e.value=f.v;});
+    // then the zone: onZoneChange() writes the zone table's setbacks, so it must run before the blanket restore, or
+    // a deal saved with an adjusted setback (an established front setback, say) reopens on the table value
+    setV('zone-sel');
     // saved zone may be a GIS-added option not in the default list
-    if(vals['zone-sel']&&vals['zone-sel'].v&&$('zone-sel').value!==vals['zone-sel'].v){
+    const zv=vals['zone-sel']&&vals['zone-sel'].v;
+    if(typeof zv==='string'&&zv&&$('zone-sel').value!==zv){
       const sel=$('zone-sel'),o=document.createElement('option');
-      o.value=vals['zone-sel'].v;o.textContent=(vals['zone-sel'].v.split('|')[1]||vals['zone-sel'].v)+' (saved)';
-      sel.appendChild(o);sel.value=vals['zone-sel'].v;
+      o.value=zv;o.textContent=(zv.split('|')[1]||zv)+' (saved)';
+      sel.appendChild(o);sel.value=zv;
     }
     onZoneChange();
+    // 2) blanket restore (overwrites any autofill, the zone's setbacks included, with saved values)
+    Object.keys(vals).filter(isField).forEach(setV);
+    // ...except that a blank setback only ever meant "no table entry", and minw / garage are read-only lookups, not
+    // choices: those come from today's table
+    {const sb=SETBACKS[$('zone-sel').value];if(sb){
+      ['front','rear','sides','corner'].forEach(k=>{const e=$('sb-'+k);if(e&&e.value==='')e.value=sb[k];});
+      $('sb-minw').value=sb.minWidth||'';$('sb-garage').value=sb.garage||'';}}
+    FIT_SORT=$('fit-sort').value||'sf-desc';   // the fit check sorts by this, not by the dropdown it mirrors
     // every restored value was deliberate — protect them from any auto-fill
     markAllManual();
-    // 3) lock tap signature so step-5 entry doesn't clobber restored taps
-    _tapSig=($('county-sel').value||'')+'|'+(($('addr-city').value||'').toLowerCase().trim());
-    // 4) lot geometry
-    if(d.lotMode==='poly'&&d.polyPoints&&d.polyPoints.length>=3){
-      polyPoints=d.polyPoints.map(p=>({x:p.x,y:p.y}));
-      edgeDesignations=(d.edges||[]).slice();
-      setLotMode('poly');redrawEditor();
-    }else{setLotMode('rect');}
-    // 5) plan library at saved GC fee, then re-select plan by name
-    const fee=parseFloat(vals['gc-build-fee']?vals['gc-build-fee'].v:14);
-    recomputePlanCosts(isNaN(fee)?14:fee);
+    // 3) the taps' entry-time autofill: put back the jurisdiction it last ran for, so taps still due (a city typed
+    //    after the county) land when The Underwrite is entered. A file from before v8.9 counts as applied.
+    _tapSig=('tapSig' in d)?d.tapSig:tapSig();
+    // 4) lot geometry: the file's own polygon, or none; never the previous deal's
+    polyPoints=(d.polyPoints||[]).map(p=>({x:p.x,y:p.y}));
+    edgeDesignations=(d.edges||[]).slice();
+    if(d.lotMode==='poly'&&polyPoints.length>=3){setLotMode('poly');redrawEditor();}
+    else setLotMode('rect');
+    // 5) plan library at the saved GC fee, read the way applyGcBuildFee() reads it (blank is 0%, as on screen), then
+    //    re-select the plan by name through planNameFromVal(), the mapping serializeDeal() saved it with
+    recomputePlanCosts(pv('gc-build-fee'));
     buildPlanDropdown();
-    if(d.plan){const o=Array.from($('plan-sel').options).find(x=>(x.value||'').split('|')[0]===d.plan);if(o)$('plan-sel').value=o.value;}
+    if(d.plan){const o=Array.from($('plan-sel').options).find(x=>planNameFromVal(x.value)===d.plan);if(o)$('plan-sel').value=o.value;}
     // 6) collections
     CHOICES[0]=(d.choices||[])[0]||null;CHOICES[1]=(d.choices||[])[1]||null;CHOICES[2]=(d.choices||[])[2]||null;
+    // the ranking's entry-time autofill likewise: put back the ranking it last applied, so a re-rank still due moves
+    // The Underwrite on entry while a plan picked after it stays. A file from before v8.9 takes a restored plan as
+    // the analyst's choice. No plan restored: leave the ranking open so it can pick one.
+    _rankSig=!$('plan-sel').value?null:('rankSig' in d)?d.rankSig:rankSig();
     selectedUpgrades.clear();(d.upgrades||[]).forEach(u=>selectedUpgrades.add(u));
     COMPS.length=0;(d.comps||[]).forEach(c=>COMPS.push(Object.assign({},c)));
     try{window._lastGis=d.gis||null;}catch(_){ }
@@ -5213,14 +5301,23 @@ function restoreDeal(d){
     if(typeof renderUpgrades==='function')renderUpgrades();
     renderComps();renderShortlist();
     onPlanChange();
-    // onPlanChange auto-sets units from the plan default — re-apply the saved value
-    if(vals['units']&&$('units')){$('units').value=vals['units'].v;}
+    // onPlanChange() resets units to the plan default and the overlay rotation to 0: re-apply the saved values
+    setV('units');updateAttachedBuild();syncUnitsUI();
+    {const r=vals['rot-slider'];if(r&&r.v!=null)setRotation(parseFloat(r.v)||0);}
     if($('skip-sewer'))onSewerSkip();
     calcLF();calcBuildable();calcAll();calcFinancing();
     if(typeof renderFitCheck==='function')renderFitCheck();
+    updateLinks();updateGISLink();   // step 1 built these before the street and ZIP were back
     updateDealPulse();
+    // the resume bar's offer is stale now: the autosave is about to write this deal into its slot
+    dismissResume();
     showToast('Deal restored: '+(d.address||'saved deal'),'ok');
-  }catch(e){console.error('restore',e);showToast('Restore failed: '+e.message,'warn');}
+  }catch(e){
+    console.error('restore',e);
+    // step 0 has reset the page, so it's only partly loaded: stop the pending autosave writing it over the resume slot
+    clearTimeout(_autosaveTimer);
+    showToast('Restore failed: '+e.message+'. The page is only partly loaded: reload it before you carry on.','warn');
+  }
 }
 function downloadDealJSON(){
   try{
@@ -5280,6 +5377,18 @@ const RELEASE_NOTES=[
    'A loan term over 36 months still applies, but gets a note, so an “80” typed for “8” doesn’t slip through.',
    'Custom plans: the Excel model left the build cost out (Build Cost / Unit came out $0, so Max Land was too high by the build cost), and the PDF listed the whole custom build as the “Slate GC Fee”. Both now use the Build Cost you enter, and the PDF lists it as one custom build line.',
    'Smaller fixes: the plan comparison’s “Plan drawing” row now shows its View button, a profit rule or loan term note now shows even if you switch to another app mid-edit, the PDF’s sensitivity grid stars only the base row, and the Excel rule cells show cents, so $999.50 no longer displays as $1,000 next to its “Under $1,000” note.']},
+ {v:'8.9',date:'Sep 2026',name:'Reopened deals come back exactly as saved',items:[
+   'Setbacks: a saved deal reopens with the setbacks it was saved with. Before, reopening put the zone’s table setbacks back, so a deal with an adjusted front setback (an established or contextual one, say) came back with a different buildable envelope and plan fit. Re-running the County GIS auto-fill on the same parcel keeps them too.',
+   'Plan: a deal underwritten on its 2nd- or 3rd-ranked plan, or on a plan you picked yourself, stays on it when you open The Underwrite after reopening it. Before, the app switched to the 1st-ranked plan and reset the units, so cost, profit and Max land no longer matched. A re-rank you hadn’t taken to The Underwrite yet still applies, custom-footprint deals reopen on their custom plan, and tap fees still due for a newly typed city still land.',
+   'Offer letter: it now belongs to its address. Open it for a different deal, however that deal arrived (reopened, resumed or typed in), and it starts from that deal’s Max land and today’s date instead of carrying the last deal’s price.',
+   'Nothing from the previous deal lingers: its county parcel card and comps box (with its Apply button) are cleared, and its lot outline isn’t carried into a rectangular deal.',
+   'A blank Slate GC fee stays 0% when the deal reopens, as it was on screen, and a townhome row reopens at its saved number of units on the site diagram.',
+   'Opening a file that isn’t a saved deal no longer clears the page. If a deal still fails part-way, the app says so and asks you to reload; your last session stays in the resume bar.',
+   'A deal that was reopened and saved again before this version may already hold the zone’s setbacks or the 1st-ranked plan, because that is what it was saved with. Check the setbacks and plan on those.']},
+ {v:'8.8',date:'Sep 2026',name:'Land, asking and ARV read what you type',items:[
+   'Land cost, asking price and the three ARV $/sf fields now read “$185,000”, “185,000” and “185k” as $185,000. Before, “$185,000” counted as $0 (so the whole underwrite, the PDF and the Excel model ran on free land), “185k” counted as $185 and an ARV of “385,5” as $3,855/sf.',
+   'Anything those fields can’t read (a decimal comma like “385,5”, a stray letter) now shows a note under the ARV fields instead of silently counting as 0, and the same note appears on the PDF and beside the cell in the Excel model. The on-screen note waits until you leave the field. A land or asking price under $1,000 gets a “did you mean $185,000?” note, and an ARV of $1,000/sf or more a “looks like a sale price” note.',
+   'BUA check: a hardscape of 0 sf now means none. It used to become the 500 sf default; a blank field still means 500.']},
  {v:'8.7',date:'Sep 2026',name:'Loan terms and profit rule notes: steadier',items:[
    'A blank loan term now means the field’s default (10, 8 or 6 months, shown greyed in the empty field) everywhere: the scenario cards, Max land, the profit tiles, the PDF and the Excel model. It used to count as 0 months, which left out the whole carry. A term under 1 month is raised to 1, with a note.',
    'The profit rule and loan term notes wait until you leave the field, so they no longer flash while you type “70,000”. “70,000.” with a trailing period now reads as 70,000, and the notes show the value as it was read (to the cent, or 4 significant digits for a %).',
