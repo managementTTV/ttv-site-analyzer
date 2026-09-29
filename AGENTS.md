@@ -192,8 +192,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   Units last took, and the default is written only when that changes. Flag a new path that writes
   `units` from a plan default without that check.
 - **Taps keep a typed quote (v8.14).** `tap-water` / `tap-sewer` call `markManual(this)`, and
-  `applyTapDefaults()` never writes over a `data-manual` tap. It names the kept quote in `#tap-hint`
-  next to the schedule it differs from. It re-defaults only when the fee *record* changes
+  `applyTapDefaults()` never writes over a `data-manual` tap. `renderTapHint()` builds `#tap-hint` from
+  the current record, flags and values (a missing fee reads "no … fee on file", never $0). It runs after
+  the defaults, on the tap fields' blur, and after a restore. It names a typed quote next to the schedule
+  it differs from, and adds the record's `cityNote` where the default is one city's or the county's
+  schedule (Gaston, Catawba, Iredell). It re-defaults only when the fee *record* changes
   (`tapRecordFor()` maps a `county|city` signature to its `CITY_TAP` / `COUNTY_TAP` row), so a city
   edit that lands on the same record (Charlotte → Mint Hill) doesn't run it. Before this, any city
   edit put Charlotte Water's $17,340 back over a typed quote; on Dellinger's real $6,907/lot
@@ -292,7 +295,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   ones). A parcel is left out when its **newest** market-valid sale was sold as vacant. The flag is
   read on the newest row, not before picking it, so an older sale of the torn-down house can't stand
   in for the lot sale. A sale recorded before the year the current house was built is left out as
-  well. Both counts go into `notes`. Flag a vacant check that isn't case- and length-tolerant
+  well. The assessor sometimes dates a house to the year after a Q4 closing, so a few real closings go too
+  (2 of 24 rows county-wide over 24 months; the other 22 were bulk deeds, lot takedowns and teardowns).
+  Narrowing it to `yb-1` needs the multi-parcel-deed check first. Both counts go into `notes`, and the
+  county comps box shows them under "Left out". Flag a vacant check that isn't case- and length-tolerant
   (`/^Y/i`), or one moved ahead of the newest-row pick.
 - **The ARV is capped at the highest sold comp.** The SOP is explicit that $/sf math must never run
   past a real nearby sale. Flag removal of the cap or of the `capped` flag it sets.
