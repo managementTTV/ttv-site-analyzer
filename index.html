@@ -3823,7 +3823,9 @@ const COUNTY_TAP={
   'Mecklenburg':{w:5819,s:11521},     // Charlotte Water, city-installed 5/8" water + 4" sewer
   'Gaston':{w:4826,s:4851},           // City of Gastonia (sewer: Southwest service area)
   'Lincoln':{w:5137.80,s:4988.41},
-  'Cabarrus':{w:null,s:2968,note:'Cabarrus: the sewer figure is the WSACC system development fee only, and water depends on the retail provider (Concord, Harrisburg…). Get the provider’s quote.'},
+  // Cabarrus water: the sheet has no figure (it depends on the retail provider), so this keeps the old $2,500 as a
+  // flagged estimate rather than $0 (Brian, 2026-09-29).
+  'Cabarrus':{w:2500,s:2968,note:'Cabarrus: water is a $2,500 estimate (it depends on the retail provider: Concord, Harrisburg…), and the sewer figure is the WSACC system development fee only. Get the provider’s quote.'},
   'Iredell':{w:2500,s:null},          // Iredell Water Corp, water only
   'Kannapolis':{w:4600,s:5250},
   'Catawba':{w:1660,s:5691},
@@ -5535,7 +5537,7 @@ const RELEASE_NOTES=[
    'Sales comps: builder lot purchases no longer count as new-build comps. The county marks them \u201csold as vacant\u201d with \u201cYes\u201d, and the check looked for \u201cY\u201d, so a lot sale was priced against the house built on it later (about $94/sf against $213/sf for real comps). A sale recorded before the current house was built is left out too. On the 80-deal backtest the median error is unchanged (4.8%); in pockets full of lot sales the ARV moves a lot, e.g. a 3,800 sf Stephens Farm subject from $404k to $1.63M.',
    'Changing the Slate GC fee no longer puts Units back to the plan default. A 3-townhome deal became a 1-unit deal, which cut Dellinger\u2019s Max land from $262,309 to $69,756. Units now follows the plan only when you pick a different plan (or change a custom footprint\u2019s Units).',
    'Tap fees: a tap quote you type stays put. Editing the city (Charlotte \u2192 Mint Hill) used to put Charlotte Water\u2019s $5,819 / $11,521 back over it; a different county now keeps your quote and shows that county\u2019s schedule beside it. Saved deals remember which taps were typed.',
-   'Tap fee table updated to the team\u2019s verified provider sheet (FY26): Gastonia $4,826 / $4,851, Mount Holly $2,250 / $2,670 (meter and system development fees included), Catawba $1,660 / $5,691, Cabarrus sewer $2,968 (WSACC; water depends on the retail provider, so enter the quote). Mecklenburg, Statesville, Lincoln, Kannapolis and Iredell were already right.',
+   'Tap fee table updated to the team\u2019s verified provider sheet (FY26): Gastonia $4,826 / $4,851, Mount Holly $2,250 / $2,670 (meter and system development fees included), Catawba $1,660 / $5,691, Cabarrus sewer $2,968 (WSACC), with water kept at a $2,500 estimate because it depends on the retail provider (get the quote). Mecklenburg, Statesville, Lincoln, Kannapolis and Iredell were already right.',
    'Plan footprints checked against Slate\u2019s plan stats: Akron is 15\u2032 \u00d7 55\u2032 over two stories (it was stored as a one-storey 15\u2032 \u00d7 102\u2032, so it showed \u201cToo Large\u201d on the narrow lots it\u2019s made for), Hampton and North Hampton had width and depth swapped, and Dunkirk\u2019s depth now includes its front porch (34\u2032). The other 46 plans already matched.']},
  {v:'8.13',date:'Sep 2026',name:'Excel loan terms and custom plans match the app',items:[
    'Excel model: clearing a loan term on the Inputs sheet now means the default (10, 8 or 6 months), as in the app, instead of 0 months. Scenarios row 16 shows the term each scenario uses, and the holding cost, Max Land and the Sensitivity grid all read it, so no row can drop below 1 month.',
