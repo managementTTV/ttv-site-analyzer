@@ -167,7 +167,7 @@ function parseTypedAddress(address){
     const z=s.match(/(?:^|\s)(\d{5})(?:-\d{4})?$/);
     if(z&&!zip) zip=z[1];
     const rest=s.replace(/(?:^|\s)\d{5}(?:-\d{4})?$/,'').replace(/^(NC|SC|NORTH CAROLINA|SOUTH CAROLINA)$/,'').trim();
-    if(rest&&!city) city=rest;
+    if(rest&&!city) city=rest.replace(/[^A-Z0-9 '\-]/g,'').replace(/\s+/g,' ').trim();   // it's echoed in messages
   }
   let toks=street.replace(/#/g,' # ').split(' ').filter(Boolean);
   // a ZIP and state typed at the end of the street field
@@ -175,7 +175,7 @@ function parseTypedAddress(address){
   if(toks.length>2&&/^(NC|SC)$/.test(toks[toks.length-1])) toks.pop();
   let unit='';
   const ui=toks.findIndex((t,i)=>i>0&&UNIT_WORDS.has(t));
-  if(ui>0){ unit=toks.slice(ui+1).join(' ').replace(/^#\s*/,''); toks=toks.slice(0,ui); }
+  if(ui>0){ unit=toks.slice(ui+1).map(cleanTok).filter(Boolean).join(' '); toks=toks.slice(0,ui); }
   const m=(toks[0]||'').match(/^(\d+)(?:-?([A-Z]{1,2}|\d+))?$/);
   const num=m?parseInt(m[1],10):null;
   if(m&&m[2]&&/^[A-Z]/.test(m[2])&&!unit) unit=m[2];   // "2723B"; a range "1500-1502" keeps its first number
