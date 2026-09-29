@@ -235,6 +235,17 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   comp filter that drops Z or keeps the rest.
 - Auto-fill is **Mecklenburg-only** by design. Other counties link out to the county
   viewer — don't "fix" that into a broken universal fetch.
+  Its answer always lands in Mecklenburg (v8.16): `applyGisData()` sets `county-sel` to Mecklenburg on any
+  applied result, so a county left from the last deal can't turn the GIS zone into another county's stub (audit G2).
+- **The geocode matches the address typed, or loads nothing (v8.16, audit G1).** `chooseAddressPoint()` takes the
+  exact `txt_street_number` and compares every part of the street (direction, name, type, suffix) after both sides go
+  through `canonTok()` ("North" = N, "Drive" = DR, "37th" = 37, "Mount" = MT). The typed ZIP / city choose between
+  places. `match.status` is `exact`, `close` (loaded, with `diffs`: a part left out, a ZIP or city that differs), or
+  refused: `none` (with the nearest numbers on the street), `ambiguous` (N and S Tryon both fit) or `locality` (the
+  street isn't in the typed city or ZIP). A refused match returns no parcel and no zoning. v5 matched the number and the
+  first word after it as substrings and took the first hit, so "1500 N Davidson St" loaded 15004 Annan Ct. Flag a
+  geocode that matches the number as a substring, drops the direction or type, takes the first feature without
+  comparing, or loads a parcel for a refused match. A close match must stay visible (amber status and card row).
 - Parcel area uses the **shoelace** of the geometry, **not** the bounding box. Flag a
   regression to bounding-box area.
 
@@ -341,6 +352,18 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `_lastGis.addrSig`, and `pullCountyComps()` re-checks before using the PID. Without this an
   analyst who edits the address after a lookup silently prices the previous parcel. Flag any new
   consumer of `_lastGis` that doesn't verify the signature.
+- **A lookup answers the address it was sent for (v8.16, audit S-F7).** `gisLookup()` takes `gisAddressSignature()`
+  before the fetch and drops the answer if the address changed while it ran; `_lastGis.addrSig` is that request-time
+  signature. Before this, an edit during the lookup got the old parcel's answer, cached under the new address with the
+  old PID, which the comps guard then accepted. Flag a new async county call that stamps a landing-time signature.
+- **The site data on screen belongs to one address (v8.16, audit G16).** `_gisLot` ties the lot polygon, its edges,
+  the zone and the setbacks to the address a County GIS lookup (or a reopened deal with a saved parcel) loaded them for.
+  When the address is committed as another property (the fields' `change` event, compared with `addrWords()` so "Dr" /
+  "Drive" is the same street) or a lookup starts for one, `clearGisSite()` clears them, with a "Put them back" button
+  (`putBackGisSite()`, after which the data is untied). A lot drawn on a fresh page isn't tied, so it's never cleared.
+  Before this, the last deal's lot and fit results stayed under a new address, including after a lookup that found only
+  zoning or nothing. On reopen, a saved parcel whose `matched` address isn't the deal's (`gisMatchFits()`: deals saved
+  before v8.16 can hold a G1 parcel) is flagged and its PID dropped.
 - **Never infer "untouched" from a field's value.** An analyst can legitimately type a number that
   equals a shipped default (a real $2,000 survey quote, a real $2,500 grading allowance), and the
   value-based check silently overwrote it — a Codex P1 on PR #17. Auto-fill gates on the explicit
@@ -395,7 +418,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - `restoreDeal()` maps a saved stub to its base row.
   - A same-parcel re-run keeps a `· townhomes 5+` row of the same base zone.
   - `renderZoneNote()` compares against the row's base zone, so the CD note survives picking the townhome row.
-  - This is only the suffix part of G2. A leftover non-Mecklenburg county on a GIS lookup is still open.
+  - This was the suffix part of G2; v8.16 did the county part (a GIS result always sets Mecklenburg).
   Flag a zone lookup that drops the suffix note, or one that treats a CD petition's conditions as known.
 - **The N2-C base row carries `noNewLots`**: `renderSublot()` warns that lots made by a split can't hold a
   standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+` row

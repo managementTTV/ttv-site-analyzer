@@ -2177,7 +2177,7 @@ function validateAddress(){
   }
 
   // Check for common street suffix
-  const SUFFIXES=['st','ave','blvd','dr','rd','ln','ct','pl','way','cir','ter','trl',
+  const SUFFIXES=['st','ave','av','blvd','dr','rd','ln','ct','pl','way','cir','ter','trl',
     'pkwy','hwy','expy','loop','pass','path','run','sq','walk'];
   if(street){
     const parts=street.toLowerCase().split(/\s+/);
@@ -2302,7 +2302,7 @@ function onZoneChange(){
   if(_zoneRestoreNote&&_zoneRestoreNote.key!==key)_zoneRestoreNote=null;
   const ab=$('n2-abuts-row'),sbk=SETBACKS[key];if(ab)ab.style.display=(sbk&&sbk.rearNotAbuttingN1!=null)?'flex':'none';
   renderZoneNote();
-  if(!key){$('zone-info').style.display='none';return;}
+  if(!key){$('zone-info').style.display='none';$('zone-udo-link').style.display='none';return;}
   const sb=SETBACKS[key];
   if(!sb){$('zone-info').style.display='';$('zone-udo-link').style.display='none';calcBuildable();return;}   // v8.15: a stub shows its (blank or leftover) setbacks and the note
   if(sb){
