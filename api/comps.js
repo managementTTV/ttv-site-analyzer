@@ -198,7 +198,8 @@ export default async function handler(req, res){
       // one (v8.14); priced against today's heated sf it would pass as a new-build comp. The assessor sometimes dates a
       // house to the year after a Q4 closing, so a few real closings go too: county-wide over 24 months, 22 of the 24
       // rows this drops were bulk deeds, lot takedowns or teardowns, and 2 were Oct 2024 closings on 2025 houses.
-      // Narrowing it to yb-1 needs the multi-parcel-deed check (audit C-F2) first, because the bulk deeds sit there too.
+      // All 24 sit at saleYear = yb-1, so narrowing it to yb-1 needs the multi-parcel-deed check (audit C-F2) and a guard
+      // for single-parcel teardown or lot sales (e.g. 18701404, $875k on 6,730 sf) first.
       const saleYear = a.saledate ? new Date(a.saledate).getUTCFullYear() : null;
       if(yb && saleYear && saleYear < yb){ predates++; return; }
       const lat = num(c.xcoord), lng = num(c.ycoord);

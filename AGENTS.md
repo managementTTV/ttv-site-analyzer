@@ -297,7 +297,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   in for the lot sale. A sale recorded before the year the current house was built is left out as
   well. The assessor sometimes dates a house to the year after a Q4 closing, so a few real closings go too
   (2 of 24 rows county-wide over 24 months; the other 22 were bulk deeds, lot takedowns and teardowns).
-  Narrowing it to `yb-1` needs the multi-parcel-deed check first. Both counts go into `notes`, and the
+  All 24 sit at `saleYear = yb-1`, so narrowing it needs the multi-parcel-deed check and a guard for
+  single-parcel teardown or lot sales first. Both counts go into `notes`, and the
   county comps box shows them under "Left out". Flag a vacant check that isn't case- and length-tolerant
   (`/^Y/i`), or one moved ahead of the newest-row pick.
 - **The ARV is capped at the highest sold comp.** The SOP is explicit that $/sf math must never run
