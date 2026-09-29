@@ -1159,8 +1159,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="card-title"><span class="dot"></span>Utility Taps</div>
         <p class="note" style="margin-bottom:10px">Auto-filled from the county/city on Site Intelligence — per unit. Override with a project-specific quote if you have one.</p>
         <div class="fr2">
-          <div class="field"><label>Water Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-water" value="0" oninput="markManual(this);calcAll()"></div></div>
-          <div class="field"><label>Sewer Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-sewer" value="0" oninput="markManual(this);calcAll()"></div></div>
+          <div class="field"><label>Water Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-water" value="0" oninput="markManual(this);calcAll()" onblur="renderTapHint()"></div></div>
+          <div class="field"><label>Sewer Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-sewer" value="0" oninput="markManual(this);calcAll()" onblur="renderTapHint()"></div></div>
         </div>
         <div class="toggle-row">
           <span class="toggle-lbl">No water tap (existing / not available)</span>
@@ -1847,6 +1847,9 @@ async function pullCountyComps(){
     const money=n=>'$'+Math.round(n).toLocaleString();
     let h='<b>'+take.length+' new-build comps added</b> from Mecklenburg County records \u00b7 '
       +(d.notes&&d.notes[0]?d.notes[0]:'');
+    // v8.14: say which sales the server left out (lot sales; sales dated before the assessor's year built)
+    {const lo=(d.notes||[]).filter(n=>/lot sales|before the assessor/.test(n));
+     if(lo.length)h+='<div style="margin-top:4px;color:var(--text-dim);font-size:11px">Left out: '+lo.map(n=>String(n).replace(/[<>&]/g,'').replace(/\s+(were\s+)?left out$/,'')).join(' \u00b7 ')+'</div>';}
     if(N&&N.count)h+='<div style="margin-top:4px">Built '+(d.params.minYear)+'+: <b>'+N.count+'</b> comps, median <b>$'+N.median_psf+'/sf</b> (range $'+N.min_psf+'\u2013$'+N.max_psf+') \u00b7 highest sold '+money(N.highest_sold)+'</div>';
     if(S&&S.count)h+='<div>Solid (built '+(d.params.solidYear)+'+): <b>'+S.count+'</b> comps, median <b>$'+S.median_psf+'/sf</b></div>';
     if(d.summary&&d.summary.size_matched&&d.summary.size_matched.in_band!=null)
@@ -3821,14 +3824,17 @@ function applyCustomDims(){ onPlanChange(); }
 // County-level defaults keyed to Step-1 county-sel value. null = not on file (Enzo to backfill).
 const COUNTY_TAP={
   'Mecklenburg':{w:5819,s:11521},     // Charlotte Water, city-installed 5/8" water + 4" sewer
-  'Gaston':{w:4826,s:4851},           // City of Gastonia (sewer: Southwest service area)
+  'Gaston':{w:4826,s:4851,served:['gastonia'],   // City of Gastonia (sewer: Southwest service area)
+    cityNote:'This is the City of Gastonia schedule. Other Gaston towns (Belmont, Cramerton, Dallas, Lowell\u2026) run their own water and sewer, so get the town\u2019s quote.'},
   'Lincoln':{w:5137.80,s:4988.41},
   // Cabarrus water: the sheet has no figure (it depends on the retail provider), so this keeps the old $2,500 as a
   // flagged estimate rather than $0 (Brian, 2026-09-29).
   'Cabarrus':{w:2500,s:2968,note:'Cabarrus: water is a $2,500 estimate (it depends on the retail provider: Concord, Harrisburg…), and the sewer figure is the WSACC system development fee only. Get the provider’s quote.'},
-  'Iredell':{w:2500,s:null},          // Iredell Water Corp, water only
+  'Iredell':{w:2500,s:null,served:[],   // Iredell Water Corp, water only (Statesville has its own row)
+    cityNote:'This is Iredell Water Corp\u2019s water tap. Towns with their own systems (Mooresville, Troutman\u2026) set their own fees, so get the town\u2019s quote.'},
   'Kannapolis':{w:4600,s:5250},
-  'Catawba':{w:1660,s:5691},
+  'Catawba':{w:1660,s:5691,served:[],   // Catawba County Utilities
+    cityNote:'This is Catawba County Utilities\u2019 schedule. Hickory, Newton and Conover run their own water and sewer, so get the city\u2019s quote there.'},
   'Shelby':{w:null,s:null},
   'Monroe':{w:null,s:null},
   'Rowan':{w:2405,s:1798},            // Salisbury-Rowan Utilities, 3/4" water + 4" sewer under 10 ft deep
@@ -3853,29 +3859,37 @@ function tapRecordFor(sig){
   return {key:'none:'+county,rec:null,label:county};
 }
 function setTapHint(msg){const h=$('tap-hint');if(!h)return;if(msg){h.innerHTML='⚠ '+msg;h.style.display='';}else{h.style.display='none';h.innerHTML='';}}
+// The note under the taps, built from the current fee record, typed flags and values (v8.14). applyTapDefaults()
+// calls it after writing defaults, the tap fields call it on blur, and restoreDeal() calls it once the typed-tap flags
+// are back, so a reopened deal shows the same note. A fee the record doesn't have reads "no … fee on file", never $0.
+function renderTapHint(){
+  const wf=$('tap-water'),sf=$('tap-sewer');if(!wf||!sf)return;
+  const J=tapRecordFor(tapSig()), rec=J.rec, city=(($('addr-city')||{}).value||'').toLowerCase().trim();
+  const sides=[['w',wf,'water'],['s',sf,'sewer']], msgs=[];
+  if(!rec){
+    if(J.label&&sides.some(([,f])=>!isManual(f.id)))msgs.push('No tap fees on file for '+J.label+' \u2014 enter manually, confirm fee schedule (Enzo).');
+  }else{
+    const gaps=sides.filter(([k,f])=>rec[k]==null&&!isManual(f.id)).map(x=>x[2]);
+    if(gaps.length)msgs.push('No '+gaps.join(' & ')+' fee on file for '+J.label+' \u2014 left at $0, confirm fee schedule (Enzo).');
+    const typed=sides.filter(([k,f])=>isManual(f.id)&&pv(f.id)!==(rec[k]==null?0:rec[k])).map(x=>x[2]);
+    const sched=k=>rec[k]==null?('no '+(k==='w'?'water':'sewer')+' fee on file'):(fmt(rec[k])+' '+(k==='w'?'water':'sewer'));
+    if(typed.length)msgs.push('Using your '+typed.join(' & ')+' tap quote; the '+J.label+' schedule per unit is '+sched('w')+' / '+sched('s')+'.');
+    if(rec.note)msgs.push(rec.note);
+    if(rec.cityNote&&city&&!(rec.served||[]).includes(city))msgs.push(rec.cityNote);
+  }
+  setTapHint(msgs.join(' '));
+}
 // Runs on a county change and on entering The Underwrite. It writes the jurisdiction's defaults only when the fee
 // record changes, and (v8.14) never over a tap the analyst typed: those fields carry data-manual (markManual on
-// input), as every other auto-filled field does. A kept quote is named in the hint beside the schedule it differs from.
+// input), as every other auto-filled field does.
 function applyTapDefaults(force){
   const wf=$('tap-water'),sf=$('tap-sewer');if(!wf||!sf)return;
   const sig=tapSig(), prev=_tapSig, J=tapRecordFor(sig);
   _tapSig=sig;
   if(!force&&prev!=null&&tapRecordFor(prev).key===J.key)return;
-  const rec=J.rec, want={w:rec&&rec.w!=null?rec.w:0, s:rec&&rec.s!=null?rec.s:0};
-  const kept=[], gaps=[];
-  [['w',wf,'water'],['s',sf,'sewer']].forEach(([k,f,name])=>{
-    if(isManual(f.id)){if(pv(f.id)!==want[k])kept.push(name);return;}
-    f.value=want[k];
-    if(rec&&rec[k]==null)gaps.push(name);
-  });
-  const msgs=[];
-  if(!rec){if(J.label&&kept.length<2)msgs.push('No tap fees on file for '+J.label+' — enter manually, confirm fee schedule (Enzo).');}
-  else{
-    if(gaps.length)msgs.push('No '+gaps.join(' & ')+' fee on file for '+J.label+' — left at $0, confirm fee schedule (Enzo).');
-    if(rec.note)msgs.push(rec.note);
-  }
-  if(kept.length&&rec)msgs.push('Kept your '+kept.join(' & ')+' tap quote; the '+J.label+' schedule is '+fmt(want.w)+' water / '+fmt(want.s)+' sewer per unit.');
-  setTapHint(msgs.join(' '));
+  const rec=J.rec;
+  [['w',wf],['s',sf]].forEach(([k,f])=>{if(!isManual(f.id))f.value=(rec&&rec[k]!=null)?rec[k]:0;});
+  renderTapHint();
   calcAll();
 }
 function onSewerSkip(){const f=$('septic-f');if(f)f.style.display=($('skip-sewer')&&$('skip-sewer').checked)?'':'none';calcAll();}
@@ -5438,6 +5452,7 @@ function restoreDeal(d){
     // 3) the taps' entry-time autofill: put back the jurisdiction it last ran for, so taps still due (a city typed
     //    after the county) land when The Underwrite is entered. A file from before v8.9 counts as applied.
     _tapSig=('tapSig' in d)?d.tapSig:tapSig();
+    renderTapHint();   // v8.14: the tap note as it stood when saved (typed quotes are flagged again by now)
     // 4) lot geometry: the file's own polygon, or none; never the previous deal's
     polyPoints=(d.polyPoints||[]).map(p=>({x:p.x,y:p.y}));
     edgeDesignations=(d.edges||[]).slice();
@@ -5536,9 +5551,9 @@ const RELEASE_NOTES=[
  {v:'8.14',date:'Sep 2026',name:'Fixes from the full logic audit: comps, Units, tap fees, plan footprints',items:[
    'Sales comps: builder lot purchases no longer count as new-build comps. The county marks them \u201csold as vacant\u201d with \u201cYes\u201d, and the check looked for \u201cY\u201d, so a lot sale was priced against the house built on it later (about $94/sf against $213/sf for real comps). A sale recorded before the current house was built is left out too. On the 80-deal backtest the median error is unchanged (4.8%); in pockets full of lot sales the ARV moves a lot, e.g. a 3,800 sf Stephens Farm subject from $404k to $1.63M.',
    'Changing the Slate GC fee no longer puts Units back to the plan default. A 3-townhome deal became a 1-unit deal, which cut Dellinger\u2019s Max land from $262,309 to $69,756. Units now follows the plan only when you pick a different plan (or change a custom footprint\u2019s Units).',
-   'Tap fees: a tap quote you type stays put. Editing the city (Charlotte \u2192 Mint Hill) used to put Charlotte Water\u2019s $5,819 / $11,521 back over it; a different county now keeps your quote and shows that county\u2019s schedule beside it. Saved deals remember which taps were typed.',
+   'Tap fees: a tap quote you type stays put. Editing the city (Charlotte \u2192 Mint Hill) used to put Charlotte Water\u2019s $5,819 / $11,521 back over it; a different county now keeps your quote and the note under the taps shows that county\u2019s schedule beside it. Saved deals remember which taps were typed. Where the default is one city\u2019s or the county\u2019s schedule (Gastonia, Catawba County, Iredell Water Corp), the note says to get the town\u2019s quote.',
    'Tap fee table updated to the team\u2019s verified provider sheet (FY26): Gastonia $4,826 / $4,851, Mount Holly $2,250 / $2,670 (meter and system development fees included), Catawba $1,660 / $5,691, Cabarrus sewer $2,968 (WSACC), with water kept at a $2,500 estimate because it depends on the retail provider (get the quote). Mecklenburg, Statesville, Lincoln, Kannapolis and Iredell were already right.',
-   'Plan footprints checked against Slate\u2019s plan stats: Akron is 15\u2032 \u00d7 55\u2032 over two stories (it was stored as a one-storey 15\u2032 \u00d7 102\u2032, so it showed \u201cToo Large\u201d on the narrow lots it\u2019s made for), Hampton and North Hampton had width and depth swapped, and Dunkirk\u2019s depth now includes its front porch (34\u2032). The other 46 plans already matched.']},
+   'Plan footprints checked against Slate\u2019s plan stats: Akron is 15\u2032 \u00d7 55\u2032 over two stories (it was stored as a one-storey 15\u2032 \u00d7 102\u2032, so it showed \u201cToo Large\u201d on the narrow lots it\u2019s made for), Hampton and North Hampton had width and depth swapped, and Dunkirk\u2019s depth now includes its front porch (34\u2032). 41 plans are on Slate\u2019s 3-6-26 stats and match; Akron and Yarmouth appear only on the 07.14.25 stats; North Hampton and six plans (Cuyahoga w/Sunroom, Athens 3.0, Canton, Powell Duet, Troy, Wheatley) aren\u2019t on a stats sheet, so their footprints still come from the pricing sheet.']},
  {v:'8.13',date:'Sep 2026',name:'Excel loan terms and custom plans match the app',items:[
    'Excel model: clearing a loan term on the Inputs sheet now means the default (10, 8 or 6 months), as in the app, instead of 0 months. Scenarios row 16 shows the term each scenario uses, and the holding cost, Max Land and the Sensitivity grid all read it, so no row can drop below 1 month.',
    'A loan term over 36 months still applies, but gets a note, so an “80” typed for “8” doesn’t slip through.',

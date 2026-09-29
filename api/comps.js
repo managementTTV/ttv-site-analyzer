@@ -194,8 +194,11 @@ export default async function handler(req, res){
     market.forEach(a=>{
       const c = cama.get(a.parcelid); if(!c) return;
       const sf = num(c.heatedarea), yb = c.yearbuilt || null;
-      // A sale recorded before the year the current house was built sold the lot or the old house, not this one
-      // (v8.14). Pricing it against today's heated sf and year built would pass it off as a new-build comp.
+      // A sale recorded before the assessor's year built for the current house sold the lot or the old house, not this
+      // one (v8.14); priced against today's heated sf it would pass as a new-build comp. The assessor sometimes dates a
+      // house to the year after a Q4 closing, so a few real closings go too: county-wide over 24 months, 22 of the 24
+      // rows this drops were bulk deeds, lot takedowns or teardowns, and 2 were Oct 2024 closings on 2025 houses.
+      // Narrowing it to yb-1 needs the multi-parcel-deed check (audit C-F2) first, because the bulk deeds sit there too.
       const saleYear = a.saledate ? new Date(a.saledate).getUTCFullYear() : null;
       if(yb && saleYear && saleYear < yb){ predates++; return; }
       const lat = num(c.xcoord), lng = num(c.ycoord);
@@ -222,7 +225,7 @@ export default async function handler(req, res){
     });
     rows.sort((a,b)=> (a.distance_mi??99) - (b.distance_mi??99));
     if(dropped) out.notes.push(`${dropped} sales fell in the search box but outside the ${radius} mi radius and were dropped`);
-    if(predates) out.notes.push(`${predates} sales recorded before the current house was built were left out`);
+    if(predates) out.notes.push(`${predates} sales recorded before the assessor's year built were left out`);
     out.comps = rows;
 
     // 6) summarise each tier. Two methods, per the SOP: $/sf and absolute sold price.
