@@ -360,6 +360,29 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   change that hard-codes a townhome *recommendation* as if the gate already existed, and
   treat wiring the use-matrix gate as still-to-do.
 
+**Current state, not target (v8.15):**
+- **The Mecklenburg N2 rows follow the UDO** (Charlotte UDO as amended 3/23/2026, text amendment 2025-118).
+  - **Detached rows.** `N2-A` / `N2-B` hold the **N1-E** standards (10 / 20 / 5 / 10 ft, 30 ft, 3,000 sf). That's
+    what single-family, duplex, triplex and quadraplex buildings are built to there (§5.1, §5.3.A.1, §15.4.HH.1 / EE.3
+    / JJ.3 / GG.4). A 2- to 4-unit townhome row is legally a duplex / triplex / quadraplex (§15.3: multi-family =
+    5+ units), so it uses these rows too. `N2-C` holds the same values with a note: no single-family, and a standalone
+    duplex–quadraplex only on a lot of 0.5 ac or less that existed before 6/1/2023.
+  - **Townhome rows.** `N2-x · townhomes 5+` hold Multi-Family Attached (Tables 5-1 / 5-2), with `mfa:true`. The
+    frontage is 20 ft from the back of curb; the app measures it from the lot line, which is conservative. The rear
+    comes from `zoneRear()`: for N2-B / N2-C the `rearNotAbuttingN1` 10 ft applies unless `#n2-abuts-n1` is ticked.
+    That box is ticked by default, because abutting a Neighborhood 1 Place Type (2040 Policy Map) means 20 ft
+    (Brian, 2026-09-29). The townhome card points at the row that matches Units.
+  - **No affordability condition in N2.** The only mandatory affordable set-aside for these building types is the
+    N1-A..E quadraplex rule (arterial street + 1 unit ≤ 80% AMI for 15 years, §15.4.GG.3.a). Affordability in N2 is
+    voluntary bonuses only (§16.3 for N2-C, §16.4).
+  - Flag a change that puts back unsourced N2 values, applies the townhome row to a 2–4 unit row, or adds an
+    affordability requirement to N2.
+- **Suffixed GIS zones map to the base zone (v8.15).** `setGisZoning()` falls back to `zoneSuffix()`, so
+  "N1-C(HDO)", "N2-A (CD)" and "N2-B BVO" take the base row. `renderZoneNote()` says what the suffix means; for CD,
+  read the rezoning petition, because its conditions govern. Before this, a suffixed zone got a stub option with no
+  setbacks, and the whole lot counted as buildable (audit G2). Flag a zone lookup that drops the suffix note, or one
+  that treats a CD petition's conditions as known.
+
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
   adds a release-notes / changelog entry. Flag a mismatch.
