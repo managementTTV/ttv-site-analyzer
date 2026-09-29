@@ -91,10 +91,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `#profit-rule-warn`, never be applied quietly; an implausible one (floor under $1,000, % under 1%)
   applies but also shows a "did you mean…?" note. The limits and typo thresholds live once, in
   `PROFIT_RULE_LIMITS`, which `getProfitRule()` and the Excel builder both read. Messages and labels
-  format values with `fmtRuleUSD()` / `fmtRulePct()`: exact (no rounding that contradicts a threshold)
-  and in a form `parseRuleValue()` reads back in any browser locale. The warning lines are drawn by
-  `renderInputWarnings()`, which holds a field's own note until the field loses focus, so half-typed
-  values ("70,", "75") don't flash notes; keep the `onblur` on each rule and term field. The Excel
+  format values with `fmtRuleUSD()` / `fmtRulePct()`: to the cent / 4 significant digits (not whole
+  dollars) and in a form `parseRuleValue()` reads back in any browser locale. The warning lines are drawn
+  by `renderInputWarnings()`, which holds a field's own note while you're typing in it (from the first
+  keystroke until the field loses focus), so half-typed values ("70,", "75") don't flash notes, while merely
+  focusing a flagged field keeps its note up. Document-level listeners (capture-phase `input`, `focusout`)
+  do the tracking and re-render; don't add per-field handlers. The Excel
   model mirrors the same semantics: the Inputs rows "Min profit used" / "% of all-in used" apply the
   default (a blank **or non-numeric** cell, via `ISNUMBER`) and the limits, `Scenarios!B30` reads
   those two cells, and the note in column C beside each rule cell compares what was typed with what
@@ -107,10 +109,15 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   field instead, as `calcBUA()` does for `bua-hardscape` since v8.8 (blank = its HTML default, 500 sf; 0 = none).
 - **Loan terms go through `getTerms()` (v8.7)**, the one reader for `term-w` / `term-b` / `term-best`:
   the scenario cards, Max land, the hero (via `getReportData().terms`), the PDF, the Excel inputs and
-  the plan comparison. A blank or unreadable term is the field's HTML default (10 / 8 / 6, also its
-  placeholder), not 0 months; a term under 1 month is raised to 1; both show in `#term-warn`. Flag a
-  direct `pv('term-…')` read. The sensitivity grids never show a row under 1 month (PDF
-  `Math.max(1,…)`, Excel `MAX(1,…)`); keep the two in step.
+  the plan comparison. A blank term is the field's HTML default (10 / 8 / 6, also its placeholder), not
+  0 months, and is silent, as with the profit rule. An unreadable term also gets the default, a term under
+  1 month is raised to 1, and one over the field's max (36) applies as typed; each of those shows a note in
+  `#term-warn`. Flag a direct `pv('term-…')` read. The Excel model mirrors this once (v8.13): Scenarios row
+  16 holds the terms as used (`MAX(1, IF(ISNUMBER(x), x, default))`), and every term formula (holding,
+  Max Land's B27/B28, all five Sensitivity rows) reads that row, never the Inputs term cells; a note in
+  column C beside each Inputs term cell says when it isn't used as typed or is over the max. The
+  sensitivity grids never show a row under 1 month (PDF `Math.max(1,…)`, Excel via row 16 and
+  `MAX(1,…)`); keep the two in step.
 - **Money text fields are read with `mv()`, never `pv()` (v8.8).** Land cost, asking price and the three
   ARV $/sf fields (`land-cost`, `asking-price`, `arv-w`, `arv-b`, `arv-best`) are `type="text"` so "$185,000"
   can be typed or pasted. `pv()` drops every comma and runs `parseFloat`, which read "$185,000" as 0, "185k"
@@ -121,8 +128,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   show in `#lever-warn`, never silently. Readable but implausible values apply and get a note: land or asking
   under $1,000 ("did you mean $185,000?"), an ARV of $1,000/sf or more ("looks like a sale price"); the
   thresholds are data in `MONEY_FIELDS` (`typoBelow` / `typoFrom`). `renderInputWarnings()` draws
-  `#lever-warn` with the other warning lines, so a field's note waits until focus leaves it; keep the `onblur`
-  on all five. The exports carry the same notes: a "Check inputs" line on the PDF cover, and a note in column C
+  `#lever-warn` with the other warning lines, so a field's note waits while you type in it, through the same
+  document-level listeners (no per-field handlers). The exports carry the same notes: a "Check inputs" line on the PDF cover, and a note in column C
   beside the land / ARV cell on the Excel Inputs sheet (only when there is one, so a clean deal's files are
   unchanged). Flag an export path that reads these fields but drops the notes.
   Flag a new reader of these five ids that uses `pv()` or `parseFloat`, or a new `type="text"` money field
