@@ -239,10 +239,13 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   applied result, so a county left from the last deal can't turn the GIS zone into another county's stub (audit G2).
 - **The geocode matches the address typed, or loads nothing (v8.16, audit G1).** `chooseAddressPoint()` takes the
   exact `txt_street_number` and compares every part of the street (direction, name, type, suffix) after both sides go
-  through `canonTok()` ("North" = N, "Drive" = DR, "37th" = 37, "Mount" = MT). The typed ZIP / city choose between
-  places. `match.status` is `exact`, `close` (loaded, with `diffs`: a part left out, a ZIP or city that differs), or
-  refused: `none` (with the nearest numbers on the street), `ambiguous` (N and S Tryon both fit) or `locality` (the
-  street isn't in the typed city or ZIP). A refused match returns no parcel and no zoning. v5 matched the number and the
+  through `canonTok()` ("North" = N, "Drive" = DR, "37th" = 37, "Mount" = MT; apostrophes dropped, hyphens split; the
+  county's own type codes such as TR count too). The typed ZIP / city choose the place first, then the spelling, so
+  "2100 Sharon Rd, 28210" is SHARON RD W in 28210, not the exact-spelled SHARON RD in 28207. Candidates are paged (a
+  tower has 450 unit points at one number). `match.status` is `exact`, `close` (loaded, with `diffs`: a part left out,
+  a ZIP or city that differs, another street at the number, one unit of a building), or refused: `none` (with the
+  nearest numbers on the street), `ambiguous` (N and S Tryon both fit, or the address's units are separate parcels)
+  or `locality` (the street isn't in the typed city or ZIP). A refused match returns no parcel and no zoning. v5 matched the number and the
   first word after it as substrings and took the first hit, so "1500 N Davidson St" loaded 15004 Annan Ct. Flag a
   geocode that matches the number as a substring, drops the direction or type, takes the first feature without
   comparing, or loads a parcel for a refused match. A close match must stay visible (amber status and card row).
@@ -356,14 +359,16 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   before the fetch and drops the answer if the address changed while it ran; `_lastGis.addrSig` is that request-time
   signature. Before this, an edit during the lookup got the old parcel's answer, cached under the new address with the
   old PID, which the comps guard then accepted. Flag a new async county call that stamps a landing-time signature.
-- **The site data on screen belongs to one address (v8.16, audit G16).** `_gisLot` ties the lot polygon, its edges,
-  the zone and the setbacks to the address a County GIS lookup (or a reopened deal with a saved parcel) loaded them for.
-  When the address is committed as another property (the fields' `change` event, compared with `addrWords()` so "Dr" /
-  "Drive" is the same street) or a lookup starts for one, `clearGisSite()` clears them, with a "Put them back" button
-  (`putBackGisSite()`, after which the data is untied). A lot drawn on a fresh page isn't tied, so it's never cleared.
-  Before this, the last deal's lot and fit results stayed under a new address, including after a lookup that found only
-  zoning or nothing. On reopen, a saved parcel whose `matched` address isn't the deal's (`gisMatchFits()`: deals saved
-  before v8.16 can hold a G1 parcel) is flagged and its PID dropped.
+- **The site data on screen belongs to one address (v8.16, audit G16).** `_gisLot` ties the lot (polygon and edges,
+  or the `SITE_FIELDS` width / depth / areas), the zone and the setbacks to the address a County GIS lookup answered, or
+  a reopened deal with a saved parcel. It keeps the county's spelling (`_lastGis.mpt`) too. When the address is committed
+  as another property (the fields' `change` event, compared with `addrWords()` so "Dr" / "Drive" is the same street) or
+  a lookup starts for one, `clearGisSite()` clears them. So does a refused lookup for the tied address. Every status
+  line then carries "Put them back" (`putBackGisSite()`, after which the data is untied) until a lookup loads data. A lot
+  drawn on a fresh page is tied once a lookup loads zoning or a parcel for its address. Before this, the last deal's lot and fit
+  results stayed under a new address, including after a lookup that found only zoning or nothing. On reopen, a saved
+  parcel whose `matched` address isn't the deal's (`gisMatchFits()`: deals saved before v8.16 can hold a G1 parcel) is
+  flagged and its whole County GIS record dropped. The flag is saved with the deal (`gisMismatch`) until a lookup loads data.
 - **Never infer "untouched" from a field's value.** An analyst can legitimately type a number that
   equals a shipped default (a real $2,000 survey quote, a real $2,500 grading allowance), and the
   value-based check silently overwrote it — a Codex P1 on PR #17. Auto-fill gates on the explicit
