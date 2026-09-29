@@ -408,6 +408,45 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - The sub-lot estimate shows "?" (minimums unknown), not the "—" of a row with no minimums.
   - When a saved stub reopens on its base row with setbacks that differ from that row, `_zoneRestoreNote` says so.
 
+### Buildable envelope & plan fit (poly mode, v8.17)
+Every County GIS lookup switches the lot to poly mode (`loadParcelPolygon` → `setLotMode('poly')`), so this is the path
+most deals take.
+- **`loadParcelPolygon()` merges, then designates.**
+  - `mergeParcelRing()` drops each vertex that sits within 0.5 ft of the line its neighbours make (1 ft next to a piece
+    under 2 ft). It carries the proxy's ROW flags (by length) and front edge along.
+  - `designateParcelEdges()` then sets:
+    - front = the proxy's front edge plus the rest of the street line (ROW edges within 35° of it, or collinear edges);
+    - rear = the back-facing edge with the most length facing the front, weighted by depth, **ROW edges included**
+      (alley and through lots), plus its collinear pieces;
+    - corner = ROW edges running on from the front (a side street).
+  - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and
+    `#edge-auto-note` says so.
+  - Flag a change that goes back to one front and one rear edge, skips ROW edges as rear candidates, or makes every edge
+    a side when no front is found (audit G3, G13, G14).
+- **Edges are `'front' | 'rear' | 'side' | 'corner'`.**
+  - `edgeSetbackFt()` is the single reader. Corner uses `sb-corner`; a blank Corner Side falls back to `sb-sides`.
+  - The editor's edge click cycles all four (audit G5).
+- **The envelope is the lot minus each edge's setback band** (`buildEnvelopeFt()`).
+  - It is worked as disjoint convex pieces cut with `clipHPLabFt`, then joined back into outlines.
+  - At a convex corner a band runs on to the neighbouring edge's line, so a convex lot comes out as the lot clipped by
+    every edge's offset half-plane.
+  - At a concave corner the band stops square and a cap covers the corner.
+  - The result can be several outlines, in `planOverlay.buildPolysFt` (largest first, which is `buildPolyFt`). It can
+    also be none, when the setbacks meet across the lot: `clearEnvelope()` then nulls `buildPolyFt`, so nothing is
+    fitted into a stale outline.
+  - Flag any return to intersecting neighbouring offset lines. That left spikes into the setbacks and turned inside out
+    when the setbacks met across the lot (audit G4, G12).
+  - This half-plane reading is stricter on irregular lots with obtuse corners than "distance to the nearest point of
+    the lot line". Flag a change that switches between the two without saying so.
+- **Fit check.**
+  - A convex envelope uses the exact half-plane solver (`polyIsConvexFt` ignores turns under 1.5°).
+  - A non-convex one uses `planFitsSamplingFt()`: the exact solver on the envelope's kernel, then `rectFitsPolyFt()`,
+    which tests the whole rectangle (no envelope edge inside it, and its centre inside).
+  - Neither can report a placement that isn't inside the envelope. Flag a corners-only containment test (audit G6).
+- **`redrawEditor()` owns `buildableArea` in poly mode**, as the envelope's area (all pieces). `updatePolyStats()` must
+  not assign it (v8.3).
+- **`polyPoints` keep 1/100 px**, not whole pixels, so a GIS lot's area equals the county shoelace.
+
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
   adds a release-notes / changelog entry. Flag a mismatch.
@@ -418,6 +457,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   (PID 04118536, 3,455 sf) and 2731 (PID 04118537, 4,312 sf), all N1-B, Central Catawba. The older
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
+  Reference numbers since v8.17:
+  - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
+    17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
+  - 3 × Dayton Townhomes, land $75,000, $265/sf: Max land **$262,309**, lot factor $25,850.
+  - Rect mode, N1-B: 40×180 → 3,540 sf, 80×180 → 8,260 sf.
   Flag a math-touching PR that ships without one.
 
 ---

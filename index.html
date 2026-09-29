@@ -725,7 +725,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.15 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.17 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -892,7 +892,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="lot-stat-box"><div class="lot-stat-val" id="poly-stat-corners">—</div><div class="lot-stat-lbl">Corners</div></div>
         </div>
 
-        <p class="hint-text">💡 Drag orange dots to match your lot shape. Numbers show side lengths in feet. <strong style="color:var(--teal)">Click any edge line</strong> to cycle: Front (blue) → Rear (red) → Side (gray). Multiple edges can share the same designation. Set canvas width to calibrate scale.</p>
+        <p class="hint-text">💡 Drag orange dots to match your lot shape. Numbers show side lengths in feet. <strong style="color:var(--teal)">Click any edge line</strong> to cycle: Front (blue) → Rear (red) → Side (gray) → Corner side (purple, uses the Corner Side setback). Multiple edges can share the same designation. Set canvas width to calibrate scale.</p>
+        <p id="edge-auto-note" class="note" style="display:none;margin-top:6px"></p>
 
         <div class="field" style="margin-top:10px">
           <label>Total Lot Area (sq ft) — from GIS / Polaris (overrides calculated)</label>
@@ -2296,11 +2297,86 @@ function setGisZoning(zoneVal,sameParcel){
   if(sameParcel&&(sel.value===opt.value||sel.value.indexOf(opt.value+' \u00b7 ')===0))return true;
   sel.value=opt.value;onZoneChange();return true;
 }
+// ── v8.17 BUILDABLE ENVELOPE ──────────────────────────────────────────────
+// The setback for one edge designation. A blank Corner Side field falls back to the side setback.
+function edgeSetbackFt(des){
+  if(des==='front')return pv('sb-front');
+  if(des==='rear')return pv('sb-rear');
+  if(des==='corner'){const e=$('sb-corner');return e&&String(e.value).trim()!==''?pv('sb-corner'):pv('sb-sides');}
+  return pv('sb-sides');
+}
+// County GIS rings split one lot line into pieces wherever a neighbour's corner meets it (2731 Dellinger: a 3 + 26 ft front
+// and a 26 + 3 ft rear). Drop every vertex that sits within 0.5 ft of the line its neighbours make (1 ft beside a piece under
+// 2 ft), smallest first, checking the points already dropped too. ring: [[x,y]] ft, no closing point; row: the proxy's
+// per-edge ROW flags or null. Returns the kept points, a ROW flag per kept edge (ROW if most of its length was) and, per
+// original edge, the kept edge it became.
+function mergeParcelRing(ring,row){
+  const P=ring.map(p=>[p[0],p[1]]);
+  const E=ring.map((p,i)=>{const q=ring[(i+1)%ring.length],L=Math.hypot(q[0]-p[0],q[1]-p[1]);return{len:L,tot:L,rowLen:row&&row[i]?L:0,mid:[],orig:[i]};});
+  const segD=(p,a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;let t=L?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy);};
+  while(P.length>3){
+    const n=P.length;let best=-1,bestD=Infinity;
+    for(let v=0;v<n;v++){
+      const u=(v-1+n)%n,a=P[u],b=P[(v+1)%n],lim=Math.min(E[u].len,E[v].len)<2?1:0.5;
+      let d=segD(P[v],a,b);for(const q of E[u].mid.concat(E[v].mid))d=Math.max(d,segD(q,a,b));
+      if(d<lim&&d<bestD){bestD=d;best=v;}
+    }
+    if(best<0)break;
+    const v=best,u=(v-1+n)%n,a=P[u],b=P[(v+1)%n];
+    E[u]={len:Math.hypot(b[0]-a[0],b[1]-a[1]),tot:E[u].tot+E[v].tot,rowLen:E[u].rowLen+E[v].rowLen,mid:E[u].mid.concat([P[v]],E[v].mid),orig:E[u].orig.concat(E[v].orig)};
+    P.splice(v,1);E.splice(v,1);
+  }
+  const edgeOf=[];E.forEach((e,k)=>e.orig.forEach(i=>{edgeOf[i]=k;}));
+  return{pts:P,row:E.map(e=>e.tot>0&&e.rowLen>=e.tot/2),edgeOf};
+}
+// Front, rear and corner-side edges for a GIS lot. P: [[x,y]] ft; row: ROW flags or null; fi: the street edge (the proxy's
+// front, or a guess). Front = fi plus the rest of the street line: ROW edges running on within 35° of it (a frontage drawn as
+// chords), or edges collinear with it. Rear = of the edges facing away from the street (ROW included: an alley or a second
+// street), the one with the most length facing the front, weighted by how far back it sits; the pieces of the same line
+// either side of it are rear too. Corner side = ROW edges running on from the front line (a side street). Short pieces
+// (under 6 ft) in between are passed over. Everything else is a side.
+function designateParcelEdges(P,row,fi){
+  const n=P.length,des=Array(n).fill('side');
+  if(fi==null||fi<0||fi>=n)return des;
+  let a2=0;for(let i=0;i<n;i++){const a=P[i],b=P[(i+1)%n];a2+=a[0]*b[1]-b[0]*a[1];}
+  const s=a2>0?1:-1;
+  const E=P.map((a,i)=>{const b=P[(i+1)%n],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;return{a,b,L,tx:dx/L,ty:dy/L,nx:-s*dy/L,ny:s*dx/L,mx:(a[0]+b[0])/2,my:(a[1]+b[1])/2};});
+  const F=E[fi],nxt=(j,d)=>(j+d+n)%n;
+  const angF=j=>Math.acos(Math.max(-1,Math.min(1,E[j].tx*F.tx+E[j].ty*F.ty)))*180/Math.PI;
+  const offF=p=>Math.abs((p[0]-F.a[0])*F.nx+(p[1]-F.a[1])*F.ny);
+  const depth=j=>(E[j].mx-F.a[0])*F.nx+(E[j].my-F.a[1])*F.ny;
+  const facing=j=>-(E[j].nx*F.nx+E[j].ny*F.ny);   // 1 = faces straight away from the street
+  // walk from edge j0 in direction d while edges are still 'side': take(j) marks, skip(j) passes over, else stop
+  const walk=(j0,d,take,skip)=>{let j=j0;for(let k=1;k<n;k++){j=nxt(j,d);if(des[j]!=='side')break;if(take(j)){des[j]=take(j);continue;}if(skip(j))continue;break;}};
+  des[fi]='front';
+  const frontLike=j=>((row&&row[j]&&angF(j)<35)||(angF(j)<8&&offF(E[j].a)<3&&offF(E[j].b)<3))?'front':'';
+  walk(fi,1,frontLike,()=>false);walk(fi,-1,frontLike,()=>false);
+  let maxD=0;for(let j=0;j<n;j++)maxD=Math.max(maxD,depth(j));
+  let rear=-1,best=0;
+  for(let j=0;j<n;j++){if(des[j]!=='side')continue;const f=facing(j);if(f<0.64)continue;const sc=f*E[j].L*Math.max(0,depth(j))/(maxD||1);if(sc>best){best=sc;rear=j;}}
+  if(rear<0){   // nothing faces away (a triangle, say): the edge whose midpoint is most opposite the front's, as before
+    const cx=P.reduce((t,p)=>t+p[0],0)/n,cy=P.reduce((t,p)=>t+p[1],0)/n,fdx=F.mx-cx,fdy=F.my-cy;best=-Infinity;
+    for(let j=0;j<n;j++){if(des[j]!=='side')continue;const sc=-((E[j].mx-cx)*fdx+(E[j].my-cy)*fdy);if(sc>best){best=sc;rear=j;}}
+  }
+  if(rear>=0){des[rear]='rear';const rearLike=j=>facing(j)>=0.9?'rear':'',short=j=>E[j].L<6;walk(rear,1,rearLike,short);walk(rear,-1,rearLike,short);}
+  if(row){
+    const cornerLike=j=>row[j]?'corner':'',short=j=>E[j].L<6;
+    for(const d of [1,-1]){let j=fi;for(let k=1;k<n&&des[nxt(j,d)]==='front';k++)j=nxt(j,d);walk(j,d,cornerLike,short);}
+  }
+  return des;
+}
 function loadParcelPolygon(rings,edgeInfo){
   if(!rings||!rings.length)return false;
   let ring=rings[0].slice();
   if(ring.length>2){const a=ring[0],b=ring[ring.length-1];if(a[0]===b[0]&&a[1]===b[1])ring=ring.slice(0,-1);}
   if(ring.length<3)return false;
+  // v7.7: the proxy classifies each edge of the ring as sent (edge i = ring[i]->ring[i+1], indices unaffected by the
+  // Y-flip below). v8.17: merge the vertices that only split a straight lot line first, carrying the ROW flags and the
+  // front edge along, then designate every edge (designateParcelEdges), not just one front and one rear.
+  const hasRow=!!(edgeInfo&&Array.isArray(edgeInfo.row)&&edgeInfo.row.length===ring.length);
+  const fi0=(hasRow&&typeof edgeInfo.front_index==='number'&&edgeInfo.front_index>=0&&edgeInfo.front_index<ring.length)?edgeInfo.front_index:null;
+  const n0=ring.length,m=mergeParcelRing(ring,hasRow?edgeInfo.row:null);
+  ring=m.pts;
   const xs=ring.map(p=>p[0]),ys=ring.map(p=>p[1]);
   const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
   const spanX=maxX-minX,spanY=maxY-minY;
@@ -2311,34 +2387,22 @@ function loadParcelPolygon(rings,edgeInfo){
   const sc=$('canvas-scale-ft');if(sc)sc.value=canvasWidthFt;
   const fpp=canvasWidthFt/W;
   const offX=(W-spanX/fpp)/2, offY=(H-spanY/fpp)/2;
+  // v8.17: kept to 1/100 px; whole pixels moved each corner up to 0.15 ft (2723 Dellinger read 7,170 sf against 7,145)
   polyPoints=ring.map(p=>({
-    x:Math.round(offX+(p[0]-minX)/fpp),
-    y:Math.round(offY+(spanY-(p[1]-minY))/fpp)   // flip Y so north is up on screen
+    x:Math.round((offX+(p[0]-minX)/fpp)*100)/100,
+    y:Math.round((offY+(spanY-(p[1]-minY))/fpp)*100)/100   // flip Y so north is up on screen
   }));
   setLotMode('poly');           // polyPoints already set, so it won't re-seed a default
-  initEdgeDesignations();        // baseline (also the fallback when no edge data)
-  // v7.7: data-driven designations from ROW detection (proxy v3). Edge i = pts[i]->pts[i+1],
-  // same order as the proxy's classification (indices unaffected by the Y-flip).
-  if(edgeInfo&&Array.isArray(edgeInfo.row)&&edgeInfo.row.length===polyPoints.length){
-    const n=polyPoints.length;
-    edgeDesignations=Array(n).fill('side');
-    const fi=(typeof edgeInfo.front_index==='number')?edgeInfo.front_index:null;
-    if(fi!=null&&fi>=0&&fi<n){
-      edgeDesignations[fi]='front';
-      // rear = non-ROW edge whose midpoint lies most opposite the front midpoint through the centroid
-      const cx=polyPoints.reduce((s,p)=>s+p.x,0)/n, cy=polyPoints.reduce((s,p)=>s+p.y,0)/n;
-      const fa=polyPoints[fi],fb=polyPoints[(fi+1)%n];
-      const fdx=(fa.x+fb.x)/2-cx, fdy=(fa.y+fb.y)/2-cy;
-      let best=-Infinity,rearIdx=-1;
-      for(let i=0;i<n;i++){
-        if(i===fi||edgeInfo.row[i])continue;
-        const a=polyPoints[i],b=polyPoints[(i+1)%n];
-        const score=-(((a.x+b.x)/2-cx)*fdx+((a.y+b.y)/2-cy)*fdy);
-        if(score>best){best=score;rearIdx=i;}
-      }
-      if(rearIdx>=0)edgeDesignations[rearIdx]='rear';
-    }
-  }
+  initEdgeDesignations();        // its lowest-edge front stands in when no street edge was found (G14: all sides before)
+  const fi=fi0!=null?m.edgeOf[fi0]:edgeDesignations.indexOf('front');
+  edgeDesignations=designateParcelEdges(ring,fi0!=null?m.row:null,fi);
+  // what the automatic designation did, shown under the editor until the lot is replaced
+  const des=edgeDesignations,notes=[];let warn=false;
+  if(n0>ring.length)notes.push(`${n0-ring.length} GIS corner${n0-ring.length>1?'s':''} that only split a straight lot line ${n0-ring.length>1?'were':'was'} merged.`);
+  if(hasRow&&fi0==null){warn=true;notes.push('No street-facing edge was found, so the front is a guess (the lowest edge on the map) with the rear opposite it. Click the street edge to set the real front.');}
+  if(des.includes('corner'))notes.push('The second street line is a corner side (purple): it uses the Corner Side setback.');
+  if(fi0!=null&&des.some((d,i)=>d==='rear'&&m.row[i])){warn=true;notes.push('The rear line faces a street or alley (a through or alley lot), so it gets the rear setback. Check whether the UDO wants a front setback on it.');}
+  _edgeNote=notes.length?{pts:polyPoints,warn,text:notes.join(' ')+' Click an edge to change it.'}:null;
   redrawEditor();
   calcBuildable();
   return true;
@@ -2455,7 +2519,8 @@ function setLotMode(mode){
 let polyPoints = [];      // [{x,y}] in canvas pixels
 let polyDragIdx = -1;     // which point is being dragged
 let polyDragOffX = 0, polyDragOffY = 0;
-let edgeDesignations = []; // 'front'|'rear'|'side' per edge i
+let edgeDesignations = []; // 'front'|'rear'|'side'|'corner' per edge i
+let _edgeNote = null;      // v8.17: {pts,warn,text} from loadParcelPolygon, shown while polyPoints is still that lot
 
 function getScaleFtPerPx(){
   const canvas = $('lot-editor-canvas');
@@ -2520,7 +2585,7 @@ function initEdgeDesignations(){
 }
 
 function cycleEdgeDesignation(edgeIdx){
-  const cycle=['front','rear','side'];
+  const cycle=['front','rear','side','corner'];   // v8.17: corner side uses sb-corner
   const cur=edgeDesignations[edgeIdx]||'side';
   const next=cycle[(cycle.indexOf(cur)+1)%cycle.length];
   // Multiple fronts and rears allowed — no restriction
@@ -2530,11 +2595,7 @@ function cycleEdgeDesignation(edgeIdx){
 }
 
 function getSetbackForEdge(i){
-  const des=edgeDesignations[i]||'side';
-  if(des==='front')return pv('sb-front');
-  if(des==='rear')return pv('sb-rear');
-  // side: check if corner lot and this is the corner-side edge
-  return pv('sb-sides');
+  return edgeSetbackFt(edgeDesignations[i]||'side');
 }
 
 function resetPolyToDefault(){
@@ -2563,13 +2624,13 @@ function redrawEditor(){
   ctx.textAlign='right';
   for(let y=gridPx;y<H-10;y+=gridPx)ctx.fillText(Math.round(pxToFt(y))+"'",W-2,y-2);
 
-  if(polyPoints.length<2){updatePolyStats();return;}
+  if(polyPoints.length<2){clearEnvelope();updatePolyStats();return;}
   const pts=polyPoints;
   const n=pts.length;
 
   // Edge designation colors
-  const EDGE_COLORS={front:'#2f6fb3',rear:'#b03f37',side:'rgba(16,37,56,0.35)'};
-  const EDGE_LABELS={front:'FRONT',rear:'REAR',side:'SIDE'};
+  const EDGE_COLORS={front:'#2f6fb3',rear:'#b03f37',side:'rgba(16,37,56,0.35)',corner:'#7a4f9a'};
+  const EDGE_LABELS={front:'FRONT',rear:'REAR',side:'SIDE',corner:'CORNER'};
 
   // Draw lot fill
   ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
@@ -2622,24 +2683,20 @@ function redrawEditor(){
     ctx.fillText(badge,lx,ly+8);
   }
 
-  // Draw setback inset using per-edge setbacks
-  const insetPts=insetPolygonPerEdge(pts,edgeDesignations);
-  if(insetPts&&insetPts.length>=3){
-    ctx.beginPath();ctx.moveTo(insetPts[0].x,insetPts[0].y);
-    for(let i=1;i<insetPts.length;i++)ctx.lineTo(insetPts[i].x,insetPts[i].y);
-    ctx.closePath();
-    ctx.fillStyle='rgba(240,169,60,0.08)';ctx.fill();
-    ctx.strokeStyle='rgba(176,116,40,0.9)';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.stroke();ctx.setLineDash([]);
+  // Draw setback inset using per-edge setbacks (v8.17: the envelope can come in more than one piece)
+  const env=insetPolygonPerEdge(pts,edgeDesignations),insetPts=env.rings[0]||null;
+  if(insetPts){
+    env.rings.forEach(r=>{
+      ctx.beginPath();ctx.moveTo(r[0].x,r[0].y);
+      for(let i=1;i<r.length;i++)ctx.lineTo(r[i].x,r[i].y);
+      ctx.closePath();
+      ctx.fillStyle='rgba(240,169,60,0.08)';ctx.fill();
+      ctx.strokeStyle='rgba(176,116,40,0.9)';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.stroke();ctx.setLineDash([]);
+    });
 
-    // Buildable area = full inset polygon
-    // Calculate area using shoelace in feet
-    let insetAreaPx=0;
+    // Buildable area = the whole envelope (every piece), in sf
     const np=insetPts.length;
-    for(let i=0;i<np;i++){
-      const a=insetPts[i],b=insetPts[(i+1)%np];
-      insetAreaPx+=a.x*b.y-b.x*a.y;
-    }
-    const insetAreaFt=Math.round(Math.abs(insetAreaPx)/2*getScaleFtPerPx()*getScaleFtPerPx());
+    const insetAreaFt=Math.round(env.area);
     if(lotMode==='poly')buildableArea=insetAreaFt;
 
     // Label the buildable area at the centroid of the inset polygon
@@ -2655,7 +2712,8 @@ function redrawEditor(){
     const edCanvas=$('lot-editor-canvas');
     const edW=edCanvas?edCanvas.width:800,edH=edCanvas?edCanvas.height:600;
     // Convert pixel coords to feet relative to canvas origin
-    planOverlay.buildPolyFt=insetPts.map(p=>({x:pxToFt(p.x),y:pxToFt(p.y)}));
+    planOverlay.buildPolyFt=env.ringsFt[0];
+    planOverlay.buildPolysFt=env.ringsFt; // every piece; the fit check looks in each (planFitsInPolyFt)
     planOverlay.buildPoly=insetPts; // keep px version for direct use in editor
     // Store centroid in feet
     const icxFt=pxToFt(icx),icyFt=pxToFt(icy);
@@ -2675,9 +2733,7 @@ function redrawEditor(){
     if(planOverlay.active&&!planOverlay.positioned){
       planOverlay.x=icx;planOverlay.y=icy;planOverlay.positioned=true;
     }
-  } else if(lotMode==='poly'){
-    buildableArea=0; // fewer than 3 corners — no envelope
-  }
+  } else clearEnvelope(); // fewer than 3 corners, or the setbacks leave nothing (v8.17: no stale envelope for the fit check)
 
   // Draw corner dots
   for(let i=0;i<n;i++){
@@ -2714,7 +2770,16 @@ function redrawEditor(){
 
   // Legend
   drawLegend(ctx,W,H);
+  const en=$('edge-auto-note');
+  if(en){const on=!!(_edgeNote&&_edgeNote.pts===polyPoints);en.style.display=on?'':'none';en.className=on&&_edgeNote.warn?'warn':'note';en.textContent=on?_edgeNote.text:'';}
   updatePolyStats();
+}
+// No envelope (v8.17): drop the last one too, so fitStatus() and the overlays can't keep using it
+function clearEnvelope(){
+  if(lotMode==='poly')buildableArea=0;
+  planOverlay.buildPolyFt=null;planOverlay.buildPolysFt=null;planOverlay.buildPoly=null;
+  planOverlay.buildCentroidFt=null;planOverlay.buildBBoxFt=null;
+  if(lotMode==='poly')planOverlay.buildRect=null;
 }
 
 function roundRect(ctx,x,y,w,h,r){
@@ -2728,6 +2793,7 @@ function drawLegend(ctx,W,H){
     {color:'#2f6fb3',dash:false,label:'Front (click edge to change)'},
     {color:'#b03f37',dash:false,label:'Rear'},
     {color:'rgba(16,37,56,0.35)',dash:true,label:'Side'},
+    {color:'#7a4f9a',dash:false,label:'Corner side'},
     {color:'rgba(176,116,40,0.9)',dash:true,label:'Setback boundary'},
     {color:'rgba(70,192,138,0.6)',dash:false,label:'Buildable area (inside setbacks)'},
   ];
@@ -2746,92 +2812,148 @@ function drawLegend(ctx,W,H){
   });
 }
 
-// Per-edge setback inset using edge-offset + line intersection
-// Spikes are prevented by clamping any result point that falls outside the original polygon
+// Labelled half-plane clip: poly is convex [{x,y,k}], k = a label for the edge that starts at that vertex. Keeps
+// h.x*x+h.y*y <= h.b; the new edge along the cut takes the line's label h.k.
+function clipHPLabFt(poly,h){
+  const out=[],n=poly.length,f=p=>h.x*p.x+h.y*p.y-h.b;
+  for(let i=0;i<n;i++){
+    const P=poly[i],Q=poly[(i+1)%n],fp=f(P),fq=f(Q),pin=fp<=1e-9,qin=fq<=1e-9;
+    if(pin)out.push(P);
+    if(pin!==qin){const t=fp/(fp-fq);out.push({x:P.x+t*(Q.x-P.x),y:P.y+t*(Q.y-P.y),k:pin?h.k:P.k});}
+  }
+  return out;
+}
+function keepFragFt(p){if(p.length<3)return false;const a=Math.abs(polyAreaFt(p));if(a<1e-6)return false;let per=0;for(let i=0;i<p.length;i++){const q=p[(i+1)%p.length];per+=Math.hypot(q.x-p[i].x,q.y-p[i].y);}return 2*a/per>1e-6;}
+// frags (disjoint convex pieces) minus the convex region H (a list of half-planes): each piece that overlaps H is cut
+// into the parts outside H, one half-plane at a time, so the result is still disjoint convex pieces.
+function subtractConvexFt(frags,H){
+  const out=[];
+  for(const F of frags){
+    let core=F;for(const h of H){core=clipHPLabFt(core,h);if(core.length<3)break;}
+    if(!keepFragFt(core)){out.push(F);continue;}
+    let rest=F;
+    for(const h of H){
+      const piece=clipHPLabFt(rest,{x:-h.x,y:-h.y,b:-h.b,k:h.k});
+      if(keepFragFt(piece))out.push(piece);
+      rest=clipHPLabFt(rest,h);if(!keepFragFt(rest))break;
+    }
+  }
+  return out;
+}
+// Ear-clip a simple polygon (positive orientation, no straight corners) into labelled triangles. Returns null if it
+// isn't simple. Diagonals take new labels from lab (an object with a counter), registered in lines.
+function triangulateFt(P,lab,lines){
+  const L=P.map(p=>p.k),idx=P.map((_,i)=>i),out=[];
+  const inTri=(p,a,b,c)=>{const c1=(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x),c2=(c.x-b.x)*(p.y-b.y)-(c.y-b.y)*(p.x-b.x),c3=(a.x-c.x)*(p.y-c.y)-(a.y-c.y)*(p.x-c.x);return c1>=-1e-12&&c2>=-1e-12&&c3>=-1e-12;};
+  while(idx.length>3){
+    let cut=false;
+    for(let a=0;a<idx.length&&!cut;a++){
+      const m=idx.length,i0=idx[(a-1+m)%m],i1=idx[a],i2=idx[(a+1)%m],A=P[i0],B=P[i1],C=P[i2];
+      if((B.x-A.x)*(C.y-B.y)-(B.y-A.y)*(C.x-B.x)<=1e-12)continue;
+      if(idx.some(j=>j!==i0&&j!==i1&&j!==i2&&inTri(P[j],A,B,C)))continue;
+      const d=lab.n++,dx=A.x-C.x,dy=A.y-C.y,Ld=Math.hypot(dx,dy)||1;lines[d]={x:-dy/Ld,y:dx/Ld,b:(-dy*C.x+dx*C.y)/Ld};
+      out.push([{x:A.x,y:A.y,k:L[i0]},{x:B.x,y:B.y,k:L[i1]},{x:C.x,y:C.y,k:d}]);
+      L[i0]=d;idx.splice(a,1);cut=true;
+    }
+    if(!cut)return null;
+  }
+  out.push(idx.map(i=>({x:P[i].x,y:P[i].y,k:L[i]})));
+  return out;
+}
+// Outline of a set of disjoint convex pieces: every piece edge lies on a labelled line, so add the edges up per line with
+// their direction; an edge two pieces share cancels, and what's left is the outline, chained into rings.
+function fragmentsToRingsFt(frags,lines){
+  const byLine=new Map();
+  for(const F of frags)for(let i=0;i<F.length;i++){
+    const P=F[i],Q=F[(i+1)%F.length],Ln=lines[P.k];if(!Ln)continue;
+    const tp=-Ln.y*P.x+Ln.x*P.y,tq=-Ln.y*Q.x+Ln.x*Q.y;if(Math.abs(tq-tp)<1e-9)continue;
+    if(!byLine.has(P.k))byLine.set(P.k,[]);byLine.get(P.k).push([Math.min(tp,tq),Math.max(tp,tq),tq>tp?1:-1]);
+  }
+  const segs=[];
+  for(const [k,iv] of byLine){
+    const Ln=lines[k],dx=-Ln.y,dy=Ln.x,fx=Ln.x*Ln.b,fy=Ln.y*Ln.b,at=t=>({x:fx+dx*t,y:fy+dy*t});
+    const ts=iv.flatMap(v=>[v[0],v[1]]).sort((a,b)=>a-b);
+    for(let j=0;j+1<ts.length;j++){
+      const t0=ts[j],t1=ts[j+1];if(t1-t0<1e-7)continue;
+      const tm=(t0+t1)/2;let w=0;for(const v of iv)if(v[0]<tm&&tm<v[1])w+=v[2];
+      if(w>0)segs.push({a:at(t0),b:at(t1)});else if(w<0)segs.push({a:at(t1),b:at(t0)});
+    }
+  }
+  // chain: from each segment's end take the unused segment starting there that turns furthest right (splits pinched rings)
+  const near=(p,q)=>Math.abs(p.x-q.x)<1e-4&&Math.abs(p.y-q.y)<1e-4,used=segs.map(()=>false),rings=[];
+  for(let i0=0;i0<segs.length;i0++){
+    if(used[i0])continue;
+    const ring=[segs[i0].a];let cur=i0;used[i0]=true;
+    for(let guard=0;guard<=segs.length;guard++){
+      const c=segs[cur],ux=c.b.x-c.a.x,uy=c.b.y-c.a.y;let nx=-1,bestT=Infinity;
+      for(let j=0;j<segs.length;j++){if(used[j]||!near(segs[j].a,c.b))continue;const s=segs[j],vx=s.b.x-s.a.x,vy=s.b.y-s.a.y,t=Math.atan2(ux*vy-uy*vx,ux*vx+uy*vy);if(t<bestT){bestT=t;nx=j;}}
+      if(nx<0)break;
+      ring.push(segs[nx].a);used[nx]=true;cur=nx;
+    }
+    // drop repeated points and straight-through corners
+    let r=ring.filter((p,i)=>!near(p,ring[(i+1)%ring.length]));
+    for(let changed=true;changed&&r.length>3;){changed=false;
+      for(let i=0;i<r.length;i++){const a=r[(i-1+r.length)%r.length],b=r[i],c=r[(i+1)%r.length],L=Math.hypot(c.x-a.x,c.y-a.y);
+        if(L>0&&Math.abs((c.x-a.x)*(b.y-a.y)-(c.y-a.y)*(b.x-a.x))/L<1e-6&&(b.x-a.x)*(c.x-b.x)+(b.y-a.y)*(c.y-b.y)>=0){r.splice(i,1);changed=true;break;}}}
+    if(r.length>=3&&polyAreaFt(r)>0.01)rings.push(r.map(p=>({x:p.x,y:p.y})));
+  }
+  return rings.sort((p,q)=>polyAreaFt(q)-polyAreaFt(p));
+}
+// The buildable envelope: the lot minus each edge's setback band. A band runs along its edge as deep as the setback; at a
+// convex corner it runs on to the neighbouring edge's line, so on a convex lot this is the lot clipped by every edge's
+// offset half-plane. At a concave corner the band stops square and a half-disc cap covers the corner (a setback is a
+// distance from the lot line). Worked as disjoint convex pieces, so concave lots come out right too, nothing can spike or
+// turn inside out, and setbacks that meet across the lot leave nothing. lot: [{x,y}] ft; sbs: setback (ft) per edge i
+// (lot[i]→lot[i+1]). Returns {rings: outlines, largest first, positive orientation; area: sf}.
+function buildEnvelopeFt(lot,sbs){
+  let n=lot.length;if(n<3)return{rings:[],area:0};
+  const ox=lot[0].x,oy=lot[0].y;   // work near the origin, for precision
+  let L=lot.map(p=>({x:p.x-ox,y:p.y-oy})),S=lot.map((_,i)=>Math.max(0,+sbs[i]||0));
+  if(polyAreaFt(L)<0){L=L.slice().reverse();S=L.map((_,j)=>S[(n-2-j+n)%n]);}   // edge j of the reversed ring is edge n-2-j
+  const E=L.map((a,i)=>{const b=L[(i+1)%n],dx=b.x-a.x,dy=b.y-a.y,Ln=Math.hypot(dx,dy)||1,tx=dx/Ln,ty=dy/Ln;return{a,b,tx,ty,nx:-ty,ny:tx,sb:S[i]};});
+  const turn=i=>{const p=E[(i-1+n)%n],q=E[i];return p.tx*q.ty-p.ty*q.tx;};   // > 0: lot[i] is a convex corner
+  const lines={},lab={n:n};
+  E.forEach((e,i)=>{lines[i]={x:-e.nx,y:-e.ny,b:-(e.nx*e.a.x+e.ny*e.a.y)};});
+  const hp=(x,y,px,py,k)=>{if(k==null){k=lab.n++;lines[k]={x,y,b:x*px+y*py};}return{x,y,b:x*px+y*py,k};};   // keeps (x,y)·p <= (x,y)·(px,py)
+  const obst=[];
+  for(let i=0;i<n;i++){
+    const e=E[i];if(!(e.sb>0))continue;
+    const j=(i+1)%n,pr=E[(i-1+n)%n],nx=E[j];
+    obst.push([hp(-e.nx,-e.ny,e.a.x,e.a.y,i),hp(e.nx,e.ny,e.a.x+e.nx*e.sb,e.a.y+e.ny*e.sb),
+      turn(i)>1e-9?hp(-pr.nx,-pr.ny,pr.a.x,pr.a.y,(i-1+n)%n):hp(-e.tx,-e.ty,e.a.x,e.a.y),
+      turn(j)>1e-9?hp(-nx.nx,-nx.ny,nx.a.x,nx.a.y,j):hp(e.tx,e.ty,e.b.x,e.b.y)]);
+  }
+  // concave corner v between edge p (in) and q (out): the gap between the two bands' square ends is a sector around v as
+  // deep as the larger setback, drawn with tangents from p's normal round to q's (the end tangents lie on the bands' own
+  // lines, so nothing pokes past them); where one setback is larger, its half-disc also reaches along the other edge
+  const fan=(v,cx,cy,sx,sy,a0,a1,r,H)=>{const m=Math.max(1,Math.ceil((a1-a0)/(Math.PI/12)));for(let k=0;k<=m;k++){const th=a0+(a1-a0)*k/m,ux=Math.cos(th)*cx+Math.sin(th)*sx,uy=Math.cos(th)*cy+Math.sin(th)*sy;H.push(hp(ux,uy,v.x+ux*r,v.y+uy*r));}return H;};
+  for(let i=0;i<n;i++){
+    if(turn(i)>1e-9)continue;
+    const p=E[(i-1+n)%n],q=E[i],v=L[i],R=Math.max(p.sb,q.sb);if(!(R>0))continue;
+    const al=Math.atan2(-(p.tx*q.ty-p.ty*q.tx),p.tx*q.tx+p.ty*q.ty);   // how far the lot line turns outward at v
+    if(al>1e-9)obst.push(fan(v,p.nx,p.ny,p.tx,p.ty,0,al,R,[hp(-p.tx,-p.ty,v.x,v.y),hp(q.tx,q.ty,v.x,v.y)]));
+    if(p.sb>q.sb)obst.push(fan(v,q.nx,q.ny,q.tx,q.ty,0,Math.PI,p.sb,[hp(-q.tx,-q.ty,v.x,v.y)]));
+    if(q.sb>p.sb)obst.push(fan(v,p.nx,p.ny,-p.tx,-p.ty,0,Math.PI,q.sb,[hp(p.tx,p.ty,v.x,v.y)]));
+  }
+  const lotL=L.map((p,i)=>({x:p.x,y:p.y,k:i}));
+  let frags=null;
+  const dot=i=>{const p=E[(i-1+n)%n],q=E[i];return p.tx*q.tx+p.ty*q.ty;};
+  if(L.every((_,i)=>turn(i)>1e-9||(turn(i)>-1e-9&&dot(i)>0)))frags=[lotL];   // convex (straight corners allowed, not a U-turn)
+  else{const T=triangulateFt(lotL.filter((_,i)=>Math.abs(turn(i))>1e-9||dot(i)<0),lab,lines);frags=T||[lotL];}
+  for(const H of obst){frags=subtractConvexFt(frags,H);if(!frags.length)break;}
+  const area=frags.reduce((t,f)=>t+Math.abs(polyAreaFt(f)),0);
+  const rings=area>0.01?fragmentsToRingsFt(frags,lines).map(r=>r.map(p=>({x:p.x+ox,y:p.y+oy}))):[];
+  return{rings,area:rings.length?area:0};
+}
+
+// Per-edge setback inset. v8.17: the lot minus each edge's setback band (buildEnvelopeFt) instead of intersecting
+// neighbouring offset lines, which left spikes into the setbacks and turned inside out when setbacks met across the lot.
+// pts: lot corners in editor px. Returns {rings: outlines in px, largest first; ringsFt: the same in ft; area: sf}, with
+// no rings when the setbacks leave nothing.
 function insetPolygonPerEdge(pts,designations){
-  const n=pts.length;
-  if(n<3)return null;
-
-  function sbPxForEdge(i){
-    const des=designations[i]||'side';
-    if(des==='front')return ftToPx(pv('sb-front')||0);
-    if(des==='rear') return ftToPx(pv('sb-rear')||0);
-    return ftToPx(pv('sb-sides')||0);
-  }
-
-  // Winding
-  let area=0;
-  for(let i=0;i<n;i++){const a=pts[i],b=pts[(i+1)%n];area+=a.x*b.y-b.x*a.y;}
-  const isCW=area>0;
-  const s=isCW?1:-1;
-
-  // Offset each edge inward
-  const offsetEdges=[];
-  for(let i=0;i<n;i++){
-    const a=pts[i],b=pts[(i+1)%n];
-    const dx=b.x-a.x,dy=b.y-a.y;
-    const len=Math.sqrt(dx*dx+dy*dy)||1;
-    const nx=s*(-dy/len),ny=s*(dx/len);
-    const sb=sbPxForEdge(i);
-    offsetEdges.push({ax:a.x+nx*sb,ay:a.y+ny*sb,bx:b.x+nx*sb,by:b.y+ny*sb,nx,ny,sb});
-  }
-
-  // Centroid
-  const cx=pts.reduce((a,p)=>a+p.x,0)/n;
-  const cy=pts.reduce((a,p)=>a+p.y,0)/n;
-
-  // Point-in-polygon test for original lot
-  function ptInOrig(px,py){
-    let inside=false;
-    for(let i=0,j=n-1;i<n;j=i++){
-      const xi=pts[i].x,yi=pts[i].y,xj=pts[j].x,yj=pts[j].y;
-      if(((yi>py)!==(yj>py))&&(px<(xj-xi)*(py-yi)/(yj-yi)+xi))inside=!inside;
-    }
-    return inside;
-  }
-
-  // Closest point on a line segment to point p
-  function closestOnSeg(px,py,ax,ay,bx,by){
-    const dx=bx-ax,dy=by-ay;
-    const lenSq=dx*dx+dy*dy;
-    if(lenSq===0)return{x:ax,y:ay};
-    const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/lenSq));
-    return{x:ax+t*dx,y:ay+t*dy};
-  }
-
-  const result=[];
-  for(let i=0;i<n;i++){
-    const e1=offsetEdges[i];
-    const e2=offsetEdges[(i+1)%n];
-    const d1x=e1.bx-e1.ax,d1y=e1.by-e1.ay;
-    const d2x=e2.bx-e2.ax,d2y=e2.by-e2.ay;
-    const denom=d1x*d2y-d1y*d2x;
-    let px,py;
-    if(Math.abs(denom)<0.001){
-      px=(e1.bx+e2.ax)/2;py=(e1.by+e2.ay)/2;
-    } else {
-      const t=((e2.ax-e1.ax)*d2y-(e2.ay-e1.ay)*d2x)/denom;
-      px=e1.ax+t*d1x;py=e1.ay+t*d1y;
-    }
-
-    // If result is outside original polygon or NaN — clamp it
-    if(isNaN(px)||isNaN(py)||!ptInOrig(px,py)){
-      // Try e2 start (the offset start of the outgoing edge) — usually safe
-      const c1=closestOnSeg(cx,cy,e2.ax,e2.ay,e2.bx,e2.by);
-      if(ptInOrig(c1.x,c1.y)){px=c1.x;py=c1.y;}
-      else {
-        // Last resort: push the original vertex toward centroid by avg setback
-        const origPt=pts[(i+1)%n];
-        const dx2=origPt.x-cx,dy2=origPt.y-cy;
-        const d2=Math.sqrt(dx2*dx2+dy2*dy2)||1;
-        const avgSb=(sbPxForEdge(i)+sbPxForEdge((i+1)%n))/2;
-        px=origPt.x-(dx2/d2)*avgSb;
-        py=origPt.y-(dy2/d2)*avgSb;
-      }
-    }
-    result.push({x:px,y:py});
-  }
-  return result;
+  if(!pts||pts.length<3)return{rings:[],ringsFt:[],area:0};
+  const env=buildEnvelopeFt(pts.map(p=>({x:pxToFt(p.x),y:pxToFt(p.y)})),pts.map((_,i)=>edgeSetbackFt(designations[i]||'side')));
+  return{rings:env.rings.map(r=>r.map(p=>({x:ftToPx(p.x),y:ftToPx(p.y)}))),ringsFt:env.rings,area:env.area};
 }
 
 function bestGridInterval(totalFt){
@@ -3031,7 +3153,7 @@ function calcBuildable(){
             <div class="area-item"><div class="area-item-val">${polyPoints.length}</div><div class="area-item-lbl">Lot Corners</div></div>
             <div class="area-item"><div class="area-item-val">${fmtN(lotSFManual||lotSFCalc)} sf</div><div class="area-item-lbl">Lot Area</div></div>
             <div class="area-item"><div class="area-item-val">${fmtN(baSF)} sf</div><div class="area-item-lbl">Buildable sf</div></div>
-          </div></div>`;
+          </div></div>${baSF>0?'':`<div class="warn" style="margin-top:8px">The setbacks leave no buildable area on this lot: they meet across it (front + rear deeper than the lot, or the sides wider than it). Check the setbacks and the edge designations in the lot editor.</div>`}`;
       }
     }
   }
@@ -3510,73 +3632,75 @@ function ptInPolyFt(px,py,poly){
 }
 
 function polyAreaFt(p){let a=0,n=p.length;for(let i=0;i<n;i++){const A=p[i],B=p[(i+1)%n];a+=A.x*B.y-B.x*A.y;}return a/2;}
-function polyIsConvexFt(p){const n=p.length;if(n<3)return false;let s=0;for(let i=0;i<n;i++){const a=p[i],b=p[(i+1)%n],c=p[(i+2)%n];const cr=(b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x);if(Math.abs(cr)<1e-9)continue;const sg=cr>0?1:-1;if(s===0)s=sg;else if(sg!==s)return false;}return true;}
+// v8.17: turns under 1.5° don't count as concave (GIS jitter or a pixel of rounding used to push a plain lot off the
+// exact solver). A U-turn does. The exact solver on a nearly convex polygon stays safe: it only places plans inside
+// every edge's half-plane, which is inside the polygon.
+function polyIsConvexFt(p){const n=p.length;if(n<3)return false;const s=polyAreaFt(p)>0?1:-1,tol=Math.sin(1.5*Math.PI/180);for(let i=0;i<n;i++){const a=p[(i-1+n)%n],b=p[i],c=p[(i+1)%n],ux=b.x-a.x,uy=b.y-a.y,vx=c.x-b.x,vy=c.y-b.y,L=Math.hypot(ux,uy)*Math.hypot(vx,vy);if(L<1e-12)continue;const cr=s*(ux*vy-uy*vx)/L;if(cr<-tol||(cr<tol&&ux*vx+uy*vy<0))return false;}return true;}
 function rotPolyFt(p,r){const c=Math.cos(r),s=Math.sin(r);return p.map(q=>({x:q.x*c-q.y*s,y:q.x*s+q.y*c}));}
 function hpFromConvexFt(poly){let pts=poly;if(polyAreaFt(poly)<0)pts=poly.slice().reverse();const n=pts.length,hp=[];for(let i=0;i<n;i++){const a=pts[i],b=pts[(i+1)%n];const ex=b.x-a.x,ey=b.y-a.y,L=Math.hypot(ex,ey)||1;const nx=-ey/L,ny=ex/L;hp.push({nx,ny,off:nx*a.x+ny*a.y});}return hp;}
 function clipHPFt(poly,Ax,Ay,B){const out=[],n=poly.length,ins=p=>Ax*p.x+Ay*p.y<=B+1e-7;for(let i=0;i<n;i++){const cur=poly[i],prev=poly[(i-1+n)%n],ci=ins(cur),pi=ins(prev),X=(p,q)=>{const dp=Ax*p.x+Ay*p.y-B,dq=Ax*q.x+Ay*q.y-B,t=dp/(dp-dq);return{x:p.x+t*(q.x-p.x),y:p.y+t*(q.y-p.y)};};if(ci){if(!pi)out.push(X(prev,cur));out.push(cur);}else if(pi)out.push(X(prev,cur));}return out;}
 function hpFeasibleFt(planes){let poly=[{x:-1e5,y:-1e5},{x:1e5,y:-1e5},{x:1e5,y:1e5},{x:-1e5,y:1e5}];for(const pl of planes){poly=clipHPFt(poly,pl.Ax,pl.Ay,pl.B);if(poly.length===0)return false;}return poly.length>0;}
 function canPlaceRectConvexFt(poly,w,h,clear){const angs=new Set();const n=poly.length;for(let i=0;i<n;i++){const a=poly[i],b=poly[(i+1)%n];angs.add(Math.atan2(b.y-a.y,b.x-a.x));}for(let k=0;k<24;k++)angs.add(k*Math.PI/24);for(const th of angs){const rp=rotPolyFt(poly,-th);const hp=hpFromConvexFt(rp);for(const dim of [[w,h],[h,w]]){const ww=dim[0],hh=dim[1];const planes=hp.map(pl=>({Ax:-pl.nx,Ay:-pl.ny,B:-(pl.off+clear)+Math.min(0,pl.nx)*ww+Math.min(0,pl.ny)*hh}));if(hpFeasibleFt(planes))return true;}}return false;}
-function planFitsInPolyFt(fpW,fpD){
-  const polyFt=planOverlay.buildPolyFt;
-  if(!polyFt||polyFt.length<3)return'no';
-  if(polyIsConvexFt(polyFt)){
-    if(canPlaceRectConvexFt(polyFt,fpW,fpD,5))return'fits';   // 5ft clearance achievable in some orientation
-    if(canPlaceRectConvexFt(polyFt,fpW,fpD,0))return'tight';  // fits but MUST be within 5ft of a line
-    return'no';
-  }
-  return planFitsSamplingFt(fpW,fpD);
-}
-function planFitsSamplingFt(fpW,fpD){
-  const polyFt=planOverlay.buildPolyFt;
-  if(!polyFt||polyFt.length<3)return'no';
-  const TIGHT=5;
-  const n=polyFt.length;
-  let polyArea=0;
-  for(let i=0;i<n;i++){const a=polyFt[i],b=polyFt[(i+1)%n];polyArea+=a.x*b.y-b.x*a.y;}
-  if(fpW*fpD>Math.abs(polyArea)/2*1.05)return'no';
-  const cx=polyFt.reduce((s,p)=>s+p.x,0)/n;
-  const cy=polyFt.reduce((s,p)=>s+p.y,0)/n;
-  const xs=polyFt.map(p=>p.x),ys=polyFt.map(p=>p.y);
-  const mnX=Math.min(...xs),mxX=Math.max(...xs),mnY=Math.min(...ys),mxY=Math.max(...ys);
-  const positions=[{x:cx,y:cy}];
-  for(let i=0;i<n;i++){
-    const a=polyFt[i],b=polyFt[(i+1)%n];
-    const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
-    const dx=cx-mx,dy=cy-my,dist=Math.sqrt(dx*dx+dy*dy)||1;
-    const push=Math.min(Math.max(fpW,fpD)*0.4,dist*0.6);
-    positions.push({x:mx+(dx/dist)*push,y:my+(dy/dist)*push});
-  }
-  for(let gi=1;gi<7;gi++)for(let gj=1;gj<7;gj++){
-    const gx=mnX+(mxX-mnX)*gi/7,gy=mnY+(mxY-mnY)*gj/7;
-    if(ptInPolyFt(gx,gy,polyFt))positions.push({x:gx,y:gy});
-  }
-  const angles=[0,Math.PI/4,Math.PI/2,Math.PI*3/4];
-  for(let i=0;i<n;i++){
-    const a=polyFt[i],b=polyFt[(i+1)%n];
-    const ang=Math.atan2(b.y-a.y,b.x-a.x);
-    angles.push(ang,ang+Math.PI/2);
-  }
-  let best='no';
-  outer:
-  for(const rad of angles){
-    const cos=Math.cos(rad),sin=Math.sin(rad);
-    for(const pos of positions){
-      for(const [w,h] of [[fpW,fpD],[fpD,fpW]]){
-        const hw=w/2,hh=h/2;
-        const corners=[
-          {x:pos.x+(-hw)*cos-(-hh)*sin,y:pos.y+(-hw)*sin+(-hh)*cos},
-          {x:pos.x+(hw)*cos-(-hh)*sin, y:pos.y+(hw)*sin+(-hh)*cos},
-          {x:pos.x+(hw)*cos-(hh)*sin,  y:pos.y+(hw)*sin+(hh)*cos},
-          {x:pos.x+(-hw)*cos-(hh)*sin, y:pos.y+(-hw)*sin+(hh)*cos},
-        ];
-        if(corners.every(c=>ptInPolyFt(c.x,c.y,polyFt))){
-          if(corners.every(c=>minEdgeDist(c.x,c.y,polyFt)>=TIGHT)){best='fits';break outer;}
-          if(best==='no')best='tight';
+// Is there a W x H rectangle inside polygon poly (any of the solver's angles, either way round)? For each angle and each
+// trial height y, every edge rules out the left-side positions that would put part of it inside the rectangle; any
+// position left over whose rectangle centre is inside the polygon is a placement. Exact across x; y is tried at every
+// vertex height (rectangle top or bottom on it), the midpoints between, and an 8-step grid.
+function rectFitsPolyFt(poly,W,H){
+  const n=poly.length,angs=[];
+  const add=a=>{a=((a%(Math.PI/2))+Math.PI/2)%(Math.PI/2);if(!angs.some(b=>Math.abs(b-a)<0.0035||Math.abs(b-a)>Math.PI/2-0.0035))angs.push(a);};
+  for(let i=0;i<n;i++){const a=poly[i],b=poly[(i+1)%n];if(Math.hypot(b.x-a.x,b.y-a.y)>=2)add(Math.atan2(b.y-a.y,b.x-a.x));}
+  for(let k=0;k<12;k++)add(k*Math.PI/24);
+  for(const th of angs){
+    const R=rotPolyFt(poly,-th),xs=R.map(p=>p.x),ys=R.map(p=>p.y);
+    const bb={x0:Math.min(...xs),x1:Math.max(...xs),y0:Math.min(...ys),y1:Math.max(...ys)};
+    for(const [w,h] of [[W,H],[H,W]]){
+      if(w>bb.x1-bb.x0+1e-9||h>bb.y1-bb.y0+1e-9)continue;
+      let yv=[];R.forEach(p=>{yv.push(p.y,p.y-h);});for(let g=0;g<=8;g++)yv.push(bb.y0+(bb.y1-h-bb.y0)*g/8);
+      yv=yv.filter(y=>y>=bb.y0-1e-9&&y<=bb.y1-h+1e-9).sort((a,b)=>a-b);
+      const mids=[];for(let i=0;i+1<yv.length;i++)if(yv[i+1]-yv[i]>1e-6)mids.push((yv[i]+yv[i+1])/2);
+      for(const y of yv.concat(mids)){
+        const lo=y+1e-7,hi=y+h-1e-7,iv=[];
+        for(let i=0;i<n;i++){
+          const a=R[i],b=R[(i+1)%n],dy=b.y-a.y;let t0=0,t1=1;
+          if(Math.abs(dy)<1e-12){if(a.y<=lo||a.y>=hi)continue;}
+          else{let ta=(lo-a.y)/dy,tb=(hi-a.y)/dy;if(ta>tb){const t=ta;ta=tb;tb=t;}t0=Math.max(0,ta);t1=Math.min(1,tb);if(t0>=t1)continue;}
+          const x0=a.x+(b.x-a.x)*t0,x1=a.x+(b.x-a.x)*t1;
+          iv.push([Math.min(x0,x1)-w+1e-7,Math.max(x0,x1)-1e-7]);
         }
+        iv.sort((p,q)=>p[0]-q[0]);
+        const xmax=bb.x1-w;let x=bb.x0;
+        const ok=(g0,g1)=>g1>=g0-1e-9&&ptInPolyFt((g0+g1)/2+w/2,y+h/2,R);
+        for(const [f0,f1] of iv){if(f0>x&&ok(x,Math.min(f0,xmax)))return true;if(f1>x)x=f1;if(x>xmax+1e-9)break;}
+        if(x<=xmax+1e-9&&ok(x,xmax))return true;
       }
     }
   }
+  return false;
+}
+function planFitsInPolyFt(fpW,fpD){
+  const main=planOverlay.buildPolyFt;
+  if(!main||main.length<3)return'no';
+  // an envelope can come in more than one piece (a pinched lot); a plan has to fit inside one of them
+  const rings=(planOverlay.buildPolysFt&&planOverlay.buildPolysFt[0]===main)?planOverlay.buildPolysFt:[main];
+  let best='no';
+  for(const ring of rings){
+    if(ring.length<3)continue;
+    const r=polyIsConvexFt(ring)
+      ?(canPlaceRectConvexFt(ring,fpW,fpD,5)?'fits':canPlaceRectConvexFt(ring,fpW,fpD,0)?'tight':'no')   // 5ft clearance achievable in some orientation / fits but MUST be within 5ft of a line
+      :planFitsSamplingFt(fpW,fpD,ring);
+    if(r==='fits')return'fits';if(r==='tight')best='tight';
+  }
   return best;
+}
+// Non-convex envelope (v8.17). A placement counts only when the whole rectangle is inside: first the exact solver on the
+// part every edge's half-plane keeps (inside the envelope, so never a false fit), then rectFitsPolyFt. "Fits" needs 5 ft
+// clear all round (the rectangle grown 5 ft each way still fits).
+function planFitsSamplingFt(fpW,fpD,ring){
+  const poly=ring||planOverlay.buildPolyFt;
+  if(!poly||poly.length<3)return'no';
+  if(fpW*fpD>Math.abs(polyAreaFt(poly))+1e-6)return'no';
+  if(!(canPlaceRectConvexFt(poly,fpW,fpD,0)||rectFitsPolyFt(poly,fpW,fpD)))return'no';
+  return(canPlaceRectConvexFt(poly,fpW,fpD,5)||rectFitsPolyFt(poly,fpW+10,fpD+10))?'fits':'tight';
 }
 
 function updateTopoLinks(){
@@ -5654,8 +5778,16 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.15', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.17', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.17',date:'Sep 2026',name:'Buildable envelope rebuilt for County GIS lots',items:[
+   'The buildable envelope is now the lot with each edge\u2019s setback strip taken off: a setback line parallel to each lot line, carried across to the next lot line. The old outline could spike deep into a setback wherever the county drew an extra corner along a lot line (32 ft into the rear setback on 2723 Dellinger), which made the fit check turn down plans that fit: Galloway, Linden, Dublin 1 Car and the Oxford Duet now show on 2723. 2723 Dellinger reads 3,309 sf (was 3,327).',
+   'County GIS lots: corners that only split a straight lot line are merged, and every piece of the street line is the front and every piece of the rear line the rear. 2731 Dellinger\u2019s 26 ft rear line used to get the 5 ft side setback (envelope 2,010 sf, now 1,658 sf). The lot outline also keeps the county\u2019s exact corners, so the lot area matches the county (2723: 7,145 sf, was 7,170) and the BUA limit moves with it.',
+   'Corner lots: the second street line is a Corner side edge (purple in the lot editor) and uses the Corner Side setback, so a 60 ft N1-B corner lot is 41.5 ft wide inside the setbacks, not 50. Clicking an edge now cycles Front \u2192 Rear \u2192 Side \u2192 Corner side.',
+   'Alley and through lots: the rear setback goes on the line opposite the street even when that line faces an alley or a second street, with a note to check it (1724 Thomas Ave: 4,439 sf and 24 plans that fit, was 2,237 sf and none). When the county finds no street edge, the front is a guess (the lowest edge on the map) with a note, instead of every edge getting the 5 ft side setback.',
+   'Setbacks that meet across the lot now leave 0 sf and say so, instead of an inside-out outline that small plans \u201cfit\u201d into.',
+   'Irregular outlines (a jog or notch in the lot): the fit check tests the whole plan rectangle, not just its four corners, so a plan can\u2019t straddle a notch, and it finds the tight fits the old check missed. A lot line that bends by under 1.5\u00b0 no longer counts as irregular.',
+   'Deals saved before 8.17 keep their saved edge designations; run the County GIS lookup again to get the new ones.']},
  {v:'8.15',date:'Sep 2026',name:'N2 zoning follows the UDO',items:[
    'N2-A and N2-B: single-family, duplex, triplex and quadraplex homes now use the N1-E standards the UDO sends them to (10 ft front, 20 ft rear, 5 ft sides, 10 ft corner, 30 ft / 3,000 sf minimum lot). The old rows (N2-A 17/25 ft with a 50 ft / 5,000 sf lot; N2-B 17/20 ft with 40 ft / 3,500 sf) had no UDO source and turned down plans and lot splits that N2 allows: a 60\u00d7120 N2-B lot now splits into two 30-ft lots instead of showing \u201c\u2248 1 lot\u201d. N2 carries no arterial-street or affordable-unit condition; that set-aside applies only to a quadraplex in N1-A to N1-E.',
    'A 3- or 4-unit townhome row counts as a triplex or quadraplex, so it uses the same N1-E standards. Rows of 5+ attached units are Multi-Family Attached, with their own setbacks: pick \u201cN2-A / N2-B / N2-C \u00b7 townhomes 5+\u201d in the zone list (20 ft frontage from the back of curb on a local or collector street, 50-ft parent lot in N2-A/B). N2-B and N2-C townhome rows use a 20 ft rear when the site abuts a Neighborhood 1 Place Type on the 2040 Policy Map, 10 ft otherwise; a checkbox under the setbacks switches it (default 20). The townhome card says which row fits the unit count.',
