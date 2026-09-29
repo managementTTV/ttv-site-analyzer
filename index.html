@@ -3939,7 +3939,9 @@ function setTapHint(msg){const h=$('tap-hint');if(!h)return;if(msg){h.innerHTML=
 // are back, so a reopened deal shows the same note. A fee the record doesn't have reads "no … fee on file", never $0.
 function renderTapHint(){
   const wf=$('tap-water'),sf=$('tap-sewer');if(!wf||!sf)return;
-  const J=tapRecordFor(tapSig()), rec=J.rec, city=(($('addr-city')||{}).value||'').toLowerCase().trim();
+  // the jurisdiction the tap values were last written for (_tapSig), so a reopened deal with a switch still due
+  // describes the schedule its taps hold until The Underwrite applies the new one
+  const sig=_tapSig!=null?_tapSig:tapSig(), J=tapRecordFor(sig), rec=J.rec, city=String(sig).slice(String(sig).indexOf('|')+1).toLowerCase().trim();
   const sides=[['w',wf,'water'],['s',sf,'sewer']], msgs=[];
   if(!rec){
     if(J.label&&sides.some(([,f])=>!isManual(f.id)))msgs.push('No tap fees on file for '+J.label+' \u2014 enter manually, confirm fee schedule (Enzo).');
@@ -3961,7 +3963,8 @@ function applyTapDefaults(force){
   const wf=$('tap-water'),sf=$('tap-sewer');if(!wf||!sf)return;
   const sig=tapSig(), prev=_tapSig, J=tapRecordFor(sig);
   _tapSig=sig;
-  if(!force&&prev!=null&&tapRecordFor(prev).key===J.key)return;
+  // same fee record: leave the values, but refresh the note (a city typed after the county changes its city note)
+  if(!force&&prev!=null&&tapRecordFor(prev).key===J.key){renderTapHint();return;}
   const rec=J.rec;
   [['w',wf],['s',sf]].forEach(([k,f])=>{if(!isManual(f.id))f.value=(rec&&rec[k]!=null)?rec[k]:0;});
   renderTapHint();
@@ -5634,7 +5637,7 @@ const RELEASE_NOTES=[
    'County GIS zones with an overlay or conditional suffix, such as \u201cN1-C(HDO)\u201d or \u201cN2-A (CD)\u201d, now load the base zone\u2019s setbacks, with a note on what the suffix means (for a CD parcel, read the rezoning petition: its conditions govern). They used to get no setbacks of their own: the fields stayed blank (the whole lot counted as buildable) or silently kept the previous deal\u2019s. A deal saved on one of those zones reopens on the base zone\u2019s row, and re-running County GIS on a parcel keeps a \u201ctownhomes 5+\u201d row you picked for it.',
    'Sub-lot estimate: a zone row with no minimum lot width or area now shows \u201c\u2014\u201d (no minimum) instead of a red \u201c\u2248 0 lots\u201d, and a zone with no setbacks row at all shows \u201c?\u201d with a note to enter the minimums.']},
  {v:'8.14',date:'Sep 2026',name:'Fixes from the full logic audit: comps, Units, tap fees, plan footprints',items:[
-   'Sales comps: builder lot purchases no longer count as new-build comps. The county marks them \u201csold as vacant\u201d with \u201cYes\u201d, and the check looked for \u201cY\u201d, so a lot sale was priced against the house built on it later (about $94/sf against $213/sf for real comps). A sale recorded before the current house was built is left out too. On the 80-deal backtest the median error is unchanged (4.8%); in pockets full of lot sales the ARV moves a lot, e.g. a 3,800 sf Stephens Farm subject from $404k to $1.63M.',
+   'Sales comps: builder lot purchases no longer count as new-build comps. The county marks them \u201csold as vacant\u201d with \u201cYes\u201d, and the check looked for \u201cY\u201d, so a lot sale was priced against the house built on it later (about $94/sf against $213/sf for real comps). A sale recorded in a year before the assessor\u2019s year built is left out too (this also drops the odd Q4 closing the assessor dates to the next year). On the 80-deal backtest the median error is unchanged (4.8%); in pockets full of lot sales the ARV moves a lot, e.g. a 3,800 sf Stephens Farm subject from $404k to $1.63M.',
    'Changing the Slate GC fee no longer puts Units back to the plan default. A 3-townhome deal became a 1-unit deal, which cut Dellinger\u2019s Max land from $262,309 to $69,756. Units now follows the plan only when you pick a different plan (or change a custom footprint\u2019s Units).',
    'Tap fees: a tap quote you type stays put. Editing the city (Charlotte \u2192 Mint Hill) used to put Charlotte Water\u2019s $5,819 / $11,521 back over it; a different county now keeps your quote and the note under the taps shows that county\u2019s schedule beside it. Saved deals remember which taps were typed. Where the default is one city\u2019s or the county\u2019s schedule (Gastonia, Catawba County, Iredell Water Corp), the note says to get the town\u2019s quote.',
    'Tap fee table updated to the team\u2019s verified provider sheet (FY26): Gastonia $4,826 / $4,851, Mount Holly $2,250 / $2,670 (meter and system development fees included), Catawba $1,660 / $5,691, Cabarrus sewer $2,968 (WSACC), with water kept at a $2,500 estimate because it depends on the retail provider (get the quote). Mecklenburg, Statesville, Lincoln, Kannapolis and Iredell were already right.',
