@@ -1425,7 +1425,7 @@ const SETBACKS={
   'Mecklenburg|N2-A \u00b7 townhomes 5+':{front:20,rear:20,sides:5,corner:20,minWidth:50,minSF:3000,garage:'20 ft',mfa:true,
     note:'Townhomes (5+ attached units) in N2-A: frontage setback 20 ft from the back of curb on a local or collector street (shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 24\u201330 ft from the future back of curb), rear 20 ft, 50-ft minimum parent lot, 250 sf of open space per unit, 50% building coverage.'},
   'Mecklenburg|N2-B \u00b7 townhomes 5+':{front:20,rear:20,rearNotAbuttingN1:10,sides:5,corner:20,minWidth:50,minSF:3000,garage:'20 ft',mfa:true,
-    note:'Townhomes (5+ attached units) in N2-B: frontage setback 20 ft from the back of curb on a local or collector street (shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 24\u201330 ft from the future back of curb), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, 50-ft minimum parent lot, 150 sf of open space per unit, 60% building coverage.'},
+    note:'Townhomes (5+ attached units) in N2-B: frontage setback 20 ft from the back of curb on a local or collector street (shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 20\u201330 ft from the future back of curb), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, 50-ft minimum parent lot, 150 sf of open space per unit, 60% building coverage.'},
   'Mecklenburg|N2-C \u00b7 townhomes 5+':{front:20,rear:20,rearNotAbuttingN1:10,sides:5,corner:16,minWidth:0,minSF:0,garage:'20 ft',mfa:true,
     note:'Townhomes (5+ attached units) in N2-C: frontage setback 20 ft from the back of curb on a local or collector street (16 ft on a Secondary frontage; shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 20\u201324 ft from the future back of curb), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, no minimum lot width or area, 150 sf of open space per unit.'},
   'Mecklenburg|UR-2':{front:15,rear:20,sides:5,corner:10,minWidth:25,minSF:2500,garage:'20 ft'},
@@ -2209,27 +2209,41 @@ const ZONE_SUFFIX_NOTE={
   ANDO:'ANDO is the airport noise disclosure overlay (a disclosure requirement).',
   CCO:'CCO is a cottage court overlay, with its own lot and building rules.'};
 // The setback panel's notes: the zone row's own note, plus what a GIS suffix means when the zone was mapped from one.
+let _zoneRestoreNote=null;   // v8.15: set by restoreDeal() when a saved stub zone reopened on its base row
 function renderZoneNote(){
   const el=$('zone-note');if(!el)return;
-  const key=($('zone-sel')||{}).value||'', sb=SETBACKS[key], zone=key.split('|')[1]||'', lines=[];
+  const key=($('zone-sel')||{}).value||'', sb=SETBACKS[key], zone=key.split('|')[1]||'', county=key.split('|')[0]||'', lines=[];
   if(sb&&sb.note)lines.push(sb.note);
+  const rn=_zoneRestoreNote&&_zoneRestoreNote.key===key?_zoneRestoreNote:null;
+  if(rn)lines.push(rn.text);
   // the row's base zone: "N2-A · townhomes 5+" is still N2-A, so a CD / HDO note survives picking the townhome row
   const raw=(window._lastGis&&window._lastGis.zoning)||'', sx=zoneSuffix(raw), zb=zone.split(' \u00b7 ')[0];
-  const onStub=!!(sx&&zone&&zone.toUpperCase()===String(raw).trim().toUpperCase()&&!sb);
-  if(sx&&zone&&(sx.base.toUpperCase()===zb.toUpperCase()||onStub)){
+  // a zone with no SETBACKS row (a GIS or saved stub): say so, since its setback fields are blank or the last zone's
+  if(key&&!sb){
+    const zs=zoneSuffix(zone), bz=zs?zs.base:zone, mk=SETBACKS['Mecklenburg|'+bz], base={base:bz};
+    lines.push(mk&&county!=='Mecklenburg'
+      ?`County GIS is Mecklenburg-only: set the County to Mecklenburg to load the ${base.base} row.`
+      :`There\u2019s no setbacks row for \u201c${zone}\u201d in the app, so the setback fields are blank or still hold the previous zone\u2019s. Enter them from the UDO.`);
+  }
+  if(sx&&zone&&(sx.base.toUpperCase()===zb.toUpperCase()||(!sb&&zone.toUpperCase()===String(raw).trim().toUpperCase()))){
     const codes=[...new Set((sx.suffix.toUpperCase().match(/[A-Z]+/g)||[]))];
-    lines.push(`County GIS has this parcel as \u201c${raw}\u201d; `+(onStub?`there\u2019s no setbacks row for ${sx.base}, so enter the setbacks from the UDO. `:`the ${sx.base} standards are shown. `)
+    lines.push(`County GIS has this parcel as \u201c${raw}\u201d`+(sb?`; the ${sx.base} standards are shown. `:'. ')
       +codes.map(c=>ZONE_SUFFIX_NOTE[c]||`${c} is an overlay or suffix on the base zone; check its rules.`).join(' '));
   }
-  el.innerHTML='';lines.forEach(t=>{const q=document.createElement('p');q.className='warn';q.style.margin='4px 0 0';q.textContent=t;el.appendChild(q);});
+  el.innerHTML='';lines.forEach(t=>{const q=document.createElement('p');q.className='warn';q.style.margin='4px 0 0';q.textContent=t;
+    if(rn&&t===rn.text){const b=document.createElement('button');b.className='btn btn-ghost';b.style.cssText='margin-left:8px;padding:1px 8px;font-size:11px';
+      b.textContent='Load the '+(key.split('|')[1]||'')+' row';b.onclick=()=>{_zoneRestoreNote=null;onZoneChange();};q.appendChild(b);}
+    el.appendChild(q);});
   el.style.display=lines.length?'':'none';
 }
 function onZoneChange(){
   const key=$('zone-sel').value;
+  if(_zoneRestoreNote&&_zoneRestoreNote.key!==key)_zoneRestoreNote=null;
   const ab=$('n2-abuts-row'),sbk=SETBACKS[key];if(ab)ab.style.display=(sbk&&sbk.rearNotAbuttingN1!=null)?'flex':'none';
   renderZoneNote();
   if(!key){$('zone-info').style.display='none';return;}
   const sb=SETBACKS[key];
+  if(!sb){$('zone-info').style.display='';$('zone-udo-link').style.display='none';calcBuildable();return;}   // v8.15: a stub shows its (blank or leftover) setbacks and the note
   if(sb){
     $('sb-front').value=sb.front;$('sb-rear').value=zoneRear(sb);
     $('sb-sides').value=sb.sides;$('sb-corner').value=sb.corner;
@@ -3725,11 +3739,18 @@ function renderSublot(){
   // v8.15: a row with no minimum width or area (N2-C townhomes) has no lot-count cap: show "—", not a red "≈ 0 lots"
   const maxN=Math.min(capW,capA);
   const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'var(--red)'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
+  // v8.15: no lot count where splits can't make usable lots: the N2-C base row (noNewLots), or a "townhomes 5+" row
+  // with a detached plan (detached lot splits follow the base row). Rows then show the geometry only, with no checks.
+  const zBase=(zoneKey.split('|')[1]||'').split(' \u00b7 ')[0], baseRow=SETBACKS[(zoneKey.split('|')[0]||'')+'|'+zBase];
+  const blockMsg=sb&&sb.noNewLots?sb.noNewLots:sb&&sb.mfa?((baseRow&&baseRow.noNewLots)||`This zone row is for rows of 5+ attached townhomes. Lot splits for detached homes follow the base ${zBase} row: pick \u201c${zBase}\u201d in the zone list.`):'';
   const rows=[2,3].map(n=>{
     const pf=frontage/n,pa=area/n;
     const okW=minW>0?pf>=minW:true;
     const okA=minSF>0?pa>=minSF:true;
-    const ok=okW&&okA;
+    const ok=okW&&okA&&!blockMsg;
+    if(blockMsg)return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)">
+      <div style="width:66px;font-family:var(--f-head);font-weight:700;font-size:14px;color:var(--text-mid)">${n} lots</div>
+      <div style="flex:1;font-family:var(--f-num);font-size:11px;color:var(--text-mid)">${pf.toFixed(0)} ft frontage · ${fmtN(pa)} sf each</div></div>`;
     return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)">
       <div style="width:66px;font-family:var(--f-head);font-weight:700;font-size:14px;color:${ok?'var(--teal-light)':'var(--text-mid)'}">${n} lots</div>
       <div style="flex:1;font-family:var(--f-num);font-size:11px;color:var(--text-mid)">${pf.toFixed(0)} ft frontage · ${fmtN(pa)} sf each</div>
@@ -3741,15 +3762,15 @@ function renderSublot(){
     head=`<div class="warn" style="margin-bottom:8px">No zone selected — pick a county &amp; zone under Address &amp; zoning to screen against UDO minimums. Showing geometric division only.</div>`;
   } else {
     // v8.15: "—" only for a row that really has no minimums; a zone with no SETBACKS row has unknown minimums
-    const nn=!!(sb&&sb.noNewLots);   // N2-C: split lots can't hold a standalone house or plex, so no count
-    const okMax=sb&&!nn?maxN>=2:false, sub=!sb?'no setbacks row for this zone \u2014 enter or verify the UDO minimums':nn?'no standalone lots from a split in this zone':isFinite(maxN)?'max by UDO minimums':'no minimum lot width or area in this row';
+    const nn=!!blockMsg;   // N2-C base row, or a townhome row with a detached plan: no count
+    const okMax=sb&&!nn?maxN>=2:false, sub=!sb?'no setbacks row for this zone \u2014 verify the UDO minimums':nn?(sb.mfa?'townhome row, not for detached lot splits':'no standalone lots from a split in this zone'):isFinite(maxN)?'max by UDO minimums':'no minimum lot width or area in this row';
     head=`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
-      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':sb&&!nn?'var(--red)':'var(--amber)'}">${!sb?'?':nn?'—':isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1&&!nn?'':'s'}</div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':sb&&!nn?'var(--red)':'var(--amber)'}">${!sb?'?':nn?'—':isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1&&!nn&&sb?'':'s'}</div>
       <div style="font-size:11px;color:var(--text-dim)">${sub} · ${zoneLabel}</div></div>`
-      +(sb&&sb.noNewLots?`<div class="warn" style="margin-bottom:8px">${sb.noNewLots}</div>`:'')+`
+      +(blockMsg?`<div class="warn" style="margin-bottom:8px">${blockMsg}</div>`:'')+`
     <div style="font-family:var(--f-num);font-size:10px;color:var(--text-dim);margin-bottom:6px">Parent: ${frontage.toFixed(0)} ft frontage · ${fmtN(area)} sf${minW>0?` · min ${minW}' W`:''}${minSF>0?` · min ${fmtN(minSF)} sf`:' · no min area in table (verify UDO)'}</div>`;
   }
-  box.innerHTML=head+rows+sublotSvg(sublotN,frontage,area,minW)
+  box.innerHTML=head+rows+(blockMsg?'':sublotSvg(sublotN,frontage,area,minW))
     +`<p class="note" style="margin-top:8px">Equal-division estimate. Interior lots need their own street frontage or a shared-access / panhandle (flag lot) arrangement — confirm access, easements, and BUA re-allocation before relying on the max. Corner lots may support more.</p>`;
 }
 // ═══════════════════ LOT FACTOR ═══════════════════
@@ -5505,13 +5526,13 @@ function restoreDeal(d){
     // a deal saved with an adjusted setback (an established front setback, say) reopens on the table value
     setV('zone-sel');
     // saved zone may be a GIS-added option not in the default list
-    const zv=vals['zone-sel']&&vals['zone-sel'].v;
+    const zv=vals['zone-sel']&&vals['zone-sel'].v;let mappedStub=null;
     if(typeof zv==='string'&&zv&&$('zone-sel').value!==zv){
       // v8.15: a stub saved for a suffixed GIS zone ("N1-C(HDO)") reopens on its base zone's row (audit G2). The saved
       // setbacks still land last; only blank ones now fill from that row instead of staying blank.
       const sel=$('zone-sel'),sx=zoneSuffix(zv.split('|')[1]||'');
       const base=sx&&Array.from(sel.options).find(x=>((x.value.split('|')[1]||'').toUpperCase())===sx.base.toUpperCase());
-      if(base&&SETBACKS[base.value]){sel.value=base.value;vals['zone-sel'].v=base.value;}
+      if(base&&SETBACKS[base.value]){sel.value=base.value;vals['zone-sel'].v=base.value;mappedStub={from:zv.split('|')[1]||zv,key:base.value};}
       else{const o=document.createElement('option');o.value=zv;o.textContent=(zv.split('|')[1]||zv)+' (saved)';sel.appendChild(o);sel.value=zv;}
     }
     onZoneChange();
@@ -5522,6 +5543,11 @@ function restoreDeal(d){
     {const sb=SETBACKS[$('zone-sel').value];if(sb){
       ['front','rear','sides','corner'].forEach(k=>{const e=$('sb-'+k);if(e&&e.value==='')e.value=k==='rear'?zoneRear(sb):sb[k];});
       $('sb-minw').value=sb.minWidth||'';$('sb-garage').value=sb.garage||'';}}
+    // v8.15: a stub zone had no row, so the setbacks it was saved with may be another deal's leftovers. Keep them (saved
+    // values land last), but say so when they differ from the base row the deal now sits on.
+    _zoneRestoreNote=null;
+    if(mappedStub){const r=SETBACKS[mappedStub.key],cur=['front','rear','sides','corner'].map(k=>$('sb-'+k).value),row=[r.front,zoneRear(r),r.sides,r.corner];
+      if(cur.some((v,n)=>String(v)!==String(row[n])))_zoneRestoreNote={key:mappedStub.key,text:`Saved on \u201c${mappedStub.from}\u201d, which had no setbacks row, so these setbacks (${cur.join(' / ')} ft) came with the saved deal and may be another zone\u2019s. The ${(mappedStub.key.split('|')[1]||'')} row is ${row.join(' / ')} ft.`};}
     FIT_SORT=$('fit-sort').value||'sf-desc';   // the fit check sorts by this, not by the dropdown it mirrors
     // every restored value was deliberate — protect them from any auto-fill
     markAllManual();
@@ -5635,7 +5661,7 @@ const RELEASE_NOTES=[
    'A 3- or 4-unit townhome row counts as a triplex or quadraplex, so it uses the same N1-E standards. Rows of 5+ attached units are Multi-Family Attached, with their own setbacks: pick \u201cN2-A / N2-B / N2-C \u00b7 townhomes 5+\u201d in the zone list (20 ft frontage from the back of curb on a local or collector street, 50-ft parent lot in N2-A/B). N2-B and N2-C townhome rows use a 20 ft rear when the site abuts a Neighborhood 1 Place Type on the 2040 Policy Map, 10 ft otherwise; a checkbox under the setbacks switches it (default 20). The townhome card says which row fits the unit count.',
    'N2-C: the rear setback is 20 ft (the 15 ft it had wasn\u2019t in the UDO), and a note says single-family isn\u2019t permitted and a standalone duplex, triplex or quadraplex needs a lot of 0.5 acre or less that existed before June 1, 2023. The sub-lot estimate says new N2-C lots can\u2019t hold one.',
    'County GIS zones with an overlay or conditional suffix, such as \u201cN1-C(HDO)\u201d or \u201cN2-A (CD)\u201d, now load the base zone\u2019s setbacks, with a note on what the suffix means (for a CD parcel, read the rezoning petition: its conditions govern). They used to get no setbacks of their own: the fields stayed blank (the whole lot counted as buildable) or silently kept the previous deal\u2019s. A deal saved on one of those zones reopens on the base zone\u2019s row, and re-running County GIS on a parcel keeps a \u201ctownhomes 5+\u201d row you picked for it.',
-   'Sub-lot estimate: a zone row with no minimum lot width or area now shows \u201c\u2014\u201d (no minimum) instead of a red \u201c\u2248 0 lots\u201d, and a zone with no setbacks row at all shows \u201c?\u201d with a note to enter the minimums.']},
+   'Sub-lot estimate: a zone row with no minimum lot width or area now shows \u201c\u2014\u201d (no minimum) instead of a red \u201c\u2248 0 lots\u201d, and a zone with no setbacks row at all shows \u201c?\u201d with a note to verify the minimums; the setback panel now shows for such a zone, with a note that its fields are blank or the previous zone\u2019s.']},
  {v:'8.14',date:'Sep 2026',name:'Fixes from the full logic audit: comps, Units, tap fees, plan footprints',items:[
    'Sales comps: builder lot purchases no longer count as new-build comps. The county marks them \u201csold as vacant\u201d with \u201cYes\u201d, and the check looked for \u201cY\u201d, so a lot sale was priced against the house built on it later (about $94/sf against $213/sf for real comps). A sale recorded in a year before the assessor\u2019s year built is left out too (this also drops the odd Q4 closing the assessor dates to the next year). On the 80-deal backtest the median error is unchanged (4.8%); in pockets full of lot sales the ARV moves a lot, e.g. a 3,800 sf Stephens Farm subject from $404k to $1.63M.',
    'Changing the Slate GC fee no longer puts Units back to the plan default. A 3-townhome deal became a 1-unit deal, which cut Dellinger\u2019s Max land from $262,309 to $69,756. Units now follows the plan only when you pick a different plan (or change a custom footprint\u2019s Units).',
