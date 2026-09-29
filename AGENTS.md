@@ -413,12 +413,16 @@ Every County GIS lookup switches the lot to poly mode (`loadParcelPolygon` → `
 most deals take.
 - **`loadParcelPolygon()` merges, then designates.**
   - `mergeParcelRing()` drops each vertex that sits within 0.5 ft of the line its neighbours make (1 ft next to a piece
-    under 2 ft). It carries the proxy's ROW flags (by length) and front edge along.
+    under 2 ft), but only while the merged line stays within 1 sf of the county's. So a GIS lot's area stays within a
+    few sf of the county shoelace. It carries the proxy's ROW flags (by length) and front edge along.
   - `designateParcelEdges()` then sets:
-    - front = the proxy's front edge plus the rest of the street line (ROW edges within 35° of it, or collinear edges);
-    - rear = the back-facing edge with the most length facing the front, weighted by depth, **ROW edges included**
-      (alley and through lots), plus its collinear pieces;
-    - corner = ROW edges running on from the front (a side street).
+    - front = the proxy's front edge plus the rest of the street line: ROW edges within 45° of it, short ROW chords that
+      keep bending gently (a curve or a cul-de-sac bulb), and collinear edges;
+    - rear = among the back-facing edges that reach within 10 ft of the deepest point (**ROW edges included**: alley
+      and through lots), the one with the most length facing the street, plus the rest of that line (pieces within 15°
+      of the last rear piece);
+    - corner = ROW edges running on from the front that turn 45° or more away from it (a side street);
+    - each walk passes over one jog of up to 15 ft, which stays a side.
   - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and
     `#edge-auto-note` says so.
   - Flag a change that goes back to one front and one rear edge, skips ROW edges as rear candidates, or makes every edge
@@ -428,9 +432,12 @@ most deals take.
   - The editor's edge click cycles all four (audit G5).
 - **The envelope is the lot minus each edge's setback band** (`buildEnvelopeFt()`).
   - It is worked as disjoint convex pieces cut with `clipHPLabFt`, then joined back into outlines.
-  - At a convex corner a band runs on to the neighbouring edge's line, so a convex lot comes out as the lot clipped by
-    every edge's offset half-plane.
-  - At a concave corner the band stops square and a cap covers the corner.
+  - At a convex corner a band runs on past the edge's end inside the next lot lines, as far as the first concave corner.
+    So a convex lot comes out as the lot clipped by every edge's offset half-plane. On a concave lot the run-on can't
+    cut across the lot beyond that corner.
+  - At a concave corner the band stops square and a cap covers the corner (true distance). On a concave lot the convex
+    corners get caps too, for where the lot carries on past a short neighbour.
+  - A repeated corner (a zero-length edge, e.g. a deal saved at whole pixels before v8.17) is dropped first.
   - The result can be several outlines, in `planOverlay.buildPolysFt` (largest first, which is `buildPolyFt`). It can
     also be none, when the setbacks meet across the lot: `clearEnvelope()` then nulls `buildPolyFt`, so nothing is
     fitted into a stale outline.
@@ -440,12 +447,16 @@ most deals take.
     the lot line". Flag a change that switches between the two without saying so.
 - **Fit check.**
   - A convex envelope uses the exact half-plane solver (`polyIsConvexFt` ignores turns under 1.5°).
-  - A non-convex one uses `planFitsSamplingFt()`: the exact solver on the envelope's kernel, then `rectFitsPolyFt()`,
-    which tests the whole rectangle (no envelope edge inside it, and its centre inside).
+  - A nearly convex one gets the exact solver first, then `planFitsSamplingFt()` if that finds no "fits".
+  - A non-convex one uses `planFitsSamplingFt()`: the exact solver on the envelope's kernel, then `rectFitsPolyFt()`.
+    That tests the whole rectangle (no envelope edge inside it, and its centre inside). It is exact across x and tries y
+    at every vertex height and every 0.25 ft, within the heights where the rectangle fits the convex hull.
+  - "Fits" (5 ft clear) on a non-convex envelope is the same test in the envelope shrunk 5 ft (`buildEnvelopeFt` with
+    5 ft on every edge, cached on the ring as `_e5`). That's the same distance rule the convex path uses.
   - Neither can report a placement that isn't inside the envelope. Flag a corners-only containment test (audit G6).
 - **`redrawEditor()` owns `buildableArea` in poly mode**, as the envelope's area (all pieces). `updatePolyStats()` must
   not assign it (v8.3).
-- **`polyPoints` keep 1/100 px**, not whole pixels, so a GIS lot's area equals the county shoelace.
+- **`polyPoints` keep 1/100 px**, not whole pixels, which moved GIS corners up to 0.15 ft.
 
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
