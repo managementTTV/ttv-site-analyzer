@@ -1415,6 +1415,7 @@ const SETBACKS={
   'Mecklenburg|N2-A':{front:10,rear:20,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft'},
   'Mecklenburg|N2-B':{front:10,rear:20,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft'},
   'Mecklenburg|N2-C':{front:10,rear:20,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft',
+    noNewLots:'N2-C: lots made by a split can\u2019t hold a standalone house or plex. Single-family isn\u2019t permitted, and a standalone duplex\u2013quadraplex needs a lot of 0.5 acre or less that existed before June 1, 2023. Plan new N2-C lots as townhomes (pick \u201cN2-C \u00b7 townhomes 5+\u201d) or a multi-dwelling development.',
     note:'N2-C: single-family isn\u2019t permitted. A duplex, triplex or quadraplex on its own is allowed only on a lot of 0.5 acre or less that existed before June 1, 2023 (built to these N1-E standards); otherwise it has to be part of a multi-dwelling development (UDO \u00a715.4.EE.6, JJ.5, GG.6).'},
   // Townhomes of 5+ attached units (Multi-Family Attached, "MF-A"): Tables 5-1 and 5-2. The frontage setback is 20 ft from
   // the back of curb on a local street (16 ft on a Secondary frontage in N2-C); the app measures from the lot line, so it
@@ -1422,11 +1423,11 @@ const SETBACKS={
   // Neighborhood 1 Place Type on the 2040 Policy Map (the #n2-abuts-n1 box, default on; Brian 2026-09-29).
   // Lot standards (50-ft width, 3,000 sf per building) apply to the parent parcel, not the sublots (Table 5-1 fn 1).
   'Mecklenburg|N2-A \u00b7 townhomes 5+':{front:20,rear:20,sides:5,corner:20,minWidth:50,minSF:3000,garage:'20 ft',mfa:true,
-    note:'Townhomes (5+ attached units) in N2-A: frontage setback 20 ft from the back of curb (shown here from the lot line, which is conservative), rear 20 ft, 50-ft minimum parent lot, 250 sf of open space per unit, 50% building coverage.'},
+    note:'Townhomes (5+ attached units) in N2-A: frontage setback 20 ft from the back of curb on a local or collector street (shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 24\u201330 ft from the future back of curb), rear 20 ft, 50-ft minimum parent lot, 250 sf of open space per unit, 50% building coverage.'},
   'Mecklenburg|N2-B \u00b7 townhomes 5+':{front:20,rear:20,rearNotAbuttingN1:10,sides:5,corner:20,minWidth:50,minSF:3000,garage:'20 ft',mfa:true,
-    note:'Townhomes (5+ attached units) in N2-B: frontage setback 20 ft from the back of curb (shown here from the lot line, which is conservative), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, 50-ft minimum parent lot, 150 sf of open space per unit, 60% building coverage.'},
+    note:'Townhomes (5+ attached units) in N2-B: frontage setback 20 ft from the back of curb on a local or collector street (shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 24\u201330 ft from the future back of curb), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, 50-ft minimum parent lot, 150 sf of open space per unit, 60% building coverage.'},
   'Mecklenburg|N2-C \u00b7 townhomes 5+':{front:20,rear:20,rearNotAbuttingN1:10,sides:5,corner:16,minWidth:0,minSF:0,garage:'20 ft',mfa:true,
-    note:'Townhomes (5+ attached units) in N2-C: frontage setback 20 ft from the back of curb (16 ft on a Secondary frontage; shown here from the lot line, which is conservative), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, no minimum lot width or area, 150 sf of open space per unit.'},
+    note:'Townhomes (5+ attached units) in N2-C: frontage setback 20 ft from the back of curb on a local or collector street (16 ft on a Secondary frontage; shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 20\u201324 ft from the future back of curb), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, no minimum lot width or area, 150 sf of open space per unit.'},
   'Mecklenburg|UR-2':{front:15,rear:20,sides:5,corner:10,minWidth:25,minSF:2500,garage:'20 ft'},
   'Mecklenburg|UR-3':{front:15,rear:20,sides:5,corner:10,minWidth:25,minSF:2500,garage:'20 ft'},
   'Mecklenburg|UR-4':{front:10,rear:15,sides:5,corner:10,minWidth:20,minSF:2000,garage:'20 ft'},
@@ -2197,7 +2198,7 @@ function onAbutsN1Change(){
 }
 // v8.15: County GIS writes overlay and conditional suffixes into the zone ("N1-C(HDO)", "N2-A (CD)", "N2-B BVO"). The
 // base zone's standards still apply, so it maps to the base zone's row (audit G2: a suffixed zone used to get no setbacks
-// at all, so the whole lot counted as buildable). {base, suffix}, or null when there's no suffix.
+// of its own, so the fields stayed blank or silently kept the previous deal's). {base, suffix}, or null when there's no suffix.
 function zoneSuffix(raw){
   const z=String(raw||'').trim(), base=z.replace(/\s*\(.*$/,'').replace(/\s+(SPA|BVO)\b.*$/i,'').trim();
   return base&&base!==z?{base,suffix:z.slice(base.length).trim()}:null;
@@ -2212,10 +2213,12 @@ function renderZoneNote(){
   const el=$('zone-note');if(!el)return;
   const key=($('zone-sel')||{}).value||'', sb=SETBACKS[key], zone=key.split('|')[1]||'', lines=[];
   if(sb&&sb.note)lines.push(sb.note);
-  const raw=(window._lastGis&&window._lastGis.zoning)||'', sx=zoneSuffix(raw);
-  if(sx&&zone&&sx.base.toUpperCase()===zone.toUpperCase()){
+  // the row's base zone: "N2-A · townhomes 5+" is still N2-A, so a CD / HDO note survives picking the townhome row
+  const raw=(window._lastGis&&window._lastGis.zoning)||'', sx=zoneSuffix(raw), zb=zone.split(' \u00b7 ')[0];
+  const onStub=!!(sx&&zone&&zone.toUpperCase()===String(raw).trim().toUpperCase()&&!sb);
+  if(sx&&zone&&(sx.base.toUpperCase()===zb.toUpperCase()||onStub)){
     const codes=[...new Set((sx.suffix.toUpperCase().match(/[A-Z]+/g)||[]))];
-    lines.push(`County GIS has this parcel as \u201c${raw}\u201d; the ${sx.base} standards are shown. `
+    lines.push(`County GIS has this parcel as \u201c${raw}\u201d; `+(onStub?`there\u2019s no setbacks row for ${sx.base}, so enter the setbacks from the UDO. `:`the ${sx.base} standards are shown. `)
       +codes.map(c=>ZONE_SUFFIX_NOTE[c]||`${c} is an overlay or suffix on the base zone; check its rules.`).join(' '));
   }
   el.innerHTML='';lines.forEach(t=>{const q=document.createElement('p');q.className='warn';q.style.margin='4px 0 0';q.textContent=t;el.appendChild(q);});
@@ -2267,12 +2270,16 @@ function setGisZoning(zoneVal,sameParcel){
   const sel=$('zone-sel');if(!sel||!zoneVal)return false;
   const county=$('county-sel').value||'Mecklenburg';
   const Z=String(zoneVal).toUpperCase().trim();
-  let opt=Array.from(sel.options).find(o=>((o.value.split('|')[1]||'').toUpperCase())===Z);
-  // v8.15: a suffixed zone ("N2-A (CD)") takes its base zone's row; renderZoneNote() says what the suffix means
-  if(!opt){const sx=zoneSuffix(zoneVal);if(sx){const B=sx.base.toUpperCase();opt=Array.from(sel.options).find(o=>((o.value.split('|')[1]||'').toUpperCase())===B);}}
+  const byZone=U=>Array.from(sel.options).find(o=>((o.value.split('|')[1]||'').toUpperCase())===U);
+  // v8.15: a suffixed zone ("N2-A (CD)") takes its base zone's row; renderZoneNote() says what the suffix means. An
+  // exact match wins only when it has a SETBACKS row, so a '(from GIS)' / '(saved)' stub from an older deal can't
+  // keep a suffixed parcel off its base row.
+  let opt=byZone(Z);
+  if(!(opt&&SETBACKS[opt.value])){const sx=zoneSuffix(zoneVal),b=sx&&byZone(sx.base.toUpperCase());if(b&&SETBACKS[b.value])opt=b;}
   if(!opt){opt=document.createElement('option');opt.value=county+'|'+zoneVal;opt.textContent=zoneVal+' (from GIS)';sel.appendChild(opt);}
   // a re-run on the parcel already loaded keeps its setbacks (an adjusted one is deliberate) unless the zone changed
-  if(sameParcel&&sel.value===opt.value)return true;
+  // (v8.15: a "· townhomes 5+" row the analyst picked for this zone counts as the same zone)
+  if(sameParcel&&(sel.value===opt.value||sel.value.indexOf(opt.value+' \u00b7 ')===0))return true;
   sel.value=opt.value;onZoneChange();return true;
 }
 function loadParcelPolygon(rings,edgeInfo){
@@ -3692,6 +3699,7 @@ function renderSubplot(p){
   const zoneName=zoneKey.split('|')[1]||'', n2Base=(county==='Mecklenburg'&&(zoneName.match(/^N2-[ABC]/)||[])[0])||'';
   let n2note='';
   if(n2Base&&!(sb&&sb.mfa)&&u>=5)n2note=`${u} attached units count as Multi-Family Attached (townhomes) under the UDO, which has its own N2 setbacks: pick “${n2Base} · townhomes 5+” in the zone list.`;
+  else if(n2Base==='N2-C'&&sb&&sb.mfa&&u<5)n2note=u===1?'Single-family isn\u2019t permitted in N2-C.':`A ${u}-unit row is a ${['','duplex','triplex','quadraplex'][u-1]} under the UDO. In N2-C it can stand alone only on a lot of 0.5 acre or less that existed before June 1, 2023 (then pick \u201cN2-C\u201d for the N1-E standards); otherwise it has to be part of a multi-dwelling development.`;
   else if(n2Base&&sb&&sb.mfa&&u<5)n2note=`A ${u}-unit row is a ${['single-family house','duplex','triplex','quadraplex'][u-1]} under the UDO, built to the N1-E standards: pick “${n2Base}” in the zone list.`;
   const note=`<p class="note" style="margin-top:8px">${rules.note}</p>`
     +(n2note?`<p class="warn" style="margin-top:6px">${n2note}</p>`:'')
@@ -3732,10 +3740,13 @@ function renderSublot(){
   if(!zoneLabel){
     head=`<div class="warn" style="margin-bottom:8px">No zone selected — pick a county &amp; zone under Address &amp; zoning to screen against UDO minimums. Showing geometric division only.</div>`;
   } else {
-    const okMax=maxN>=2;
+    // v8.15: "—" only for a row that really has no minimums; a zone with no SETBACKS row has unknown minimums
+    const nn=!!(sb&&sb.noNewLots);   // N2-C: split lots can't hold a standalone house or plex, so no count
+    const okMax=sb&&!nn?maxN>=2:false, sub=!sb?'no setbacks row for this zone \u2014 enter or verify the UDO minimums':nn?'no standalone lots from a split in this zone':isFinite(maxN)?'max by UDO minimums':'no minimum lot width or area in this row';
     head=`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
-      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':'var(--red)'}">${isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1?'':'s'}</div>
-      <div style="font-size:11px;color:var(--text-dim)">${isFinite(maxN)?'max by UDO minimums':'no minimum lot width or area in this row'} · ${zoneLabel}</div></div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':sb&&!nn?'var(--red)':'var(--amber)'}">${!sb?'?':nn?'—':isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1&&!nn?'':'s'}</div>
+      <div style="font-size:11px;color:var(--text-dim)">${sub} · ${zoneLabel}</div></div>`
+      +(sb&&sb.noNewLots?`<div class="warn" style="margin-bottom:8px">${sb.noNewLots}</div>`:'')+`
     <div style="font-family:var(--f-num);font-size:10px;color:var(--text-dim);margin-bottom:6px">Parent: ${frontage.toFixed(0)} ft frontage · ${fmtN(area)} sf${minW>0?` · min ${minW}' W`:''}${minSF>0?` · min ${fmtN(minSF)} sf`:' · no min area in table (verify UDO)'}</div>`;
   }
   box.innerHTML=head+rows+sublotSvg(sublotN,frontage,area,minW)
@@ -5493,9 +5504,12 @@ function restoreDeal(d){
     // saved zone may be a GIS-added option not in the default list
     const zv=vals['zone-sel']&&vals['zone-sel'].v;
     if(typeof zv==='string'&&zv&&$('zone-sel').value!==zv){
-      const sel=$('zone-sel'),o=document.createElement('option');
-      o.value=zv;o.textContent=(zv.split('|')[1]||zv)+' (saved)';
-      sel.appendChild(o);sel.value=zv;
+      // v8.15: a stub saved for a suffixed GIS zone ("N1-C(HDO)") reopens on its base zone's row (audit G2). The saved
+      // setbacks still land last; only blank ones now fill from that row instead of staying blank.
+      const sel=$('zone-sel'),sx=zoneSuffix(zv.split('|')[1]||'');
+      const base=sx&&Array.from(sel.options).find(x=>((x.value.split('|')[1]||'').toUpperCase())===sx.base.toUpperCase());
+      if(base&&SETBACKS[base.value]){sel.value=base.value;vals['zone-sel'].v=base.value;}
+      else{const o=document.createElement('option');o.value=zv;o.textContent=(zv.split('|')[1]||zv)+' (saved)';sel.appendChild(o);sel.value=zv;}
     }
     onZoneChange();
     // 2) blanket restore (overwrites any autofill, the zone's setbacks included, with saved values)
@@ -5615,10 +5629,10 @@ const APP_VERSION='8.15', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
  {v:'8.15',date:'Sep 2026',name:'N2 zoning follows the UDO',items:[
    'N2-A and N2-B: single-family, duplex, triplex and quadraplex homes now use the N1-E standards the UDO sends them to (10 ft front, 20 ft rear, 5 ft sides, 10 ft corner, 30 ft / 3,000 sf minimum lot). The old rows (N2-A 17/25 ft with a 50 ft / 5,000 sf lot; N2-B 17/20 ft with 40 ft / 3,500 sf) had no UDO source and turned down plans and lot splits that N2 allows: a 60\u00d7120 N2-B lot now splits into two 30-ft lots instead of showing \u201c\u2248 1 lot\u201d. N2 carries no arterial-street or affordable-unit condition; that set-aside applies only to a quadraplex in N1-A to N1-E.',
-   'A 3- or 4-unit townhome row counts as a triplex or quadraplex, so it uses the same N1-E standards. Rows of 5+ attached units are Multi-Family Attached, with their own setbacks: pick \u201cN2-A / N2-B / N2-C \u00b7 townhomes 5+\u201d in the zone list (20 ft frontage from the back of curb, 50-ft parent lot in N2-A/B). N2-B and N2-C townhome rows use a 20 ft rear when the site abuts a Neighborhood 1 Place Type on the 2040 Policy Map, 10 ft otherwise; a checkbox under the setbacks switches it (default 20). The townhome card says which row fits the unit count.',
-   'N2-C: the rear setback is 20 ft (the 15 ft it had wasn\u2019t in the UDO), and a note says single-family isn\u2019t permitted and a standalone duplex, triplex or quadraplex needs a lot of 0.5 acre or less that existed before June 1, 2023.',
-   'County GIS zones with an overlay or conditional suffix, such as \u201cN1-C(HDO)\u201d or \u201cN2-A (CD)\u201d, now load the base zone\u2019s setbacks, with a note on what the suffix means (for a CD parcel, read the rezoning petition: its conditions govern). They used to load no setbacks at all, so the whole lot counted as buildable.',
-   'Sub-lot estimate: a zone row with no minimum lot width or area now shows \u201c\u2014\u201d (no minimum) instead of a red \u201c\u2248 0 lots\u201d.']},
+   'A 3- or 4-unit townhome row counts as a triplex or quadraplex, so it uses the same N1-E standards. Rows of 5+ attached units are Multi-Family Attached, with their own setbacks: pick \u201cN2-A / N2-B / N2-C \u00b7 townhomes 5+\u201d in the zone list (20 ft frontage from the back of curb on a local or collector street, 50-ft parent lot in N2-A/B). N2-B and N2-C townhome rows use a 20 ft rear when the site abuts a Neighborhood 1 Place Type on the 2040 Policy Map, 10 ft otherwise; a checkbox under the setbacks switches it (default 20). The townhome card says which row fits the unit count.',
+   'N2-C: the rear setback is 20 ft (the 15 ft it had wasn\u2019t in the UDO), and a note says single-family isn\u2019t permitted and a standalone duplex, triplex or quadraplex needs a lot of 0.5 acre or less that existed before June 1, 2023. The sub-lot estimate says new N2-C lots can\u2019t hold one.',
+   'County GIS zones with an overlay or conditional suffix, such as \u201cN1-C(HDO)\u201d or \u201cN2-A (CD)\u201d, now load the base zone\u2019s setbacks, with a note on what the suffix means (for a CD parcel, read the rezoning petition: its conditions govern). They used to get no setbacks of their own: the fields stayed blank (the whole lot counted as buildable) or silently kept the previous deal\u2019s. A deal saved on one of those zones reopens on the base zone\u2019s row, and re-running County GIS on a parcel keeps a \u201ctownhomes 5+\u201d row you picked for it.',
+   'Sub-lot estimate: a zone row with no minimum lot width or area now shows \u201c\u2014\u201d (no minimum) instead of a red \u201c\u2248 0 lots\u201d, and a zone with no setbacks row at all shows \u201c?\u201d with a note to enter the minimums.']},
  {v:'8.14',date:'Sep 2026',name:'Fixes from the full logic audit: comps, Units, tap fees, plan footprints',items:[
    'Sales comps: builder lot purchases no longer count as new-build comps. The county marks them \u201csold as vacant\u201d with \u201cYes\u201d, and the check looked for \u201cY\u201d, so a lot sale was priced against the house built on it later (about $94/sf against $213/sf for real comps). A sale recorded before the current house was built is left out too. On the 80-deal backtest the median error is unchanged (4.8%); in pockets full of lot sales the ARV moves a lot, e.g. a 3,800 sf Stephens Farm subject from $404k to $1.63M.',
    'Changing the Slate GC fee no longer puts Units back to the plan default. A 3-townhome deal became a 1-unit deal, which cut Dellinger\u2019s Max land from $262,309 to $69,756. Units now follows the plan only when you pick a different plan (or change a custom footprint\u2019s Units).',

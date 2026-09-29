@@ -374,7 +374,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     5+ units), so it uses these rows too. `N2-C` holds the same values with a note: no single-family, and a standalone
     duplex–quadraplex only on a lot of 0.5 ac or less that existed before 6/1/2023.
   - **Townhome rows.** `N2-x · townhomes 5+` hold Multi-Family Attached (Tables 5-1 / 5-2), with `mfa:true`. The
-    frontage is 20 ft from the back of curb; the app measures it from the lot line, which is conservative. The rear
+    frontage is 20 ft from the back of curb on a local or collector street; the app measures it from the lot line,
+    which is conservative there. Avenues, boulevards and Main Streets take more (24–30 ft), measured from the future
+    back of curb (Table 5-2 row A). The rear
     comes from `zoneRear()`: for N2-B / N2-C the `rearNotAbuttingN1` 10 ft applies unless `#n2-abuts-n1` is ticked.
     That box is ticked by default, because abutting a Neighborhood 1 Place Type (2040 Policy Map) means 20 ft
     (Brian, 2026-09-29). The townhome card points at the row that matches Units.
@@ -386,8 +388,17 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Suffixed GIS zones map to the base zone (v8.15).** `setGisZoning()` falls back to `zoneSuffix()`, so
   "N1-C(HDO)", "N2-A (CD)" and "N2-B BVO" take the base row. `renderZoneNote()` says what the suffix means; for CD,
   read the rezoning petition, because its conditions govern. Before this, a suffixed zone got a stub option with no
-  setbacks, and the whole lot counted as buildable (audit G2). Flag a zone lookup that drops the suffix note, or one
-  that treats a CD petition's conditions as known.
+  setbacks of its own: blank (the whole lot buildable) or the previous deal's, silently (audit G2).
+  - An exact option wins only when it has a `SETBACKS` row, so an old '(saved)' / '(from GIS)' stub can't block the
+    base row.
+  - `restoreDeal()` maps a saved stub to its base row.
+  - A same-parcel re-run keeps a `· townhomes 5+` row of the same base zone.
+  - `renderZoneNote()` compares against the row's base zone, so the CD note survives picking the townhome row.
+  - This is only the suffix part of G2. A leftover non-Mecklenburg county on a GIS lookup is still open.
+  Flag a zone lookup that drops the suffix note, or one that treats a CD petition's conditions as known.
+- **The N2-C base row carries `noNewLots`**: `renderSublot()` warns that lots made by a split can't hold a
+  standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A zone with no
+  `SETBACKS` row shows "?" in the sub-lot estimate (minimums unknown), not the "—" of a row with no minimums.
 
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
