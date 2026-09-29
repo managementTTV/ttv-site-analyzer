@@ -1,4 +1,6 @@
-// api/gis.js — TTV GIS auto-fill proxy (Charlotte / Mecklenburg)  v3
+// api/gis.js — TTV GIS auto-fill proxy (Charlotte / Mecklenburg)  v6
+// v6 (2026-09-29, audit G1): the geocode matches the exact house number and the whole street (direction, name, type,
+// suffix) and uses the ZIP / city to choose; a lookup that can't be matched loads nothing. See chooseAddressPoint().
 // v3: right-of-way edge detection — classifies each parcel edge as facing a
 // neighboring parcel (interior lot line) or no parcel (street/alley ROW), and
 // picks the front edge (ROW edge nearest the address point). Edge indices are
@@ -66,12 +68,6 @@ async function byPolygon(layerUrl, ring, outFields='*', returnGeometry=false){
 }
 const _fields = {};
 async function fields(id){ if(_fields[id]) return _fields[id]; const m = await aj(`${BASE}/${id}?f=json`); _fields[id] = (m.fields||[]); return _fields[id]; }
-async function pickField(id, rx, prefer){
-  const fs = (await fields(id)).filter(f=>/string/i.test(f.type)).map(f=>f.name);
-  const hit = fs.filter(n=>rx.test(n));
-  if(prefer){ const p = hit.find(n=>prefer.test(n)); if(p) return p; }
-  return hit[0] || null;
-}
 function shoelaceSqft(g){ if(!g||!g.rings||!g.rings.length) return null; let t=0; g.rings.forEach((r,ri)=>{ let a=0; for(let i=0;i<r.length-1;i++){ a+=r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1]; } a=Math.abs(a/2); t+=(ri===0?a:-a); }); return t; }
 function centroid(g){ const r=g&&g.rings&&g.rings[0]; if(!r) return null; let x=0,y=0; r.forEach(p=>{x+=p[0];y+=p[1];}); return {x:x/r.length,y:y/r.length}; }
 function pointInRing(px,py,ring){ // ray cast; ring = [[x,y],...] (closing dup ok)
@@ -136,6 +132,153 @@ function applyCenterlineFront(info, centerPaths, streetLabel){
   return info;
 }
 function bboxWxD(g){ const r=g&&g.rings&&g.rings[0]; if(!r) return null; const xs=r.map(p=>p[0]),ys=r.map(p=>p[1]); return { w:Math.round(Math.max(...xs)-Math.min(...xs)), d:Math.round(Math.max(...ys)-Math.min(...ys)) }; }
+
+// ── v6 geocode (audit G1, 2026-09-29) ─────────────────────────────────────────────────────────────
+// The address layer carries the parts separately: txt_street_number (integer), cde_street_dir_prfx, nme_street,
+// repl_txt_roadway_abbrev (USPS type), cde_street_dir_suff, txt_addr_unit, cde_zip1, nme_city / nme_po_city. v5 matched
+// the house number and the first word after it as substrings and took the first hit, so "1500 N Davidson St" searched
+// for '%1500%' and '%N%' and loaded 15004 Annan Ct. Now the number is exact, candidates come from their street names,
+// and each is compared with the typed street part by part, after both sides go through the same spelling map.
+const DIR_WORDS={NORTH:'N',SOUTH:'S',EAST:'E',WEST:'W',NORTHEAST:'NE',NORTHWEST:'NW',SOUTHEAST:'SE',SOUTHWEST:'SW'};
+const DIR_ABBR=new Set(['N','S','E','W','NE','NW','SE','SW']);
+// every spelling of a street type -> the USPS abbreviation in repl_txt_roadway_abbrev (the layer's 24 types, plus
+// the county's own 2-letter codes; TR and FR are left out because a typed "Tr" can mean Trail or Terrace)
+const TYPE_WORDS={ALLEY:'ALY',ALY:'ALY',AL:'ALY',AVENUE:'AVE',AVE:'AVE',AV:'AVE',BOULEVARD:'BLVD',BLVD:'BLVD',BV:'BLVD',
+  BYWAY:'BYWY',BYWY:'BYWY',BY:'BYWY',CIRCLE:'CIR',CIR:'CIR',CR:'CIR',CRESCENT:'CRES',CRES:'CRES',CS:'CRES',COURT:'CT',CT:'CT',
+  COVE:'CV',CV:'CV',DRIVE:'DR',DR:'DR',FREEWAY:'FWY',FWY:'FWY',HIGHWAY:'HWY',HWY:'HWY',HY:'HWY',LANE:'LN',LN:'LN',LOOP:'LOOP',
+  LP:'LOOP',PLACE:'PL',PL:'PL',PARKWAY:'PKWY',PKWY:'PKWY',PKY:'PKWY',PY:'PKWY',ROAD:'RD',RD:'RD',RUN:'RUN',RN:'RUN',ROW:'ROW',
+  RW:'ROW',STREET:'ST',ST:'ST',TRACE:'TRCE',TRCE:'TRCE',TC:'TRCE',TRAIL:'TRL',TRL:'TRL',TL:'TRL',TERRACE:'TER',TER:'TER',
+  WAY:'WAY',WY:'WAY',CROSSING:'XING',XING:'XING',XG:'XING'};
+const NAME_ALIAS={MOUNT:'MT',SAINT:'ST',FORT:'FT',EXTENSION:'EXT'};
+const UNIT_WORDS=new Set(['APT','APARTMENT','UNIT','STE','SUITE','#','BLDG','LOT','RM','FL']);
+// one token's canonical spelling; applied to typed and county tokens alike, wherever they sit, so "West Blvd" (the
+// county's name WEST, type BLVD) and "W Boulevard" both come out as W BLVD, and "E 37th St" as E 37 ST
+function canonTok(t){ const o=String(t).replace(/^(\d+)(ST|ND|RD|TH)$/,'$1'); return DIR_WORDS[o]||NAME_ALIAS[o]||TYPE_WORDS[o]||o; }
+function canonToks(a){ return a.map(canonTok); }
+const eqToks=(a,b)=>a.length===b.length&&a.every((t,i)=>t===b[i]);
+const cleanTok=t=>String(t||'').toUpperCase().replace(/[^A-Z0-9&'\-]/g,'');
+// "1500 N Davidson St, Charlotte, NC, 28206" (the client's fullAddr()) -> {num, unit, toks, city, zip}. Also takes the
+// whole address typed into the street field, and a unit after the street ("Apt 2", "#2", "2723B").
+function parseTypedAddress(address){
+  const segs=String(address||'').toUpperCase().replace(/\./g,'').split(',').map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
+  let zip='', city='';
+  const street=segs.shift()||'';
+  for(const s of segs){
+    const z=s.match(/(?:^|\s)(\d{5})(?:-\d{4})?$/);
+    if(z&&!zip) zip=z[1];
+    const rest=s.replace(/(?:^|\s)\d{5}(?:-\d{4})?$/,'').replace(/^(NC|SC|NORTH CAROLINA|SOUTH CAROLINA)$/,'').trim();
+    if(rest&&!city) city=rest;
+  }
+  let toks=street.replace(/#/g,' # ').split(' ').filter(Boolean);
+  // a ZIP and state typed at the end of the street field
+  if(toks.length>2&&/^\d{5}(-\d{4})?$/.test(toks[toks.length-1])){ if(!zip) zip=toks[toks.length-1].slice(0,5); toks.pop(); }
+  if(toks.length>2&&/^(NC|SC)$/.test(toks[toks.length-1])) toks.pop();
+  let unit='';
+  const ui=toks.findIndex((t,i)=>i>0&&UNIT_WORDS.has(t));
+  if(ui>0){ unit=toks.slice(ui+1).join(' ').replace(/^#\s*/,''); toks=toks.slice(0,ui); }
+  const m=(toks[0]||'').match(/^(\d+)(?:-?([A-Z]{1,2}|\d+))?$/);
+  const num=m?parseInt(m[1],10):null;
+  if(m&&m[2]&&/^[A-Z]/.test(m[2])&&!unit) unit=m[2];   // "2723B"; a range "1500-1502" keeps its first number
+  return { num, unit, toks:(m?toks.slice(1):toks).map(cleanTok).filter(Boolean), city, zip };
+}
+// names the county might file the typed street under: every run of up to 4 typed words, each word as typed or in
+// its other common spelling (W/WEST, MT/MOUNT, 37/37TH), capped so the IN list stays short
+function streetNameVariants(toks){
+  const alt=t=>{ const o=new Set([t]);
+    for(const [k,v] of Object.entries(DIR_WORDS)){ if(t===k)o.add(v); if(t===v)o.add(k); }
+    for(const [k,v] of Object.entries(NAME_ALIAS)){ if(t===k)o.add(v); if(t===v)o.add(k); }
+    const d=t.match(/^(\d+)(ST|ND|RD|TH)?$/);
+    if(d){ const n=+d[1], sfx=(n%100>=11&&n%100<=13)?'TH':({1:'ST',2:'ND',3:'RD'}[n%10]||'TH'); o.add(d[1]); o.add(d[1]+sfx); }
+    if(/['\-]/.test(t)) o.add(t.replace(/['\-]/g,''));
+    return [...o]; };
+  const out=new Set();
+  for(let i=0;i<toks.length&&i<8;i++) for(let j=i;j<toks.length&&j<i+4;j++){
+    let combos=[''];
+    for(const t of toks.slice(i,j+1)) combos=combos.flatMap(c=>alt(t).map(a=>c?c+' '+a:a)).slice(0,16);
+    combos.forEach(c=>{ if(c.length<=30) out.add(c); });
+  }
+  return [...out].slice(0,80);
+}
+function pointParts(a){
+  const s=v=>String(v==null?'':v).replace(/\s+/g,' ').trim().toUpperCase();
+  return { num:a.txt_street_number, dir:s(a.cde_street_dir_prfx), name:s(a.nme_street),
+    type:s(a.repl_txt_roadway_abbrev||a.cde_roadway_type), sdir:s(a.cde_street_dir_suff), unit:s(a.txt_addr_unit),
+    city:s(a.nme_city), po_city:s(a.nme_po_city), zip:s(a.cde_zip1), status:s(a.cde_status),
+    street:s(a.address)||[a.txt_street_number,s(a.cde_street_dir_prfx),s(a.nme_street),s(a.repl_txt_roadway_abbrev),s(a.cde_street_dir_suff)].filter(Boolean).join(' '),
+    full:s(a.full_address) };
+}
+const streetLine=P=>[P.num,P.dir,P.name,P.type,P.sdir].filter(Boolean).join(' ');
+// how the typed street words compare with one county address point: 'exact' (same words), 'partial' (the analyst
+// left out the direction, type or suffix the county has), 'name' (same street name, a typed part conflicts: shown as
+// a suggestion, never used) or null. Words at the end that spell the point's city ("... Dr Charlotte") are locality.
+function compareStreet(typedToks, P){
+  const nameT=canonToks(P.name.split(' ').filter(Boolean));
+  const parts=[['dir',P.dir,'direction'],['type',P.type,'street type'],['sdir',P.sdir,'suffix']].filter(p=>p[1]);
+  const full=canonToks([P.dir,...P.name.split(' '),P.type,P.sdir].filter(Boolean));
+  let T=canonToks(typedToks), cityFromStreet='';
+  for(const c of [P.city,P.po_city]){ const ct=c?c.split(' '):[];
+    if(ct.length&&T.length>ct.length&&eqToks(T.slice(-ct.length),canonToks(ct))&&!eqToks(T,full)){ T=T.slice(0,-ct.length); cityFromStreet=c; break; } }
+  if(eqToks(T,full)) return {level:'exact',missing:[],cityFromStreet};
+  for(let mask=1;mask<(1<<parts.length);mask++){
+    const drop=new Set(parts.filter((_,i)=>mask&(1<<i)).map(p=>p[0]));
+    const v=canonToks([drop.has('dir')?'':P.dir,...P.name.split(' '),drop.has('type')?'':P.type,drop.has('sdir')?'':P.sdir].filter(Boolean));
+    if(eqToks(T,v)) return {level:'partial',missing:parts.filter(p=>drop.has(p[0])).map(p=>p[2]+' '+p[1]),cityFromStreet};
+  }
+  for(let i=0;i+nameT.length<=T.length;i++) if(eqToks(T.slice(i,i+nameT.length),nameT)) return {level:'name',missing:[],cityFromStreet};
+  return null;
+}
+// Pick the county address point for what was typed. Accepted: 'exact', or 'close' (the right number and street, but a
+// part was left out or the ZIP / city differs; the diffs say what). Refused, with no parcel loaded: 'none', 'ambiguous'
+// (two streets or places fit), 'locality' (the street exists, but not in the typed city or ZIP).
+function chooseAddressPoint(typed, feats, near){
+  const typedLine=[typed.num,...typed.toks].filter(v=>v!=null&&v!=='').join(' ')+(typed.unit?' #'+typed.unit:'');
+  const loc=[typed.city,typed.zip].filter(Boolean).join(' ');
+  const out={status:'none',typed:typedLine+(loc?', '+loc:''),matched:null,diffs:[],candidates:[],message:'',feature:null,point:null};
+  if(typed.num==null||!typed.toks.length){ out.message='Type the house number and street (e.g. 2723 Dellinger Dr): the county lookup needs an exact street address.'; return out; }
+  const scored=feats.map(f=>{ const P=pointParts(f.attributes||{}); return {f,P,c:P.num===typed.num?compareStreet(typed.toks,P):null}; }).filter(x=>x.c);
+  const label=x=>streetLine(x.P)+' ('+[x.P.po_city||x.P.city,x.P.zip].filter(Boolean).join(' ')+')';
+  const uniq=a=>[...new Set(a)];
+  let pool=scored.filter(x=>x.c.level==='exact'); if(!pool.length) pool=scored.filter(x=>x.c.level==='partial');
+  if(!pool.length){
+    const same=uniq(scored.map(label)).slice(0,4);
+    const nearBy=uniq((near||[]).map(P=>P.num+' '+[P.dir,P.name,P.type,P.sdir].filter(Boolean).join(' ')+(P.zip?' ('+P.zip+')':''))).slice(0,4);
+    out.candidates=same.concat(nearBy);
+    out.message=`No county address point for “${typedLine}”.`
+      +(same.length?` At that number the county has ${same.join(', ')}.`:'')
+      +(nearBy.length?` Nearest numbers on that street: ${nearBy.join(', ')}.`:'')
+      +' Check the number and street, then run the auto-fill again.';
+    return out;
+  }
+  // locality: the typed ZIP and city, when they pick out some of the candidates
+  const city=typed.city||pool.map(x=>x.c.cityFromStreet).find(Boolean)||'';
+  const zipOK=x=>!typed.zip||x.P.zip===typed.zip, cityOK=x=>!city||x.P.city===city||x.P.po_city===city;
+  let pick=pool.filter(x=>zipOK(x)&&cityOK(x));
+  if(!pick.length) pick=pool.filter(x=>(typed.zip&&zipOK(x))||(city&&cityOK(x)));   // one of the two agrees: a ZIP typo, or a postal-city name
+  if(!pick.length){
+    out.status='locality'; out.candidates=uniq(pool.map(label)).slice(0,5);
+    const here=uniq(scored.filter(x=>x.c.level==='name'&&((typed.zip&&zipOK(x))||(city&&cityOK(x)))).map(label)).slice(0,3);
+    out.message=`The county has ${out.candidates.join(', ')}, not in ${[city,typed.zip].filter(Boolean).join(' ')}.`
+      +(here.length?` There it has ${here.join(', ')}.`:'')+' Auto-fill covers Mecklenburg only: check the street, city and ZIP.';
+    return out;
+  }
+  const groups=uniq(pick.map(label));
+  if(groups.length>1){
+    out.status='ambiguous'; out.candidates=groups.slice(0,5);
+    out.message=`“${typedLine}” fits ${groups.length} county addresses: ${groups.slice(0,5).join(', ')}. Add the direction, street type or ZIP, then run the auto-fill again.`;
+    return out;
+  }
+  // one property: the typed unit's point, else the building's own (no unit), else any; an active point first
+  const rank=x=>(typed.unit&&x.P.unit===typed.unit?0:!x.P.unit?1:2)*2+(x.P.status==='A'?0:1);
+  const best=pick.slice().sort((a,b)=>rank(a)-rank(b))[0], P=best.P;
+  best.c.missing.forEach(m=>out.diffs.push(`the county address has the ${m}`));
+  if(typed.zip&&P.zip&&P.zip!==typed.zip) out.diffs.push(`the ZIP there is ${P.zip}, not ${typed.zip}`);
+  if(city&&P.city!==city&&P.po_city!==city) out.diffs.push(`the city there is ${P.po_city||P.city}, not ${city}`);
+  if(typed.unit&&P.unit!==typed.unit) out.diffs.push(`there is no unit ${typed.unit} on file, so this is ${P.unit?'unit '+P.unit:'the building’s own point'}`);
+  if(P.status&&P.status!=='A') out.diffs.push(`the county marks this address point inactive (status ${P.status})`);
+  out.status=out.diffs.length?'close':'exact'; out.matched=P.full||streetLine(P); out.feature=best.f; out.point=P;
+  out.message=out.diffs.length?`County GIS matched ${out.matched}: ${out.diffs.join('; ')}.`:'';
+  return out;
+}
 function findAttr(a, rx){ if(!a) return null; for(const [k,v] of Object.entries(a)){ if(rx.test(k)&&v!=null&&v!=='') return {field:k,value:v}; } return null; }
 async function spatialAt(layerUrl, pt, outFields='*'){
   const geom = encodeURIComponent(JSON.stringify({ x:pt.x, y:pt.y, spatialReference:{wkid:SR} }));
@@ -154,19 +297,36 @@ export default async function handler(req, res){
   const out = { address, ok:false, parcel:null, zoning:null, watershed:null, swim_buffer:null, review_area:null, historic:null, notes:[], errors:[] };
   const raw = {};
   try{
-    // 1) geocode via Master Address Points
-    const addrField = (await pickField(LAYER.address, /full_address|address/i, /full/i)) || 'full_address';
-    const toks = address.toUpperCase().replace(/[.,]/g,'').split(/\s+/).filter(Boolean);
-    const num = toks[0]||'', street = toks[1]||'';
+    // 1) geocode via Master Address Points (v6, audit G1): exact number, candidates by street name, then
+    // chooseAddressPoint() compares each part and the ZIP / city. A refused match loads nothing.
     let pt=null, matched=null;
+    const typed = parseTypedAddress(address);
     try{
-      const where = encodeURIComponent(`UPPER(${addrField}) LIKE '%${num}%' AND UPPER(${addrField}) LIKE '%${street}%'`);
-      const url = `${BASE}/${LAYER.address}/query?where=${where}&outFields=*&returnGeometry=true&outSR=${SR}&f=json`;
-      const j = await aj(url); raw.address = debug?j:undefined;
-      if(j.features&&j.features.length){ const f=j.features[0]; pt=f.geometry; matched = f.attributes.full_address || f.attributes.address || ((findAttr(f.attributes,/full_address|^address$/i)||{}).value) || null;
+      const names = typed.num!=null ? streetNameVariants(typed.toks) : [];
+      const inList = names.map(n=>"'"+n.replace(/'/g,"''")+"'").join(',');
+      let feats=[], near=[];
+      if(inList){
+        const where = encodeURIComponent(`txt_street_number = ${typed.num} AND nme_street IN (${inList})`);
+        const j = await aj(`${BASE}/${LAYER.address}/query?where=${where}&outFields=*&returnGeometry=true&outSR=${SR}&resultRecordCount=200&f=json`);
+        feats = j.features||[]; raw.address = debug?{where:decodeURIComponent(where),count:feats.length}:undefined;
+        // nothing on that street at that number: the nearest numbers on it, for the message
+        if(!feats.some(f=>{ const P=pointParts(f.attributes||{}); const c=compareStreet(typed.toks,P); return c&&c.level!=='name'; })){
+          try{
+            const w2 = encodeURIComponent(`nme_street IN (${inList}) AND txt_street_number >= ${Math.max(0,typed.num-400)} AND txt_street_number <= ${typed.num+400}`);
+            const j2 = await aj(`${BASE}/${LAYER.address}/query?where=${w2}&outFields=txt_street_number,cde_street_dir_prfx,nme_street,repl_txt_roadway_abbrev,cde_roadway_type,cde_street_dir_suff,txt_addr_unit,nme_city,nme_po_city,cde_zip1,cde_status,address,full_address&returnGeometry=false&resultRecordCount=400&f=json`);
+            near = (j2.features||[]).map(f=>pointParts(f.attributes||{})).filter(P=>{ const c=compareStreet(typed.toks,P); return c&&c.level!=='name'&&P.num!==typed.num; })
+              .sort((a,b)=>Math.abs(a.num-typed.num)-Math.abs(b.num-typed.num));
+          }catch(_){ /* suggestions only */ }
+        }
+      }
+      const m = chooseAddressPoint(typed, feats, near);
+      out.match = { status:m.status, typed:m.typed, matched:m.matched, diffs:m.diffs, candidates:m.candidates, message:m.message,
+        point: m.point ? { street:m.point.street, num:m.point.num, dir:m.point.dir||null, name:m.point.name, type:m.point.type||null, sdir:m.point.sdir||null,
+          unit:m.point.unit||null, city:m.point.city||null, po_city:m.point.po_city||null, zip:m.point.zip||null } : null };
+      if(m.feature){ const f=m.feature; pt=f.geometry; matched = m.matched;
         out._street={name:(f.attributes.nme_street||'').trim(),type:(f.attributes.repl_txt_roadway_abbrev||f.attributes.cde_roadway_type||'').trim()}; }
-      else out.notes.push(`No address-point match on ${addrField}`);
-    }catch(e){ out.errors.push('geocode: '+e.message); }
+      else out.notes.push(m.message);
+    }catch(e){ out.errors.push('geocode: '+e.message); res.setHeader('Cache-Control','no-store'); }   // don't cache a failed geocode for a day
 
     // 2) parcel by point (geometry + area)
     let parcelFeat=null;
