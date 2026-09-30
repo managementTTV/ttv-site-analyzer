@@ -253,6 +253,14 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .upg-cost{font-family:var(--f-num);font-size:10px;color:var(--text-dim)}
 .upg-total-bar{display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:10px;border-top:1px solid var(--border-bright)}
 
+.sv-frame{display:block;width:100%;height:320px;border:0;border-radius:var(--radius-sm);margin-bottom:8px;background:rgba(94,128,149,0.08)}
+@media (max-width:640px){.sv-frame{height:240px}}
+.st-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.st-tbl th{font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-dim);text-align:right;padding:4px 6px;border-bottom:1px solid var(--border)}
+.st-tbl th:first-child,.st-tbl td:first-child{text-align:left;padding-left:0}
+.st-tbl td{padding:5px 6px;border-bottom:1px solid rgba(94,128,149,0.18);text-align:right;font-family:var(--f-num)}
+.st-tbl td:first-child{font-family:inherit;color:var(--text-mid)}
+.st-chip{display:inline-block;font-size:10px;font-family:inherit;padding:1px 7px;border-radius:9px;white-space:nowrap}
 .topo-btn{font-size:11px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.25);padding:6px 12px;border-radius:var(--radius-sm);text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin:3px}
 .topo-btn:hover{background:rgba(94,128,149,0.25)}
 
@@ -725,7 +733,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.16 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.18 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -821,6 +829,10 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <p class="note">Auto-filled from your setbacks sheet. Always verify against the UDO.</p>
       </div>
       <div id="zone-udo-link" style="margin-top:10px;display:none"></div>
+    </div>
+    <div class="card" id="street-card" style="display:none">
+      <div class="card-title"><span class="dot"></span>Street Check</div>
+      <div id="street-body"></div>
     </div>
     <div id="meck-context" style="display:none">
       <div class="card" style="border-color:rgba(94,128,149,0.25);background:rgba(94,128,149,0.04)">
@@ -2095,6 +2107,7 @@ function invalidateGisIfAddressMoved(){
     if(gisAddressSignature()===g.addrSig) return;
     window._lastGis=null;renderZoneNote();
     const box=$('gis-result'); if(box){box.style.display='none';}
+    hideStreetCheck();
     setGisStatus('Address changed \u2014 run the County GIS auto-fill again before pulling comps.');
     const msg=$('county-comps-msg'); if(msg){msg.style.display='none';}
   }catch(_){ }
@@ -2445,6 +2458,7 @@ function applyGisData(d,sig){
     const cleared=!!_gisLot;if(cleared)clearGisSite();
     window._lastGis=null;renderZoneNote();
     const box=$('gis-result');if(box)box.style.display='none';
+    hideStreetCheck();
     setGisStatus((m.message||'No county address point matches that address.')
       +(cleared?' The lot, zone and setbacks on screen were loaded for this address, so they were cleared too.':''),'error');
     return;
@@ -2492,6 +2506,7 @@ function applyGisData(d,sig){
     cama:d.cama||null,site:d.site||null};}catch(_){ }
   renderZoneNote();   // v8.15: now that the cache holds this parcel's zoning string (and any suffix)
   renderGisResult(d);
+  if(d.parcel&&d.parcel.pid)checkStreet();else hideStreetCheck();   // v8.18: not awaited, the lookup is done
 }
 // v7.13: turn the county's own site facts into lot-factor starting points. Each field is only
 // written while it still holds its shipped default, so anything the user typed survives a re-lookup.
@@ -2558,6 +2573,73 @@ function renderGisResult(d){
   if(d.errors&&d.errors.length)h+=row('Errors',d.errors.join('; '),red);
   h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">Zoning &amp; lot loaded into the form above \u2014 override anything off-benchmark. Parcel shown is the current GIS shape; for a subdivision, draw the intended sublot.</div>';
   box.innerHTML=h;box.style.display='';
+}
+// ── STREET CHECK (v8.18) ──────────────────────────────────────────────────────
+// "A bad street in a good area": /api/street compares the lot's own stretch of street with its assessor neighbourhood
+// from the county's records, and says where to stand to look at the lot in Street View. Display only: nothing here
+// feeds a calculation, the save file or an export, and it doesn't touch the comps or the ARV. The Street View window is
+// Google's plain Maps Embed for a person to look (nothing is read from the imagery: Google's terms forbid that), shown
+// when GOOGLE_MAPS_EMBED_KEY is set in Vercel; without it the card links out to Google Maps.
+let _streetFor=null;   // the PID the card on screen is for
+function hideStreetCheck(){_streetFor=null;const c=$('street-card');if(c)c.style.display='none';}
+async function checkStreet(){
+  const card=$('street-card'),body=$('street-body');if(!card||!body)return;
+  const g=window._lastGis,pid=g&&g.pid;
+  if(!pid||(g.addrSig&&g.addrSig!==gisAddressSignature())){hideStreetCheck();return;}
+  const gen=_dealGen,sig=gisAddressSignature();   // request-time, like gisLookup(): an answer for an old address is dropped
+  _streetFor=pid;card.style.display='';
+  body.innerHTML='<div class="note">Comparing the street with its neighbourhood…</div>';
+  const stale=()=>gen!==_dealGen||gisAddressSignature()!==sig||!window._lastGis||window._lastGis.pid!==pid||_streetFor!==pid;
+  try{
+    const r=await fetch('/api/street?pid='+encodeURIComponent(pid));
+    const d=await r.json();
+    if(stale())return;
+    if(d.error)throw new Error(d.error);
+    renderStreetCheck(d);
+  }catch(e){
+    if(stale())return;
+    body.innerHTML='<div class="note" style="color:var(--red)">Street check failed — '+String(e.message).replace(/</g,'&lt;')
+      +'. <button class="btn btn-ghost" style="padding:1px 8px;font-size:11px" onclick="checkStreet()">Try again</button></div>';
+  }
+}
+function renderStreetCheck(d){
+  const body=$('street-body');if(!body)return;
+  const E=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const sv=d.streetview||{},s=d.street,n=d.neighborhood,sub=d.subject||{},dim='var(--text-dim)';
+  let h='';
+  const at=sv.camera||(sv.lat!=null&&sv.lng!=null?{lat:sv.lat,lng:sv.lng}:null),hd=sv.camera&&sv.heading!=null?'&heading='+sv.heading:'';
+  if(at){
+    if(sv.embed_key)h+='<iframe class="sv-frame" title="Street View of the lot" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps/embed/v1/streetview?key='
+      +encodeURIComponent(sv.embed_key)+'&location='+at.lat+','+at.lng+hd+'&pitch=0&fov=90"></iframe>';
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><a class="topo-btn" style="margin:0" target="_blank" rel="noopener" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint='
+      +at.lat+','+at.lng+hd+'">🚶 Walk '+E(sub.street||'the street')+' in Google Street View ↗</a>'
+      +'<span style="font-size:11px;color:'+dim+'">'+(sv.camera?'Opens on the street in front of the lot, facing it. Check the capture date in the corner.':'Opens at the lot.')+'</span></div>';
+  }
+  if(d.verdict){
+    const v=d.verdict.level,col=v==='weaker'?'var(--red)':v==='watch'?'var(--amber)':v==='in-line'?'var(--green)':dim;
+    h+='<div style="border-left:3px solid '+col+';padding:6px 10px;margin:4px 0 6px;font-size:12.5px;background:rgba(94,128,149,0.06)">'+E(d.verdict.text)+'</div>';
+  }
+  if(s&&n){
+    const fmt=(k,v)=>v==null?'—':(k==='sale_psf'||k==='value_psf')?'$'+Math.round(v).toLocaleString()+'/sf':(Math.round(v*10)/10)+'%';
+    const cnt=(k,p)=>k==='sale_psf'?p.sale_count+' sale'+(p.sale_count===1?'':'s'):k==='value_psf'?p.value_count+' homes'
+      :k==='below_avg'?p.graded+' graded':k==='new_builds'?p.homes+' homes':p.parcels+' parcels';
+    const CH={weaker:['Weaker','var(--red)'],stronger:['Stronger','var(--green)'],similar:['Similar',dim],thin:['Too few',dim]};
+    const area=n.kind==='radius'?'Half mile':'Neighbourhood';
+    h+='<div style="font-size:11px;color:'+dim+'">This street: '+E(s.label)+' · '+s.homes+' homes on '+s.parcels+' parcels. '
+      +area+': '+E(n.label)+' · '+n.homes.toLocaleString()+' homes.</div>';
+    h+='<table class="st-tbl"><tr><th>Check</th><th>This street</th><th>'+area+'</th><th></th></tr>';
+    (d.checks||[]).forEach(c=>{const [t,col]=CH[c.verdict]||CH.thin;
+      h+='<tr><td>'+E(c.label)+'</td><td title="'+E(cnt(c.key,s))+'">'+fmt(c.key,c.street)+'</td><td title="'+E(cnt(c.key,n))+'">'+fmt(c.key,c.nbh)
+        +'</td><td><span class="st-chip" style="color:'+col+';border:1px solid '+col+'">'+t+'</span></td></tr>';});
+    h+='</table>';
+    if(s.nonres_uses&&s.nonres_uses.length)h+='<div style="font-size:11.5px;color:var(--text-mid);margin-top:6px">Commercial on this street: '
+      +s.nonres_uses.map(u=>E(u.n+' '+u.use.toLowerCase())).join(', ')+'.</div>';
+  }
+  if(d.notes&&d.notes.length)h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">'+d.notes.map(E).join(' ')+'</div>';
+  if(d.errors&&d.errors.length)h+='<div style="font-size:11px;color:var(--red);margin-top:4px">'+d.errors.map(E).join('; ')+'</div>';
+  h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">Mecklenburg County assessor records: buildings, lots and land use only. Sales are each home’s last market sale in '
+    +((d.params&&d.params.months)||60)+' months. A screening check: it doesn’t change the ARV or any number on The Underwrite, and the thresholds are judgement, not backtested.</div>';
+  body.innerHTML=h;
 }
 
 // ═══════════════════ PAGE 2 — LOT MODE ═══════════════════
@@ -5637,6 +5719,7 @@ function restoreDeal(d){
     // The previous deal's county card, its status line and its comps box (whose Apply button carries that deal's
     // $/sf) sit outside .page, so clear them too. The offer letter resets itself for a new address (generateOfferLetter).
     {const g=$('gis-result'),m=$('county-comps-msg');if(g)g.style.display='none';if(m)m.style.display='none';setGisStatus('');}
+    hideStreetCheck();   // v8.18: the street card is the last deal's too
     _tapSig=null;   // taps were just reset, so let the jurisdiction autofill in step 1 run again
     ['tap-water','tap-sewer'].forEach(id=>{const e=$(id);if(e)delete e.dataset.manual;});   // v8.14: nor the last deal's typed quotes
     // A deal saved before v8.2 has no profit-rule fields; it was underwritten on the SOP, so pin that rather than
@@ -5714,6 +5797,7 @@ function restoreDeal(d){
      if(mm){_gisMismatch=mm;window._lastGis=null;
        setGisStatus(`This deal was saved with the County GIS parcel at ${mm.matched}, which isn\u2019t ${st}. Its lot and zoning may be that parcel\u2019s, so its County GIS record was dropped: run the auto-fill again.`,'warn');}}
     renderZoneNote();
+    if(window._lastGis&&window._lastGis.pid)checkStreet();   // v8.18: the saved parcel's street, fetched again (nothing is saved)
     // 7) re-render + recalc through the existing pipeline only
     if(typeof renderUpgrades==='function')renderUpgrades();
     renderComps();renderShortlist();
@@ -5788,8 +5872,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.16', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.18', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.18',date:'Sep 2026',name:'Street check',items:[
+   'After a County GIS lookup, Site Intelligence has a Street Check card with a button that opens Google Street View on the street in front of the lot, facing it. Once a Google Maps key is set up, Street View shows inside the card, so you can walk the street without leaving the deal.',
+   'Below it, the lot\u2019s own stretch of street (1,000 ft each way) is compared with its assessor neighbourhood on the county\u2019s records: recent sale $/sf, assessed building value $/sf, homes graded below Average, vacant lots, commercial and industrial parcels, and homes built 2020+. It says when the street looks weaker than its neighbourhood, the \u201cbad street in a good area\u201d case.',
+   'A new lot takes the neighbourhood most common around it. A home coded to a commercial market area (\u201cRetail \u2013 Northeast Submarket\u201d) is compared with everything within half a mile. The subject\u2019s own other parcels on the street are left out.',
+   'It\u2019s a screening check: it doesn\u2019t change the ARV, the comps or any number on The Underwrite, and it looks only at buildings, lots and land use (multi-family and affordable housing never count against a street).']},
  {v:'8.16',date:'Sep 2026',name:'County GIS loads the parcel you typed',items:[
    'County GIS auto-fill now matches the exact house number and the whole street (direction, name and type), and uses the ZIP and city to choose between places. It used to match the number and the first word after it as text and take the first hit, so “1500 N Davidson St” loaded 1500 Eastcrest Dr, “3000 N Tryon St” loaded 3000 Central Ave and “1932 Park Rd” loaded 11932 Bradford Park Dr in Davidson: another parcel’s lot, zoning and lot factor, with only the card header to show it.',
    'When no county address fits, nothing is loaded and the status line says why: no such number (with the nearest numbers on the street: 300 Clarice Ave → 400, 401, 409…), more than one street fits (3000 Tryon St is both N and S Tryon: add the direction or ZIP), the street isn’t in the city or ZIP typed, or the address’s units are separate parcels (a split duplex: type the unit). The ZIP and city pick the place first, so “2100 Sharon Rd, 28210” is Sharon Rd W there, not Sharon Rd in 28207. An address that matches with a part left out or a different ZIP (1500 N Davidson St typed with 28206; the county has 28205) loads, with an amber note saying what differs. A parcel County GIS has no zoning for (the towns outside Charlotte’s zoning map) says so and shows the setback fields.',
