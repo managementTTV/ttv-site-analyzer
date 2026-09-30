@@ -456,7 +456,8 @@ most deals take.
       face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
       those 30 ft or at least 40% of the lot's width (an L-shaped lot's step; a notch stays a side);
     - corner = ROW edges running on from the front that turn 45° or more away from it (a side street);
-    - each walk passes over one jog of up to 15 ft, which stays a side.
+    - each walk passes over one jog of up to 15 ft, which stays a side (the corner walk starts past a jog the front walk
+      stepped over).
   - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and
     `#edge-auto-note` says so.
   - Flag a change that goes back to one front and one rear edge, skips ROW edges as rear candidates, or makes every edge
@@ -469,6 +470,8 @@ most deals take.
   - At a convex corner a band runs on past the edge's end inside the next lot lines, as far as the first concave corner.
     So a convex lot comes out as the lot clipped by every edge's offset half-plane. On a concave lot the run-on can't
     cut across the lot beyond that corner.
+  - A straight corner, or one that turns inward by under 0.5° (a GIS dent, a whole-pixel corner from an old save), doesn't
+    stop another edge's run-on. Of its own two pieces, only the one with the larger setback runs on past it.
   - At a concave corner the band stops square and a cap covers the corner (true distance). On a concave lot the convex
     corners get caps too, for where the lot carries on past a short neighbour.
   - A repeated corner (a zero-length edge, e.g. a deal saved at whole pixels before v8.17) is dropped first.

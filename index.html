@@ -2452,7 +2452,8 @@ function designateParcelEdges(P,row,fi){
   const rw=j=>!!(row&&row[j]);
   const frontLike=j=>((rw(j)&&ang(j,fi)<45)||(ang(j,fi)<8&&offF(E[j].a)<3&&offF(E[j].b)<3))?'front':'';
   walk(fi,1,frontLike);walk(fi,-1,frontLike);
-  const end=d=>{let j=fi;for(let k=1;k<n&&des[nxt(j,d)]==='front';k++)j=nxt(j,d);return j;};
+  // the last front edge each way, stepping over a jog the front walk passed (it stays a side)
+  const end=d=>{let j=fi;for(let k=1;k<n;k++){const a=nxt(j,d),b=nxt(a,d);if(des[a]==='front')j=a;else if(des[a]==='side'&&E[a].L<=15&&des[b]==='front'&&b!==fi)j=b;else break;}return j;};
   for(const d of [1,-1]){   // a cul-de-sac bulb, or a corner radius (left for the corner walk)
     let j=end(d),last=j;const run=[];
     for(let k=1;k<n;k++){const i=nxt(j,d);if(des[i]!=='side')break;if(rw(i)&&E[i].L<20&&ang(i,last)<35){run.push(i);last=j=i;continue;}if(rw(i))run.length=0;break;}
@@ -3067,6 +3068,12 @@ function buildEnvelopeFt(lot,sbs){
   const turn=i=>{const p=E[(i-1+n)%n],q=E[i];return p.tx*q.ty-p.ty*q.tx;};   // > 0: lot[i] is a convex corner
   const dot=i=>{const p=E[(i-1+n)%n],q=E[i];return p.tx*q.tx+p.ty*q.ty;};
   const cvx=L.map((_,i)=>turn(i)>1e-9);
+  // a corner that's straight or turns inward by under 0.5° (a GIS dent, or a whole-pixel corner saved before v8.17)
+  // doesn't stop another edge's run-on passing through it; of the two pieces that meet there, only the one with the
+  // larger setback runs on past it (two pieces with the same setback just meet, so a short piece's slightly turned line
+  // isn't carried across the lot)
+  const flat=L.map((_,i)=>!cvx[i]&&turn(i)>-0.0087&&dot(i)>0);
+  const run=L.map((_,i)=>cvx[i]||flat[i]);
   const lines={},lab={n:n};
   E.forEach((e,i)=>{lines[i]={x:-e.nx,y:-e.ny,b:-(e.nx*e.a.x+e.ny*e.a.y)};});
   const hp=(x,y,px,py,k)=>{if(k==null){k=lab.n++;lines[k]={x,y,b:x*px+y*py};}return{x,y,b:x*px+y*py,k};};   // keeps (x,y)·p <= (x,y)·(px,py)
@@ -3077,7 +3084,7 @@ function buildEnvelopeFt(lot,sbs){
     let k=i;
     for(let s=1;s<n;s++){
       const c=d>0?(k+1)%n:k,f=E[k];
-      if(!cvx[c]){H.push(d>0?hp(f.tx,f.ty,f.b.x,f.b.y):hp(-f.tx,-f.ty,f.a.x,f.a.y));break;}
+      if(!run[c]){H.push(d>0?hp(f.tx,f.ty,f.b.x,f.b.y):hp(-f.tx,-f.ty,f.a.x,f.a.y));break;}
       k=(k+d+n)%n;if(k===i)break;
       H.push(hp(-E[k].nx,-E[k].ny,E[k].a.x,E[k].a.y,k));
     }
@@ -3089,8 +3096,9 @@ function buildEnvelopeFt(lot,sbs){
     const strip=[hp(-e.nx,-e.ny,e.a.x,e.a.y,i),hp(e.nx,e.ny,e.a.x+e.nx*e.sb,e.a.y+e.ny*e.sb)];
     const pa=hp(-e.tx,-e.ty,e.a.x,e.a.y),pb=hp(e.tx,e.ty,e.b.x,e.b.y);   // alongside the edge: past its start, short of its end
     obst.push(strip.concat([pa,pb]));
-    if(cvx[i])obst.push(runOn(i,-1,strip.concat([neg(pa)])));
-    if(cvx[(i+1)%n])obst.push(runOn(i,1,strip.concat([neg(pb)])));
+    const j=(i+1)%n;
+    if(cvx[i]||(flat[i]&&e.sb>E[(i-1+n)%n].sb))obst.push(runOn(i,-1,strip.concat([neg(pa)])));
+    if(cvx[j]||(flat[j]&&e.sb>E[j].sb))obst.push(runOn(i,1,strip.concat([neg(pb)])));
   }
   // concave corner v between edge p (in) and q (out): the gap between the two bands' square ends is a sector around v as
   // deep as the larger setback, drawn with tangents from p's normal round to q's (the end tangents lie on the bands' own
