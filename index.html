@@ -725,7 +725,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.14 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.16 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -766,11 +766,11 @@ body[data-screen="2"] .page{padding-bottom:108px}
   <div>
     <div class="card">
       <div class="card-title"><span class="dot"></span>Property Address</div>
-      <div class="field"><label>Street Address</label><input type="text" id="addr-street" placeholder="e.g. 2723 Dellinger Dr" oninput="onAddrChange()"></div>
+      <div class="field"><label>Street Address</label><input type="text" id="addr-street" placeholder="e.g. 2723 Dellinger Dr" oninput="onAddrChange()" onchange="onAddrCommit()"></div>
       <div class="fr3">
-        <div class="field"><label>City</label><input type="text" id="addr-city" placeholder="Charlotte" oninput="onAddrChange()"></div>
+        <div class="field"><label>City</label><input type="text" id="addr-city" placeholder="Charlotte" oninput="onAddrChange()" onchange="onAddrCommit()"></div>
         <div class="field"><label>State</label><input type="text" id="addr-state" value="NC" oninput="onAddrChange()"></div>
-        <div class="field"><label>ZIP</label><input type="text" id="addr-zip" placeholder="28205" oninput="onAddrChange()"></div>
+        <div class="field"><label>ZIP</label><input type="text" id="addr-zip" placeholder="28205" oninput="onAddrChange()" onchange="onAddrCommit()"></div>
       </div>
       <div id="addr-validation"></div>
       <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -816,6 +816,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="field"><label>Min Lot Width (ft)</label><div class="input-wrap"><input type="number" id="sb-minw" readonly><span class="sfx">ft</span></div></div>
           <div class="field"><label>Garage Setback</label><input type="text" id="sb-garage" readonly></div>
         </div>
+        <label id="n2-abuts-row" class="note" style="display:none;align-items:center;gap:8px;margin-top:6px;cursor:pointer"><input type="checkbox" id="n2-abuts-n1" checked onchange="onAbutsN1Change()"> Site shares a lot line with a Neighborhood 1 Place Type on the 2040 Policy Map (rear 20 ft; untick for 10 ft)</label>
+        <div id="zone-note" style="display:none;margin-top:6px"></div>
         <p class="note">Auto-filled from your setbacks sheet. Always verify against the UDO.</p>
       </div>
       <div id="zone-udo-link" style="margin-top:10px;display:none"></div>
@@ -1405,9 +1407,27 @@ const SETBACKS={
   'Mecklenburg|N1-D':{front:17,rear:25,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft'},
   'Mecklenburg|N1-E':{front:10,rear:20,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft'},
   'Mecklenburg|N1-F':{front:17,rear:20,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft'},
-  'Mecklenburg|N2-A':{front:17,rear:25,sides:5,corner:10,minWidth:50,minSF:5000,garage:'20 ft'},
-  'Mecklenburg|N2-B':{front:17,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft'},
-  'Mecklenburg|N2-C':{front:10,rear:15,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft'},
+  // v8.15 N2 (Charlotte UDO as amended 3/23/2026). Single-family, duplex, triplex and quadraplex buildings in N2-A and
+  // N2-B are built to the N1-E standards (§5.1, §5.3.A.1; §15.4.HH.1, EE.3, JJ.3, GG.4), and a 3- or 4-unit townhome row
+  // is legally a triplex / quadraplex (§15.3: multi-family = 5+ units). No arterial-street or affordable-unit condition
+  // applies in N2 (the N1 quadraplex set-aside, §15.4.GG.3.a, is N1-A..E only). The rows these replace (N2-A 17/25/5,
+  // 50 ft, 5,000 sf; N2-B 17/20/5, 40 ft, 3,500 sf; N2-C rear 15) had no UDO basis and over-restricted fit and sub-lots.
+  'Mecklenburg|N2-A':{front:10,rear:20,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft'},
+  'Mecklenburg|N2-B':{front:10,rear:20,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft'},
+  'Mecklenburg|N2-C':{front:10,rear:20,sides:5,corner:10,minWidth:30,minSF:3000,garage:'20 ft',
+    noNewLots:'N2-C: lots made by a split can\u2019t hold a standalone house or plex. Single-family isn\u2019t permitted, and a standalone duplex\u2013quadraplex needs a lot of 0.5 acre or less that existed before June 1, 2023. Plan new N2-C lots as townhomes (pick \u201cN2-C \u00b7 townhomes 5+\u201d) or a multi-dwelling development.',
+    note:'N2-C: single-family isn\u2019t permitted. A duplex, triplex or quadraplex on its own is allowed only on a lot of 0.5 acre or less that existed before June 1, 2023 (built to these N1-E standards); otherwise it has to be part of a multi-dwelling development (UDO \u00a715.4.EE.6, JJ.5, GG.6).'},
+  // Townhomes of 5+ attached units (Multi-Family Attached, "MF-A"): Tables 5-1 and 5-2. The frontage setback is 20 ft from
+  // the back of curb on a local street (16 ft on a Secondary frontage in N2-C); the app measures from the lot line, so it
+  // is conservative by the curb-to-lot-line distance. Rear: N2-A 20; N2-B / N2-C 10, or 20 when the site abuts a
+  // Neighborhood 1 Place Type on the 2040 Policy Map (the #n2-abuts-n1 box, default on; Brian 2026-09-29).
+  // Lot standards (50-ft width, 3,000 sf per building) apply to the parent parcel, not the sublots (Table 5-1 fn 1).
+  'Mecklenburg|N2-A \u00b7 townhomes 5+':{front:20,rear:20,sides:5,corner:20,minWidth:50,minSF:3000,garage:'20 ft',mfa:true,
+    note:'Townhomes (5+ attached units) in N2-A: frontage setback 20 ft from the back of curb on a local or collector street (shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 24\u201330 ft from the future back of curb), rear 20 ft, 50-ft minimum parent lot, 250 sf of open space per unit, 50% building coverage.'},
+  'Mecklenburg|N2-B \u00b7 townhomes 5+':{front:20,rear:20,rearNotAbuttingN1:10,sides:5,corner:20,minWidth:50,minSF:3000,garage:'20 ft',mfa:true,
+    note:'Townhomes (5+ attached units) in N2-B: frontage setback 20 ft from the back of curb on a local or collector street (shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 20\u201330 ft from the future back of curb), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, 50-ft minimum parent lot, 150 sf of open space per unit, 60% building coverage.'},
+  'Mecklenburg|N2-C \u00b7 townhomes 5+':{front:20,rear:20,rearNotAbuttingN1:10,sides:5,corner:16,minWidth:0,minSF:0,garage:'20 ft',mfa:true,
+    note:'Townhomes (5+ attached units) in N2-C: frontage setback 20 ft from the back of curb on a local or collector street (16 ft on a Secondary frontage; shown here from the lot line, which is conservative there; avenues, boulevards and Main Streets take 20\u201324 ft from the future back of curb), rear 20 ft next to a Neighborhood 1 Place Type or 10 ft otherwise, no minimum lot width or area, 150 sf of open space per unit.'},
   'Mecklenburg|UR-2':{front:15,rear:20,sides:5,corner:10,minWidth:25,minSF:2500,garage:'20 ft'},
   'Mecklenburg|UR-3':{front:15,rear:20,sides:5,corner:10,minWidth:25,minSF:2500,garage:'20 ft'},
   'Mecklenburg|UR-4':{front:10,rear:15,sides:5,corner:10,minWidth:20,minSF:2000,garage:'20 ft'},
@@ -1468,7 +1488,7 @@ const ATTACHED_DEFAULT={maxBuildingLen:null,sublotParentOnly:null,
   note:'Attached / townhouse subplot rules not yet loaded for this county — verify the local max building length, whether unit lots are exempt from min lot width/area, and access/frontage rules with the jurisdiction.'};
 function attachedRules(county){return ATTACHED_RULES[county]||ATTACHED_DEFAULT;}
 const COUNTY_ZONES={
-  'Mecklenburg':['N1-A','N1-B','N1-C','N1-D','N1-E','N1-F','N2-A','N2-B','N2-C','UR-2','UR-3','UR-4'],
+  'Mecklenburg':['N1-A','N1-B','N1-C','N1-D','N1-E','N1-F','N2-A','N2-B','N2-C','N2-A \u00b7 townhomes 5+','N2-B \u00b7 townhomes 5+','N2-C \u00b7 townhomes 5+','UR-2','UR-3','UR-4'],
   'Gaston':['R-1','R-2','R-3','RS-8','RS-12','RS-20','RMF-SF'],
   'Catawba':['R-7','R-10','R-12','R-15','R-20'],
   'Lincoln':['R-SF','R-CR','R-20','R-14','R-MR','R-MF'],
@@ -2073,11 +2093,87 @@ function invalidateGisIfAddressMoved(){
     const g=window._lastGis;
     if(!g||!g.addrSig) return;
     if(gisAddressSignature()===g.addrSig) return;
-    window._lastGis=null;
+    window._lastGis=null;renderZoneNote();
     const box=$('gis-result'); if(box){box.style.display='none';}
     setGisStatus('Address changed \u2014 run the County GIS auto-fill again before pulling comps.');
     const msg=$('county-comps-msg'); if(msg){msg.style.display='none';}
   }catch(_){ }
+}
+// v8.16: an address's words in one spelling, to tell two spellings of the same address apart from two addresses
+// ("Drive" / "Dr", "North" / "N", "37th" / "37", "Fisher's" / "Fishers", "Mt Holly-Huntersville"; unit words dropped).
+// It reads the county's 2-letter types too, which its full_address prints ("111 XAVIER WY", "1634 ARLYN CR"). A subset of
+// api/gis.js's canonTok(), used only for that comparison: the proxy does the matching.
+const ADDR_WORD={NORTH:'N',SOUTH:'S',EAST:'E',WEST:'W',STREET:'ST',AVENUE:'AVE',AV:'AVE',DRIVE:'DR',ROAD:'RD',LANE:'LN',
+  COURT:'CT',BOULEVARD:'BLVD',BV:'BLVD',CIRCLE:'CIR',CR:'CIR',PLACE:'PL',PARKWAY:'PKWY',PY:'PKWY',PKY:'PKWY',TERRACE:'TER',
+  TR:'TER',TRAIL:'TRL',TL:'TRL',HIGHWAY:'HWY',HY:'HWY',COVE:'CV',CROSSING:'XING',XG:'XING',WY:'WAY',LP:'LOOP',ALLEY:'ALY',
+  AL:'ALY',TRACE:'TRCE',TC:'TRCE',RW:'ROW',RN:'RUN',CRESCENT:'CRES',CS:'CRES',BYWAY:'BYWY',BY:'BYWY',FREEWAY:'FWY',FR:'FWY',
+  MOUNT:'MT',SAINT:'ST',FORT:'FT',EXTENSION:'EXT'};
+// dropUnit: cut the words from a unit word on ("Apt 9", "#9"), for comparing a street line with the county's
+function addrWords(s,dropUnit){
+  let w=String(s||'').toUpperCase().replace(/^\s*(\d+)-([A-Z]{1,2})(?=\s)/,'$1$2')   // "1207-A" is one house number
+    .replace(/['’]/g,'').replace(/#/g,' UNIT ').replace(/[.,\-]/g,' ').split(/\s+/).filter(Boolean);
+  const u=w.findIndex((t,i)=>i>0&&/^(APT|APARTMENT|UNIT|STE|SUITE)$/.test(t));
+  if(u>0)w=dropUnit?w.slice(0,u):w.filter((_,i)=>i!==u);
+  return w.map(t=>{t=t.replace(/^(\d+)(ST|ND|RD|TH)$/,'$1');return ADDR_WORD[t]||t;});
+}
+// Is the county's matched address this street? Same house number, and the typed words in order inside it (the
+// analyst may leave out the direction or type). Used on reopen, for parcels saved before v8.16 (audit G1).
+function gisMatchFits(street,matched){
+  const T=addrWords(street,true),M=addrWords(matched),num=t=>String(t||'').replace(/^(\d+)[A-Z]{1,2}$/,'$1');
+  if(!T.length||!M.length||num(T[0])!==num(M[0]))return false;
+  const r=T.slice(1);if(!r.length)return true;
+  for(let i=1;i+r.length<=M.length;i++)if(r.every((t,k)=>M[i+k]===t))return true;
+  return false;
+}
+// v8.16 (audit G16): the lot (polygon and edges, or the rect width / depth / areas), the zone and the setbacks on screen
+// belong to the address a County GIS lookup answered, or a reopened deal's. When the address is committed as another
+// property, or a lookup starts for one, they're cleared, so the next deal can't run on the last parcel's lot; "Put them
+// back" undoes it. A lot drawn on a fresh page is tied only once a lookup answers for its address.
+let _gisLot=null;        // {label, streets[], zips[], cities[]}: the address(es) the site data on screen belongs to
+let _clearedSite=null;   // what clearGisSite() took off, for putBackGisSite()
+let _gisMismatch=null;   // {matched}: a reopened deal whose saved County GIS parcel isn't its address (saved with the deal)
+const SITE_FIELDS=['sb-front','sb-rear','sb-sides','sb-corner','sb-minw','sb-garage','lot-w','lot-d','lot-sf','buildable-override','lot-sf-poly'];
+// pt: the county's own spelling of the address (the proxy's match.point), so a correction toward it isn't a move. A ZIP or
+// city left blank at tie time is unknown, so typing it in isn't a move either.
+function tieGisLot(label,street,zip,city,pt){
+  _gisLot={label:label||street,streets:[addrWords(street).join(' '),pt&&pt.street?addrWords(pt.street).join(' '):''].filter(Boolean),
+    zips:[(String(zip||'').trim().match(/^\d{5}/)||[''])[0],pt&&pt.zip].filter(Boolean),
+    cities:[String(city||'').trim().toUpperCase(),pt&&pt.city,pt&&pt.po_city].filter(Boolean)};
+}
+function gisLotMoved(){
+  const t=_gisLot;if(!t)return false;
+  const st=addrWords($('addr-street').value).join(' '),zip=(($('addr-zip').value||'').trim().match(/^\d{5}/)||[''])[0],
+    city=($('addr-city').value||'').trim().toUpperCase();
+  return !t.streets.includes(st)||(!!zip&&t.zips.length>0&&!t.zips.includes(zip))||(!!city&&t.cities.length>0&&!t.cities.includes(city));
+}
+function onAddrCommit(){if(gisLotMoved())clearGisSite();}
+function dropLotEnvelope(){Object.assign(planOverlay,{buildPolyFt:null,buildPoly:null,buildBBoxFt:null,buildCentroidFt:null,positioned:false,snapshotPositioned:false});}
+function clearGisSite(){
+  const t=_gisLot;_gisLot=null;
+  const fields={};SITE_FIELDS.forEach(id=>{const e=$(id);if(e)fields[id]=e.value;});
+  const zs=$('zone-sel'),zo=zs.options[zs.selectedIndex];
+  _clearedSite={lotMode,pts:polyPoints.map(p=>({x:p.x,y:p.y})),edges:edgeDesignations.slice(),scale:$('canvas-scale-ft').value,
+    zone:zs.value,zoneText:zo?zo.textContent:'',fields,corner:$('corner-lot').checked,abuts:$('n2-abuts-n1').checked,
+    zrn:_zoneRestoreNote,mismatch:_gisMismatch,label:t&&t.label};
+  polyPoints=[];edgeDesignations=[];dropLotEnvelope();_gisMismatch=null;
+  zs.value='';Object.keys(fields).forEach(id=>{$(id).value='';});$('corner-lot').checked=false;
+  onZoneChange();   // no zone: hides the setback panel and its notes
+  redrawEditor();calcBuildable();
+  setGisStatus(`The address moved off ${t&&t.label||'the last parcel'}, so that parcel’s lot, zone and setbacks were cleared. Run the County GIS auto-fill for this address, or enter the lot by hand.`,'warn');
+}
+function putBackGisSite(){
+  const c=_clearedSite;if(!c)return;_clearedSite=null;
+  const zs=$('zone-sel');
+  if(c.zone&&!Array.from(zs.options).some(o=>o.value===c.zone)){const o=document.createElement('option');o.value=c.zone;o.textContent=c.zoneText||c.zone;zs.appendChild(o);}
+  zs.value=c.zone;$('n2-abuts-n1').checked=c.abuts;_zoneRestoreNote=c.zrn;onZoneChange();
+  Object.keys(c.fields).forEach(id=>{$(id).value=c.fields[id];});showLooseSetbacks();   // the values as they were, adjusted setbacks included
+  $('corner-lot').checked=c.corner;$('canvas-scale-ft').value=c.scale;
+  polyPoints=c.pts;edgeDesignations=c.edges;_gisMismatch=c.mismatch;
+  if(lotMode!==c.lotMode){setLotMode(c.lotMode);
+    if(c.lotMode==='poly'&&c.pts.length<3){polyPoints=[];edgeDesignations=[];dropLotEnvelope();}}   // setLotMode('poly') seeds a default shape
+  if(lotMode==='poly')redrawEditor();
+  calcBuildable();
+  setGisStatus('Put back. That lot, zone and setbacks now stay with this address; the County GIS auto-fill would load this address’s own parcel.');
 }
 
 function validateAddress(){
@@ -2096,7 +2192,7 @@ function validateAddress(){
   }
 
   // Check for common street suffix
-  const SUFFIXES=['st','ave','blvd','dr','rd','ln','ct','pl','way','cir','ter','trl',
+  const SUFFIXES=['st','ave','av','blvd','dr','rd','ln','ct','pl','way','cir','ter','trl',
     'pkwy','hwy','expy','loop','pass','path','run','sq','walk'];
   if(street){
     const parts=street.toLowerCase().split(/\s+/);
@@ -2169,12 +2265,66 @@ function onCountyChange(){
   $('zone-udo-link').style.display='none';
   calcAll();
 }
+// v8.15: a zone row's rear setback. N2-B / N2-C townhome rows depend on whether the site abuts a Neighborhood 1 Place
+// Type (UDO Table 5-2 row E), which only the 2040 Policy Map shows, so the analyst answers it (#n2-abuts-n1, default on).
+function zoneRear(sb){const b=$('n2-abuts-n1');return (sb&&sb.rearNotAbuttingN1!=null&&b&&!b.checked)?sb.rearNotAbuttingN1:(sb?sb.rear:'');}
+function onAbutsN1Change(){
+  const sb=SETBACKS[($('zone-sel')||{}).value||''];
+  if(sb&&sb.rearNotAbuttingN1!=null){$('sb-rear').value=zoneRear(sb);calcBuildable();}
+}
+// v8.15: County GIS writes overlay and conditional suffixes into the zone ("N1-C(HDO)", "N2-A (CD)", "N2-B BVO"). The
+// base zone's standards still apply, so it maps to the base zone's row (audit G2: a suffixed zone used to get no setbacks
+// of its own, so the fields stayed blank or silently kept the previous deal's). {base, suffix}, or null when there's no suffix.
+function zoneSuffix(raw){
+  const z=String(raw||'').trim(), base=z.replace(/\s*\(.*$/,'').replace(/\s+(SPA|BVO)\b.*$/i,'').trim();
+  return base&&base!==z?{base,suffix:z.slice(base.length).trim()}:null;
+}
+const ZONE_SUFFIX_NOTE={
+  CD:'CD is a conditional district: the approved rezoning petition (its site plan and conditions) governs and can cap units, fix building types or change setbacks, so read the petition before underwriting.',
+  HDO:'HDO is a historic district overlay: new construction and exterior changes need Historic District Commission approval.',
+  ANDO:'ANDO is the airport noise disclosure overlay (a disclosure requirement).',
+  CCO:'CCO is a cottage court overlay, with its own lot and building rules.'};
+// The setback panel's notes: the zone row's own note, plus what a GIS suffix means when the zone was mapped from one.
+let _zoneRestoreNote=null;   // v8.15: set by restoreDeal() when a saved stub zone reopened on its base row
+function renderZoneNote(){
+  const el=$('zone-note');if(!el)return;
+  const key=($('zone-sel')||{}).value||'', sb=SETBACKS[key], zone=key.split('|')[1]||'', county=key.split('|')[0]||'', lines=[];
+  if(sb&&sb.note)lines.push(sb.note);
+  const rn=_zoneRestoreNote&&_zoneRestoreNote.key===key?_zoneRestoreNote:null;
+  if(rn)lines.push(rn.text);
+  // the row's base zone: "N2-A · townhomes 5+" is still N2-A, so a CD / HDO note survives picking the townhome row
+  const raw=(window._lastGis&&window._lastGis.zoning)||'', sx=zoneSuffix(raw), zb=zone.split(' \u00b7 ')[0];
+  // a zone with no SETBACKS row (a GIS or saved stub): say so, since its setback fields are blank or the last zone's
+  if(key&&!sb){
+    const zs=zoneSuffix(zone), bz=zs?zs.base:zone, mk=SETBACKS['Mecklenburg|'+bz], base={base:bz};
+    lines.push(mk&&county!=='Mecklenburg'
+      ?`County GIS is Mecklenburg-only: set the County to Mecklenburg to load the ${base.base} row.`
+      :`There\u2019s no setbacks row for \u201c${zone}\u201d in the app, so the setback fields are blank or still hold the previous zone\u2019s. Enter them from the UDO.`);
+  }
+  if(sx&&zone&&(sx.base.toUpperCase()===zb.toUpperCase()||(!sb&&zone.toUpperCase()===String(raw).trim().toUpperCase()))){
+    const codes=[...new Set((sx.suffix.toUpperCase().match(/[A-Z]+/g)||[]))];
+    lines.push(`County GIS has this parcel as \u201c${raw}\u201d`+(sb?`; the ${sx.base} standards are shown. `:'. ')
+      +codes.map(c=>ZONE_SUFFIX_NOTE[c]||`${c} is an overlay or suffix on the base zone; check its rules.`).join(' '));
+  }
+  el.innerHTML='';lines.forEach(t=>{const q=document.createElement('p');q.className='warn';q.style.margin='4px 0 0';q.textContent=t;
+    if(rn&&t===rn.text){const b=document.createElement('button');b.className='btn btn-ghost';b.style.cssText='margin-left:8px;padding:1px 8px;font-size:11px';
+      b.textContent='Load the '+(key.split('|')[1]||'')+' row';b.onclick=()=>{_zoneRestoreNote=null;onZoneChange();};q.appendChild(b);}
+    el.appendChild(q);});
+  el.style.display=lines.length?'':'none';
+}
+// v8.16: with no zone picked, the setback panel shows while any setback has a value, since those still drive the envelope
+// (a town parcel County GIS has no zoning for, whose setbacks the analyst typed)
+function showLooseSetbacks(){if(!$('zone-sel').value)$('zone-info').style.display=['sb-front','sb-rear','sb-sides','sb-corner'].some(id=>$(id).value!=='')?'':'none';}
 function onZoneChange(){
   const key=$('zone-sel').value;
-  if(!key){$('zone-info').style.display='none';return;}
+  if(_zoneRestoreNote&&_zoneRestoreNote.key!==key)_zoneRestoreNote=null;
+  const ab=$('n2-abuts-row'),sbk=SETBACKS[key];if(ab)ab.style.display=(sbk&&sbk.rearNotAbuttingN1!=null)?'flex':'none';
+  renderZoneNote();
+  if(!key){showLooseSetbacks();$('zone-udo-link').style.display='none';return;}
   const sb=SETBACKS[key];
+  if(!sb){$('zone-info').style.display='';$('zone-udo-link').style.display='none';calcBuildable();return;}   // v8.15: a stub shows its (blank or leftover) setbacks and the note
   if(sb){
-    $('sb-front').value=sb.front;$('sb-rear').value=sb.rear;
+    $('sb-front').value=sb.front;$('sb-rear').value=zoneRear(sb);
     $('sb-sides').value=sb.sides;$('sb-corner').value=sb.corner;
     $('sb-minw').value=sb.minWidth||'';$('sb-garage').value=sb.garage||'';
     $('zone-info').style.display='';
@@ -2189,34 +2339,52 @@ function onZoneChange(){
 function fullAddr(){return[$('addr-street').value,$('addr-city').value,$('addr-state').value,$('addr-zip').value].map(s=>(s||'').trim()).filter(Boolean).join(', ');}
 
 // ── GIS AUTO-FILL (Charlotte / Mecklenburg via the /api/gis proxy) ──────────
-function setGisStatus(msg){const e=$('gis-status');if(e)e.textContent=msg||'';}
+// tone: 'warn' (amber) or 'error' (red); action: {label, fn} adds a small button after the message (v8.16). While a
+// cleared site can still be put back, every message carries that button, so a failed or dropped lookup doesn't lose it.
+function setGisStatus(msg,tone,action){
+  const e=$('gis-status');if(!e)return;
+  e.textContent=msg||'';e.style.color=tone==='error'?'var(--red)':tone==='warn'?'var(--amber)':'var(--text-dim)';
+  if(!action&&_clearedSite&&msg)action={label:'Put them back',fn:putBackGisSite};
+  if(action){const b=document.createElement('button');b.className='btn btn-ghost';b.style.cssText='margin-left:8px;padding:1px 8px;font-size:11px';
+    b.textContent=action.label;b.onclick=action.fn;e.appendChild(b);}
+}
 // restoreDeal() bumps this, so a county lookup still in flight when another deal is opened is dropped, not applied to it
 let _dealGen=0;
 async function gisLookup(){
   const addr=fullAddr();
   if(!addr){setGisStatus('Enter a street address first.');return;}
+  if(gisLotMoved())clearGisSite();   // v8.16 (G16): the address changed without the field being committed (paste, script)
   const btn=$('gis-btn');if(btn)btn.disabled=true;
   setGisStatus('Looking up parcel\u2026');
-  const gen=_dealGen;
+  // v8.16 (audit S-F7): the address this lookup is for. An answer that lands after the address was edited is dropped;
+  // it used to be applied and cached under the edited address, with the old parcel's PID for the comps pull.
+  const gen=_dealGen, sig=gisAddressSignature();
   try{
     const res=await fetch('/api/gis?address='+encodeURIComponent(addr));
     if(!res.ok)throw new Error('HTTP '+res.status);
     const data=await res.json();
     if(gen!==_dealGen)return;
-    applyGisData(data);
+    if(gisAddressSignature()!==sig){setGisStatus('The address changed while the lookup was running, so its answer (for the old address) was dropped. Run the auto-fill again.','warn');return;}
+    applyGisData(data,sig);
   }catch(e){
     if(gen!==_dealGen)return;
-    setGisStatus('Lookup failed \u2014 '+e.message+'. (Auto-fill needs the deployed site; it won\u2019t run from a local file.)');
+    setGisStatus('Lookup failed \u2014 '+e.message+'. (Auto-fill needs the deployed site; it won\u2019t run from a local file.)','error');
   }finally{ if(btn)btn.disabled=false; }
 }
 function setGisZoning(zoneVal,sameParcel){
   const sel=$('zone-sel');if(!sel||!zoneVal)return false;
   const county=$('county-sel').value||'Mecklenburg';
   const Z=String(zoneVal).toUpperCase().trim();
-  let opt=Array.from(sel.options).find(o=>((o.value.split('|')[1]||'').toUpperCase())===Z);
+  const byZone=U=>Array.from(sel.options).find(o=>((o.value.split('|')[1]||'').toUpperCase())===U);
+  // v8.15: a suffixed zone ("N2-A (CD)") takes its base zone's row; renderZoneNote() says what the suffix means. An
+  // exact match wins only when it has a SETBACKS row, so a '(from GIS)' / '(saved)' stub from an older deal can't
+  // keep a suffixed parcel off its base row.
+  let opt=byZone(Z);
+  if(!(opt&&SETBACKS[opt.value])){const sx=zoneSuffix(zoneVal),b=sx&&byZone(sx.base.toUpperCase());if(b&&SETBACKS[b.value])opt=b;}
   if(!opt){opt=document.createElement('option');opt.value=county+'|'+zoneVal;opt.textContent=zoneVal+' (from GIS)';sel.appendChild(opt);}
   // a re-run on the parcel already loaded keeps its setbacks (an adjusted one is deliberate) unless the zone changed
-  if(sameParcel&&sel.value===opt.value)return true;
+  // (v8.15: a "· townhomes 5+" row the analyst picked for this zone counts as the same zone)
+  if(sameParcel&&(sel.value===opt.value||sel.value.indexOf(opt.value+' \u00b7 ')===0))return true;
   sel.value=opt.value;onZoneChange();return true;
 }
 function loadParcelPolygon(rings,edgeInfo){
@@ -2266,16 +2434,33 @@ function loadParcelPolygon(rings,edgeInfo){
   calcBuildable();
   return true;
 }
-function applyGisData(d){
-  if(!d||(!d.ok&&!d.parcel&&!d.zoning)){
-    setGisStatus((d&&d.errors&&d.errors[0])?('No match \u2014 '+d.errors[0]):'No parcel found for that address.');
+// sig: gisAddressSignature() when the lookup was sent (v8.16, S-F7); the cache and the lot tie are stamped with it
+function applyGisData(d,sig){
+  sig=sig||gisAddressSignature();
+  const m=(d&&d.match)||null;
+  // v8.16 (audit G1): no county address point matches what was typed (wrong number, two streets or unit parcels fit,
+  // another city), so nothing is loaded. A cached parcel for this address goes too, so comps can't key off it, and so
+  // does a lot tied to it (a deal saved before v8.16 can hold the wrong parcel's), with the Put back button.
+  if(m&&(m.status==='none'||m.status==='ambiguous'||m.status==='locality')){
+    const cleared=!!_gisLot;if(cleared)clearGisSite();
+    window._lastGis=null;renderZoneNote();
+    const box=$('gis-result');if(box)box.style.display='none';
+    setGisStatus((m.message||'No county address point matches that address.')
+      +(cleared?' The lot, zone and setbacks on screen were loaded for this address, so they were cleared too.':''),'error');
     return;
   }
-  if(!$('county-sel').value){
-    const city=($('addr-city').value||'').toLowerCase().trim();
-    const det=(typeof CITY_COUNTY!=='undefined'&&CITY_COUNTY[city])||(/charlotte/i.test(d.address||'')?'Mecklenburg':'');
-    if(det){$('county-sel').value=det;onCountyChange();}
+  if(!d||(!d.ok&&!d.parcel&&!d.zoning)){
+    setGisStatus((d&&d.errors&&d.errors[0])?('No match \u2014 '+d.errors[0]):'No parcel found for that address.','error');
+    return;
   }
+  // v8.16 (audit G2): County GIS is Mecklenburg's, so its answer always lands in Mecklenburg. A county left from the last
+  // deal (Gaston, say) used to turn "N1-B" into a Gaston stub with no setbacks, and keep that county's taps. That county's
+  // setbacks go too: if this parcel has no GIS zoning, they'd drive the envelope from a hidden panel.
+  if($('county-sel').value!=='Mecklenburg'){$('county-sel').value='Mecklenburg';onCountyChange();
+    ['sb-front','sb-rear','sb-sides','sb-corner','sb-minw','sb-garage'].forEach(id=>{$(id).value='';});}
+  _clearedSite=null;
+  const flagged=_gisMismatch&&!(d.parcel&&d.parcel.geometry)?_gisMismatch:null;   // a zoning-only answer doesn't replace a flagged lot
+  _gisMismatch=flagged;
   const filled=[];
   // same parcel as the cached lookup? (a restore brings its deal's back; editing the address drops it)
   const prev=window._lastGis, sameParcel=!!(prev&&prev.pid&&d.parcel&&d.parcel.pid===prev.pid);
@@ -2283,8 +2468,20 @@ function applyGisData(d){
   if(d.parcel&&d.parcel.geometry&&d.parcel.geometry.rings&&loadParcelPolygon(d.parcel.geometry.rings,d.parcel.edges))filled.push('lot polygon + area'+(d.parcel.edges&&d.parcel.edges.front_index!=null?' + front edge':''));
   const lf=applyCountyDefaults(d);
   if(lf.length)filled.push('lot factor \u2014 '+lf.join(', '));
-  setGisStatus(filled.length?('Filled: '+filled.join(', ')+'. Review & adjust below.'):'Lookup complete.');
-  try{window._lastGis={ts:Date.now(),addrSig:gisAddressSignature(),
+  // v8.16: a close match (a part left out, or a different ZIP / city) is loaded, with what differs said up front
+  const warn=m&&m.status==='close'?(m.message||'County GIS matched a slightly different address.')+' Check it’s the right parcel. ':'';
+  const noLot=d.parcel&&d.parcel.geometry?'':(flagged?` The lot on screen came with the County GIS parcel at ${flagged.matched}, which isn\u2019t this address: check it or draw the lot.`
+    :(lotMode==='poly'&&polyPoints.length>=3)||(lotMode==='rect'&&pv('lot-w')>0&&pv('lot-d')>0)
+    ?' The county returned no lot polygon, so the lot on screen isn’t from this lookup: check it.'
+    :' The county returned no lot polygon: draw the lot or enter its dimensions.');
+  // Charlotte's zoning layer doesn't cover the towns (Huntersville, Matthews, Cornelius\u2026): say so, and show the setbacks
+  const noZone=d.zoning&&d.zoning.value?'':' County GIS has no zoning for this parcel (a town outside Charlotte\u2019s zoning map?): pick the zone and enter the setbacks from the town\u2019s code.';
+  if(noZone&&!$('zone-sel').value)$('zone-info').style.display='';
+  setGisStatus(warn+(filled.length?('Filled: '+filled.join(', ')+'. Review & adjust below.'):'Lookup complete.')+noLot+noZone,warn||noZone||flagged?'warn':'');
+  // the site data now on screen belongs to this address (G16)
+  {const [st,ci,zp]=sig.split('|');tieGisLot((m&&m.matched)||(d.parcel&&d.parcel.matched_address)||st.toUpperCase(),st,zp,ci,m&&m.point);}
+  const mp=m&&m.point;   // the county's own spelling, so a reopened deal ties to it too
+  try{window._lastGis={ts:Date.now(),addrSig:sig,mpt:mp?{street:mp.street,zip:mp.zip,city:mp.city,po_city:mp.po_city}:null,
     pid:d.parcel&&d.parcel.pid||null,nc_pin:d.parcel&&d.parcel.nc_pin||null,
     matched:d.parcel&&d.parcel.matched_address||null,
     area_sf:d.parcel&&d.parcel.area_sf||null,area_ac:d.parcel&&d.parcel.area_ac||null,
@@ -2293,6 +2490,7 @@ function applyGisData(d){
     swim:d.swim_buffer?{i:!!d.swim_buffer.intersects,t:(d.swim_buffer.types||[]).slice(0,3)}:null,
     historic:d.historic?{i:!!d.historic.in_district,n:d.historic.name||null}:null,
     cama:d.cama||null,site:d.site||null};}catch(_){ }
+  renderZoneNote();   // v8.15: now that the cache holds this parcel's zoning string (and any suffix)
   renderGisResult(d);
 }
 // v7.13: turn the county's own site facts into lot-factor starting points. Each field is only
@@ -2331,6 +2529,7 @@ function renderGisResult(d){
   const row=(lbl,val,col)=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid rgba(94,128,149,0.18)"><span style="color:${dim}">${lbl}</span><span style="text-align:right${col?';color:'+col:''}">${val}</span></div>`;
   const p=d.parcel||{},z=d.zoning||{},w=d.watershed||{},b=d.swim_buffer||{};
   let h='<div style="font-weight:bold;color:'+teal+';margin-bottom:6px">🛰 County GIS \u2014 '+(p.matched_address||d.address||'')+'</div>';
+  if(d.match&&d.match.status==='close')h+=row('\u26a0 Not the address typed',(d.match.diffs||[]).join('; '),amber);   // v8.16 (G1)
   if(p.area_sf)h+=row('Lot area',p.area_sf.toLocaleString()+' sf ('+p.area_ac+' ac)');
   if(p.is_likely_parent)h+=row('\u26a0 Parcel note','Parent parcel \u2014 draw the intended sublot',amber);
   if(p.edges)h+=row('Front edge',p.edges.note||'\u2014',(p.edges.row_count===1?'':amber));
@@ -3630,7 +3829,15 @@ function renderSubplot(p){
       ${maxLen?chip(!over,over?`over ${maxLen}' max`:`≤ ${maxLen}' max`):''}
       ${fit?chip(fit.status!=='no',fit.status==='fits'?'fits envelope':fit.status==='tight'?'tight — verify':'exceeds envelope'):''}
       ${parentOK!=null?chip(parentOK,parentOK?'parent meets zone min':'parent below zone min'):''}</div>`;
+  // v8.15: in N2 the UDO treats a row of 5+ attached units as Multi-Family Attached (its own setbacks), and a 2-4 unit
+  // row as a duplex / triplex / quadraplex built to the N1-E standards. Point the analyst at the matching zone row.
+  const zoneName=zoneKey.split('|')[1]||'', n2Base=(county==='Mecklenburg'&&(zoneName.match(/^N2-[ABC]/)||[])[0])||'';
+  let n2note='';
+  if(n2Base&&!(sb&&sb.mfa)&&u>=5)n2note=`${u} attached units count as Multi-Family Attached (townhomes) under the UDO, which has its own N2 setbacks: pick “${n2Base} · townhomes 5+” in the zone list.`;
+  else if(n2Base==='N2-C'&&sb&&sb.mfa&&u<5)n2note=u===1?'Single-family isn\u2019t permitted in N2-C.':`A ${u}-unit row is a ${['','duplex','triplex','quadraplex'][u-1]} under the UDO. In N2-C it can stand alone only on a lot of 0.5 acre or less that existed before June 1, 2023 (then pick \u201cN2-C\u201d for the N1-E standards); otherwise it has to be part of a multi-dwelling development.`;
+  else if(n2Base&&sb&&sb.mfa&&u<5)n2note=`A ${u}-unit row is a ${['single-family house','duplex','triplex','quadraplex'][u-1]} under the UDO, built to the N1-E standards: pick “${n2Base}” in the zone list.`;
   const note=`<p class="note" style="margin-top:8px">${rules.note}</p>`
+    +(n2note?`<p class="warn" style="margin-top:6px">${n2note}</p>`:'')
     +(maxLen?'':`<p class="warn" style="margin-top:6px">No researched max building length for ${county||'this county'} yet — length flag disabled; verify locally.</p>`);
   box.innerHTML=`<div style="font-family:var(--f-num);font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Attached townhomes · subplotting</div>`
     +stepper+head+detail+chips+subplotSvg(u,unitW,unitD,maxLen)+note;
@@ -3650,14 +3857,21 @@ function renderSublot(){
   const zoneLabel=zoneKey?zoneKey.replace('|',' · '):null;
   const capW=minW>0?Math.floor(frontage/minW):Infinity;
   const capA=minSF>0?Math.floor(area/minSF):Infinity;
-  let maxN=Math.min(capW,capA);
-  if(!isFinite(maxN))maxN=(isFinite(capW)?capW:(isFinite(capA)?capA:0));
+  // v8.15: a row with no minimum width or area (N2-C townhomes) has no lot-count cap: show "—", not a red "≈ 0 lots"
+  const maxN=Math.min(capW,capA);
   const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'var(--red)'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
+  // v8.15: no lot count where splits can't make usable lots: the N2-C base row (noNewLots), or a "townhomes 5+" row
+  // with a detached plan (detached lot splits follow the base row). Rows then show the geometry only, with no checks.
+  const zBase=(zoneKey.split('|')[1]||'').split(' \u00b7 ')[0], baseRow=SETBACKS[(zoneKey.split('|')[0]||'')+'|'+zBase];
+  const blockMsg=sb&&sb.noNewLots?sb.noNewLots:sb&&sb.mfa?((baseRow&&baseRow.noNewLots)||`This zone row is for rows of 5+ attached townhomes. Lot splits for detached homes follow the base ${zBase} row: pick \u201c${zBase}\u201d in the zone list.`):'';
   const rows=[2,3].map(n=>{
     const pf=frontage/n,pa=area/n;
     const okW=minW>0?pf>=minW:true;
     const okA=minSF>0?pa>=minSF:true;
-    const ok=okW&&okA;
+    const ok=okW&&okA&&!blockMsg;
+    if(blockMsg)return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)">
+      <div style="width:66px;font-family:var(--f-head);font-weight:700;font-size:14px;color:var(--text-mid)">${n} lots</div>
+      <div style="flex:1;font-family:var(--f-num);font-size:11px;color:var(--text-mid)">${pf.toFixed(0)} ft frontage · ${fmtN(pa)} sf each</div></div>`;
     return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)">
       <div style="width:66px;font-family:var(--f-head);font-weight:700;font-size:14px;color:${ok?'var(--teal-light)':'var(--text-mid)'}">${n} lots</div>
       <div style="flex:1;font-family:var(--f-num);font-size:11px;color:var(--text-mid)">${pf.toFixed(0)} ft frontage · ${fmtN(pa)} sf each</div>
@@ -3668,13 +3882,16 @@ function renderSublot(){
   if(!zoneLabel){
     head=`<div class="warn" style="margin-bottom:8px">No zone selected — pick a county &amp; zone under Address &amp; zoning to screen against UDO minimums. Showing geometric division only.</div>`;
   } else {
-    const okMax=maxN>=2;
+    // v8.15: "—" only for a row that really has no minimums; a zone with no SETBACKS row has unknown minimums
+    const nn=!!blockMsg;   // N2-C base row, or a townhome row with a detached plan: no count
+    const okMax=sb&&!nn?maxN>=2:false, sub=!sb?'no setbacks row for this zone \u2014 verify the UDO minimums':nn?(sb.mfa?'townhome row, not for detached lot splits':'no standalone lots from a split in this zone'):isFinite(maxN)?'max by UDO minimums':'no minimum lot width or area in this row';
     head=`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
-      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':'var(--red)'}">${isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1?'':'s'}</div>
-      <div style="font-size:11px;color:var(--text-dim)">max by UDO minimums · ${zoneLabel}</div></div>
+      <div style="font-family:var(--f-head);font-weight:700;font-size:22px;color:${okMax?'var(--teal-light)':sb&&!nn?'var(--red)':'var(--amber)'}">${!sb?'?':nn?'—':isFinite(maxN)?'≈ '+maxN:'—'} lot${maxN===1&&!nn&&sb?'':'s'}</div>
+      <div style="font-size:11px;color:var(--text-dim)">${sub} · ${zoneLabel}</div></div>`
+      +(blockMsg?`<div class="warn" style="margin-bottom:8px">${blockMsg}</div>`:'')+`
     <div style="font-family:var(--f-num);font-size:10px;color:var(--text-dim);margin-bottom:6px">Parent: ${frontage.toFixed(0)} ft frontage · ${fmtN(area)} sf${minW>0?` · min ${minW}' W`:''}${minSF>0?` · min ${fmtN(minSF)} sf`:' · no min area in table (verify UDO)'}</div>`;
   }
-  box.innerHTML=head+rows+sublotSvg(sublotN,frontage,area,minW)
+  box.innerHTML=head+rows+(blockMsg?'':sublotSvg(sublotN,frontage,area,minW))
     +`<p class="note" style="margin-top:8px">Equal-division estimate. Interior lots need their own street frontage or a shared-access / panhandle (flag lot) arrangement — confirm access, easements, and BUA re-allocation before relying on the max. Corner lots may support more.</p>`;
 }
 // ═══════════════════ LOT FACTOR ═══════════════════
@@ -5390,7 +5607,8 @@ function serializeDeal(){
     tapManual:{w:isManual('tap-water'),s:isManual('tap-sewer')},   // v8.14: typed tap quotes stay typed on reopen
     upgrades:Array.from(selectedUpgrades),
     comps:COMPS.map(c=>Object.assign({},c)),
-    gis:(typeof window!=='undefined'&&window._lastGis)||null};
+    gis:(typeof window!=='undefined'&&window._lastGis)||null,
+    gisMismatch:_gisMismatch};   // v8.16: a reopened parcel that isn't this address stays flagged across saves
 }
 function restoreDeal(d){
   // Check the file before step 0 resets the page: every field entry is an object, at least one is this page's, and
@@ -5406,6 +5624,7 @@ function restoreDeal(d){
   }
   try{
     _dealGen++;   // drop any county lookup still in flight: its answer belongs to the page being replaced
+    _clearedSite=null;_gisLot=null;_gisMismatch=null;   // v8.16: the last deal's site tie and cleared site go with it
     const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else if(f.v!=null)e.value=f.v;}};
     // 0) start from a fresh page's defaults. The blanket restore below only writes fields the file has, so a
     //    field added after the deal was saved would otherwise keep whatever the previous deal left on screen.
@@ -5430,11 +5649,14 @@ function restoreDeal(d){
     // a deal saved with an adjusted setback (an established front setback, say) reopens on the table value
     setV('zone-sel');
     // saved zone may be a GIS-added option not in the default list
-    const zv=vals['zone-sel']&&vals['zone-sel'].v;
+    const zv=vals['zone-sel']&&vals['zone-sel'].v;let mappedStub=null;
     if(typeof zv==='string'&&zv&&$('zone-sel').value!==zv){
-      const sel=$('zone-sel'),o=document.createElement('option');
-      o.value=zv;o.textContent=(zv.split('|')[1]||zv)+' (saved)';
-      sel.appendChild(o);sel.value=zv;
+      // v8.15: a stub saved for a suffixed GIS zone ("N1-C(HDO)") reopens on its base zone's row (audit G2). The saved
+      // setbacks still land last; only blank ones now fill from that row instead of staying blank.
+      const sel=$('zone-sel'),sx=zoneSuffix(zv.split('|')[1]||'');
+      const base=sx&&Array.from(sel.options).find(x=>((x.value.split('|')[1]||'').toUpperCase())===sx.base.toUpperCase());
+      if(base&&SETBACKS[base.value]){sel.value=base.value;vals['zone-sel'].v=base.value;mappedStub={from:zv.split('|')[1]||zv,key:base.value};}
+      else{const o=document.createElement('option');o.value=zv;o.textContent=(zv.split('|')[1]||zv)+' (saved)';sel.appendChild(o);sel.value=zv;}
     }
     onZoneChange();
     // 2) blanket restore (overwrites any autofill, the zone's setbacks included, with saved values)
@@ -5442,8 +5664,14 @@ function restoreDeal(d){
     // ...except that a blank setback only ever meant "no table entry", and minw / garage are read-only lookups, not
     // choices: those come from today's table
     {const sb=SETBACKS[$('zone-sel').value];if(sb){
-      ['front','rear','sides','corner'].forEach(k=>{const e=$('sb-'+k);if(e&&e.value==='')e.value=sb[k];});
+      ['front','rear','sides','corner'].forEach(k=>{const e=$('sb-'+k);if(e&&e.value==='')e.value=k==='rear'?zoneRear(sb):sb[k];});
       $('sb-minw').value=sb.minWidth||'';$('sb-garage').value=sb.garage||'';}}
+    showLooseSetbacks();   // v8.16: saved setbacks with no zone (a town parcel) stay visible
+    // v8.15: a stub zone had no row, so the setbacks it was saved with may be another deal's leftovers. Keep them (saved
+    // values land last), but say so when they differ from the base row the deal now sits on.
+    _zoneRestoreNote=null;
+    if(mappedStub){const r=SETBACKS[mappedStub.key],cur=['front','rear','sides','corner'].map(k=>$('sb-'+k).value),row=[r.front,zoneRear(r),r.sides,r.corner];
+      if(cur.some((v,n)=>String(v)!==String(row[n])))_zoneRestoreNote={key:mappedStub.key,text:`Saved on \u201c${mappedStub.from}\u201d, which had no setbacks row, so these setbacks (${cur.join(' / ')} ft) came with the saved deal and may be another zone\u2019s. The ${(mappedStub.key.split('|')[1]||'')} row is ${row.join(' / ')} ft.`};}
     FIT_SORT=$('fit-sort').value||'sf-desc';   // the fit check sorts by this, not by the dropdown it mirrors
     // every restored value was deliberate — protect them from any auto-fill
     markAllManual();
@@ -5475,6 +5703,17 @@ function restoreDeal(d){
     selectedUpgrades.clear();(d.upgrades||[]).forEach(u=>selectedUpgrades.add(u));
     COMPS.length=0;(d.comps||[]).forEach(c=>COMPS.push(Object.assign({},c)));
     try{window._lastGis=d.gis||null;}catch(_){ }
+    // v8.16: a reopened deal's county parcel, lot and zone belong to its address (G16: moving off it clears them). A
+    // parcel saved before v8.16 can be the wrong one: the old geocode loaded another parcel for "1500 N Davidson St"
+    // (15004 Annan Ct in the audit, 1500 Eastcrest Dr the next day; G1). When the saved match isn't this address, say so and drop its County GIS record, so comps can't key off it and
+    // the exports don't print that parcel's facts. The flag is saved with the deal until a lookup answers.
+    {const g=window._lastGis,st=$('addr-street').value||'';
+     const mm=(d.gisMismatch&&typeof d.gisMismatch==='object'&&typeof d.gisMismatch.matched==='string')?{matched:d.gisMismatch.matched}
+       :(g&&g.pid&&g.matched&&st&&!g.mpt&&!gisMatchFits(st,g.matched))?{matched:String(g.matched)}:null;   // mpt: v8.16 matched it
+     if((g&&g.pid)||mm)tieGisLot((mm&&mm.matched)||(g&&g.matched)||st.toUpperCase(),st,$('addr-zip').value,$('addr-city').value,(g&&g.mpt)||null);
+     if(mm){_gisMismatch=mm;window._lastGis=null;
+       setGisStatus(`This deal was saved with the County GIS parcel at ${mm.matched}, which isn\u2019t ${st}. Its lot and zoning may be that parcel\u2019s, so its County GIS record was dropped: run the auto-fill again.`,'warn');}}
+    renderZoneNote();
     // 7) re-render + recalc through the existing pipeline only
     if(typeof renderUpgrades==='function')renderUpgrades();
     renderComps();renderShortlist();
@@ -5549,8 +5788,21 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.14', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.16', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.16',date:'Sep 2026',name:'County GIS loads the parcel you typed',items:[
+   'County GIS auto-fill now matches the exact house number and the whole street (direction, name and type), and uses the ZIP and city to choose between places. It used to match the number and the first word after it as text and take the first hit, so “1500 N Davidson St” loaded 1500 Eastcrest Dr, “3000 N Tryon St” loaded 3000 Central Ave and “1932 Park Rd” loaded 11932 Bradford Park Dr in Davidson: another parcel’s lot, zoning and lot factor, with only the card header to show it.',
+   'When no county address fits, nothing is loaded and the status line says why: no such number (with the nearest numbers on the street: 300 Clarice Ave → 400, 401, 409…), more than one street fits (3000 Tryon St is both N and S Tryon: add the direction or ZIP), the street isn’t in the city or ZIP typed, or the address’s units are separate parcels (a split duplex: type the unit). The ZIP and city pick the place first, so “2100 Sharon Rd, 28210” is Sharon Rd W there, not Sharon Rd in 28207. An address that matches with a part left out or a different ZIP (1500 N Davidson St typed with 28206; the county has 28205) loads, with an amber note saying what differs. A parcel County GIS has no zoning for (the towns outside Charlotte’s zoning map) says so and shows the setback fields.',
+   'A County GIS result now always sets the County to Mecklenburg. A county left from the last deal (Gaston, say) used to turn the parcel’s zone into a Gaston stub with no setbacks, and keep that county’s taps.',
+   'Moving to another address clears the last parcel’s lot (polygon and edges, or width, depth and areas), zone and setbacks (when you leave the address field, or when a lookup starts), with a “Put them back” button. A lookup the county refuses clears what was loaded for that same address, too. They used to stay under the new address, and a lookup that found only zoning, or nothing, left the old lot and its fit results on screen.',
+   'A lookup whose answer arrives after you edited the address is dropped, with a note to run it again. It used to load the old address’s parcel and cache it under the new one, so comps keyed off the wrong parcel.',
+   'Reopening a deal whose saved County GIS parcel isn’t its address (deals saved before this version can have one) says so, every time it’s reopened, until a lookup loads its lot, and drops that County GIS record, so comps can’t key off it and the PDF and Excel don’t print its facts: run the auto-fill again.']},
+ {v:'8.15',date:'Sep 2026',name:'N2 zoning follows the UDO',items:[
+   'N2-A and N2-B: single-family, duplex, triplex and quadraplex homes now use the N1-E standards the UDO sends them to (10 ft front, 20 ft rear, 5 ft sides, 10 ft corner, 30 ft / 3,000 sf minimum lot). The old rows (N2-A 17/25 ft with a 50 ft / 5,000 sf lot; N2-B 17/20 ft with 40 ft / 3,500 sf) had no UDO source and turned down plans and lot splits that N2 allows: a 60\u00d7120 N2-B lot now splits into two 30-ft lots instead of showing \u201c\u2248 1 lot\u201d. N2 carries no arterial-street or affordable-unit condition; that set-aside applies only to a quadraplex in N1-A to N1-E.',
+   'A 3- or 4-unit townhome row counts as a triplex or quadraplex, so it uses the same N1-E standards. Rows of 5+ attached units are Multi-Family Attached, with their own setbacks: pick \u201cN2-A / N2-B / N2-C \u00b7 townhomes 5+\u201d in the zone list (20 ft frontage from the back of curb on a local or collector street, 50-ft parent lot in N2-A/B). N2-B and N2-C townhome rows use a 20 ft rear when the site abuts a Neighborhood 1 Place Type on the 2040 Policy Map, 10 ft otherwise; a checkbox under the setbacks switches it (default 20). The townhome card says which row fits the unit count.',
+   'N2-C: the rear setback is 20 ft (the 15 ft it had wasn\u2019t in the UDO), and a note says single-family isn\u2019t permitted and a standalone duplex, triplex or quadraplex needs a lot of 0.5 acre or less that existed before June 1, 2023. The sub-lot estimate says new N2-C lots can\u2019t hold one.',
+   'County GIS zones with an overlay or conditional suffix, such as \u201cN1-C(HDO)\u201d or \u201cN2-A (CD)\u201d, now load the base zone\u2019s setbacks, with a note on what the suffix means (for a CD parcel, read the rezoning petition: its conditions govern). They used to get no setbacks of their own: the fields stayed blank (the whole lot counted as buildable) or silently kept the previous deal\u2019s. A deal saved on one of those zones reopens on the base zone\u2019s row, and re-running County GIS on a parcel keeps a \u201ctownhomes 5+\u201d row you picked for it.',
+   'Sub-lot estimate: a zone row with no minimum lot width or area now shows \u201c\u2014\u201d (no minimum) instead of a red \u201c\u2248 0 lots\u201d, and a zone with no setbacks row at all shows \u201c?\u201d with a note to verify the minimums; the setback panel now shows for such a zone, with a note that its fields are blank or the previous zone\u2019s.']},
  {v:'8.14',date:'Sep 2026',name:'Fixes from the full logic audit: comps, Units, tap fees, plan footprints',items:[
    'Sales comps: builder lot purchases no longer count as new-build comps. The county marks them \u201csold as vacant\u201d with \u201cYes\u201d, and the check looked for \u201cY\u201d, so a lot sale was priced against the house built on it later (about $94/sf against $213/sf for real comps). A sale recorded in a year before the assessor\u2019s year built is left out too (this also drops the odd Q4 closing the assessor dates to the next year). On the 80-deal backtest the median error is unchanged (4.8%); in pockets full of lot sales the ARV moves a lot, e.g. a 3,800 sf Stephens Farm subject from $404k to $1.63M.',
    'Changing the Slate GC fee no longer puts Units back to the plan default. A 3-townhome deal became a 1-unit deal, which cut Dellinger\u2019s Max land from $262,309 to $69,756. Units now follows the plan only when you pick a different plan (or change a custom footprint\u2019s Units).',

@@ -235,6 +235,22 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   comp filter that drops Z or keeps the rest.
 - Auto-fill is **Mecklenburg-only** by design. Other counties link out to the county
   viewer — don't "fix" that into a broken universal fetch.
+  Its answer always lands in Mecklenburg (v8.16): `applyGisData()` sets `county-sel` to Mecklenburg on any
+  applied result, so a county left from the last deal can't turn the GIS zone into another county's stub (audit G2).
+- **The geocode matches the address typed, or loads nothing (v8.16, audit G1).** `chooseAddressPoint()` takes the
+  exact `txt_street_number` and compares every part of the street (direction, name, type, suffix) after both sides go
+  through `canonTok()` ("North" = N, "Drive" = DR, "37th" = 37, "Mount" = MT; apostrophes dropped, hyphens split; the
+  county's own type codes such as TR count too). The typed ZIP / city choose the place first, then the spelling, so
+  "2100 Sharon Rd, 28210" is SHARON RD W in 28210, not the exact-spelled SHARON RD in 28207. Candidates are paged (a
+  tower has 450 unit points at one number). `match.status` is `exact`, `close` (loaded, with `diffs`: a part left out,
+  a ZIP or city that differs, another street at the number, one unit of a building), or refused: `none` (with the
+  nearest numbers on the street), `ambiguous` (N and S Tryon both fit, or the address's units are separate parcels)
+  or `locality` (the street isn't in the typed city or ZIP). Units count as separate parcels by `GIS_PID` (condo units
+  share one; a split duplex's don't), and a building point that sits on one of them doesn't stand in for the site. A refused match returns no parcel and no zoning. v5 matched the number and the
+  first word after it as substrings and took the first hit, so "1500 N Davidson St" loaded another parcel (15004 Annan
+  Ct in the audit, 1500 Eastcrest Dr the next day). Flag a
+  geocode that matches the number as a substring, drops the direction or type, takes the first feature without
+  comparing, or loads a parcel for a refused match. A close match must stay visible (amber status and card row).
 - Parcel area uses the **shoelace** of the geometry, **not** the bounding box. Flag a
   regression to bounding-box area.
 
@@ -341,6 +357,22 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `_lastGis.addrSig`, and `pullCountyComps()` re-checks before using the PID. Without this an
   analyst who edits the address after a lookup silently prices the previous parcel. Flag any new
   consumer of `_lastGis` that doesn't verify the signature.
+- **A lookup answers the address it was sent for (v8.16, audit S-F7).** `gisLookup()` takes `gisAddressSignature()`
+  before the fetch and drops the answer if the address changed while it ran; `_lastGis.addrSig` is that request-time
+  signature. Before this, an edit during the lookup got the old parcel's answer, cached under the new address with the
+  old PID, which the comps guard then accepted. Flag a new async county call that stamps a landing-time signature.
+- **The site data on screen belongs to one address (v8.16, audit G16).** `_gisLot` ties the lot (polygon and edges,
+  or the `SITE_FIELDS` width / depth / areas), the zone and the setbacks to the address a County GIS lookup answered, or
+  a reopened deal with a saved parcel. It keeps the county's spelling (`_lastGis.mpt`) too. When the address is committed
+  as another property (the fields' `change` event, compared with `addrWords()` so "Dr" / "Drive" is the same street) or
+  a lookup starts for one, `clearGisSite()` clears them. So does a refused lookup for the tied address. Every status
+  line then carries "Put them back" (`putBackGisSite()`, after which the data is untied) until a lookup loads data. A lot
+  drawn on a fresh page is tied once a lookup loads zoning or a parcel for its address. Before this, the last deal's lot and fit
+  results stayed under a new address, including after a lookup that found only zoning or nothing. On reopen, a saved
+  parcel whose `matched` address isn't the deal's (`gisMatchFits()`: deals saved before v8.16 can hold a G1 parcel) is
+  flagged and its whole County GIS record dropped. The flag is saved with the deal (`gisMismatch`) until a lookup loads a
+  lot polygon. Only records from before the v8.16 matcher get that check: a record with `mpt` was matched by it.
+  Units: `addrWords()` keeps "1207-A" as one house number, and the reopen check ignores a typed unit.
 - **Never infer "untouched" from a field's value.** An analyst can legitimately type a number that
   equals a shipped default (a real $2,000 survey quote, a real $2,500 grading allowance), and the
   value-based check silently overwrote it — a Codex P1 on PR #17. Auto-fill gates on the explicit
@@ -366,6 +398,47 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   shows a "verify the zone permits" note (handoff §10, §12; it's a roadmap item). Flag any
   change that hard-codes a townhome *recommendation* as if the gate already existed, and
   treat wiring the use-matrix gate as still-to-do.
+
+**Current state, not target (v8.15):**
+- **The Mecklenburg N2 rows follow the UDO** (Charlotte UDO as amended 3/23/2026, text amendment 2025-118).
+  - **Detached rows.** `N2-A` / `N2-B` hold the **N1-E** standards (10 / 20 / 5 / 10 ft, 30 ft, 3,000 sf). That's
+    what single-family, duplex, triplex and quadraplex buildings are built to there (§5.1, §5.3.A.1, §15.4.HH.1 / EE.3
+    / JJ.3 / GG.4). A 2- to 4-unit townhome row is legally a duplex / triplex / quadraplex (§15.3: multi-family =
+    5+ units), so it uses these rows too. `N2-C` holds the same values with a note: no single-family, and a standalone
+    duplex–quadraplex only on a lot of 0.5 ac or less that existed before 6/1/2023.
+  - **Townhome rows.** `N2-x · townhomes 5+` hold Multi-Family Attached (Tables 5-1 / 5-2), with `mfa:true`. The
+    frontage is 20 ft from the back of curb on a local or collector street; the app measures it from the lot line,
+    which is conservative there. Avenues, boulevards and Main Streets are measured from the future back of curb:
+    N2-A 24–30, N2-B 20–30, N2-C 20–24 ft (Table 5-2 row A; N2-C also takes 16 ft on a Secondary frontage). The rear
+    comes from `zoneRear()`: for N2-B / N2-C the `rearNotAbuttingN1` 10 ft applies unless `#n2-abuts-n1` is ticked.
+    That box is ticked by default, because abutting a Neighborhood 1 Place Type (2040 Policy Map) means 20 ft
+    (Brian, 2026-09-29). The townhome card points at the row that matches Units.
+  - **No affordability condition in N2.** The only mandatory affordable set-aside for these building types is the
+    N1-A..E quadraplex rule (arterial street + 1 unit ≤ 80% AMI for 15 years, §15.4.GG.3.a). Affordability in N2 is
+    voluntary bonuses only (§16.3 for N2-C, §16.4).
+  - Flag a change that puts back unsourced N2 values, applies the townhome row to a 2–4 unit row, or adds an
+    affordability requirement to N2.
+- **Suffixed GIS zones map to the base zone (v8.15).** `setGisZoning()` falls back to `zoneSuffix()`, so
+  "N1-C(HDO)", "N2-A (CD)" and "N2-B BVO" take the base row. `renderZoneNote()` says what the suffix means; for CD,
+  read the rezoning petition, because its conditions govern. Before this, a suffixed zone got a stub option with no
+  setbacks of its own: blank (the whole lot buildable) or the previous deal's, silently (audit G2).
+  - An exact option wins only when it has a `SETBACKS` row, so an old '(saved)' / '(from GIS)' stub can't block the
+    base row.
+  - `restoreDeal()` maps a saved stub to its base row.
+  - A same-parcel re-run keeps a `· townhomes 5+` row of the same base zone.
+  - `renderZoneNote()` compares against the row's base zone, so the CD note survives picking the townhome row.
+  - This was the suffix part of G2; v8.16 did the county part (a GIS result always sets Mecklenburg).
+  Flag a zone lookup that drops the suffix note, or one that treats a CD petition's conditions as known.
+- **The N2-C base row carries `noNewLots`**: `renderSublot()` warns that lots made by a split can't hold a
+  standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+` row
+  seen with a detached plan gets the same treatment, pointing to the base row. Either way the split rows show
+  geometry only, with no checks.
+- **Zones with no `SETBACKS` row** (a GIS or saved stub):
+  - `onZoneChange()` shows the setback panel.
+  - `renderZoneNote()` says the fields are blank or the previous zone's. For a zone that exists in Mecklenburg
+    under another county, it says to pick Mecklenburg.
+  - The sub-lot estimate shows "?" (minimums unknown), not the "—" of a row with no minimums.
+  - When a saved stub reopens on its base row with setbacks that differ from that row, `_zoneRestoreNote` says so.
 
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
