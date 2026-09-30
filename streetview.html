@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Street View — TTV Site Analyzer</title>
+<link rel="icon" type="image/png" href="assets/ttv-emblem.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  streetview.html (v8.20) — the lot's Street View, on a page of its own.
+  Google Maps Platform ToS §3.2.3(e): Street View imagery may not be shown on the same screen as a non-Google map, and
+  the analyzer's Site Intelligence screen draws the county parcel. So the Maps Embed lives here, alone: no county map,
+  parcel drawing, aerial or other map on this page, ever. A person looks; nothing reads, captures or stores the imagery
+  (Google's Street View guidelines ban screenshots and "applications to analyze and extract information").
+  The camera spot and the embed key come from /api/street?pid=…&mode=view. No browser storage.
+-->
+<style>
+:root{
+  --navy:#102538;--navy-mid:#172f47;--cream:#f5f0e7;--teal:#5e8095;--teal-light:#8fb3c6;--teal-dim:rgba(94,128,149,0.18);
+  --red:#ef5d57;--text:#eef2f6;--text-mid:#a6b8c6;--text-dim:#7e93a6;--border:rgba(255,255,255,0.09);--radius:10px;--radius-sm:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Montserrat','Helvetica Neue',Arial,sans-serif;background:var(--navy);color:var(--text);font-size:14px;line-height:1.45;display:flex;flex-direction:column}
+.hdr{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--navy-mid)}
+.hdr img{width:30px;height:30px}
+.hdr .t{font-weight:700;font-size:16px;color:var(--cream);line-height:1.15}
+.hdr .s{font-size:11px;color:var(--text-dim);letter-spacing:.04em;text-transform:uppercase}
+.bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:10px 16px;font-size:12px;color:var(--text-mid)}
+.btn{font:inherit;font-size:12px;color:var(--teal-light);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.35);padding:6px 12px;border-radius:var(--radius-sm);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:rgba(94,128,149,0.3)}
+.stage{flex:1;min-height:320px;padding:0 16px}
+.stage iframe{display:block;width:100%;height:100%;min-height:320px;border:0;border-radius:var(--radius);background:rgba(94,128,149,0.08)}
+.msg{padding:24px 16px;color:var(--text-mid)}
+.msg.err{color:var(--red)}
+.foot{padding:10px 16px 14px;font-size:11px;color:var(--text-dim)}
+.foot a{color:var(--teal-light)}
+</style>
+</head>
+<body>
+<div class="hdr"><img src="assets/ttv-emblem.png" alt="TTV"><div><div class="t" id="title">Street View</div><div class="s">TTV Site Analyzer · Street View</div></div></div>
+<div class="bar" id="bar"></div>
+<div class="stage" id="stage"><div class="msg">Finding the street in front of the lot…</div></div>
+<div class="foot">This page shows Google Street View through Google Maps. Use of Google Maps features and content is subject to the
+  <a href="https://maps.google.com/help/terms_maps/" target="_blank" rel="noopener">Google Maps/Google Earth Additional Terms of Service</a> and the
+  <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a>.</div>
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const E=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const say=(t,err)=>{$('stage').innerHTML='<div class="msg'+(err?' err':'')+'">'+E(t)+'</div>';};
+  // Street View must never be framed into another page (the analyzer's screens draw non-Google maps: ToS §3.2.3(e))
+  if(window.top!==window.self){document.body.innerHTML='<div class="msg err">Street View opens in its own tab. <a class="btn" target="_blank" rel="noopener" href="'+location.href.replace(/"/g,'%22')+'">Open it</a></div>';return;}
+  const pid=(new URLSearchParams(location.search).get('pid')||'').trim().toUpperCase();
+  if(!/^[0-9A-Z]{8}$/i.test(pid)){say('Open this page from the Street Check card in the analyzer (it needs a Mecklenburg parcel id).',true);return;}
+  fetch('/api/street?pid='+encodeURIComponent(pid)+'&mode=view').then(r=>r.json()).then(d=>{
+    if(d.error)throw new Error(d.error);
+    const sub=d.subject||{},sv=d.streetview||{};
+    const name=[sub.number,sub.street_label||sub.street].filter(Boolean).join(' ');
+    if(name){$('title').textContent='Street View — '+name;document.title='Street View — '+name;}
+    const at=sv.camera||(sv.lat!=null&&sv.lng!=null?{lat:sv.lat,lng:sv.lng}:null);
+    if(!at){say((d.errors&&d.errors[0])||'No location for this parcel.',true);return;}
+    const hd=sv.camera&&sv.heading!=null?'&heading='+sv.heading:'';
+    const maps='https://www.google.com/maps/@?api=1&map_action=pano&viewpoint='+at.lat+','+at.lng+hd;
+    $('bar').innerHTML='<a class="btn" target="_blank" rel="noopener" href="'+maps+'">Open in Google Maps ↗</a>'
+      +'<span>'+(sv.camera?'On the street in front of the lot, facing it. Check the photo date in the corner, and walk the block with the arrows.':'Opens at the lot.')+'</span>'
+      +((d.notes||[]).length?'<span>'+d.notes.map(E).join(' ')+'</span>':'');
+    if(!sv.embed_key){say('Street View isn’t set up here (no Maps Embed key). Use “Open in Google Maps”.');return;}
+    $('stage').innerHTML='<iframe title="Street View of the lot" allowfullscreen referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps/embed/v1/streetview?key='
+      +encodeURIComponent(sv.embed_key)+'&location='+at.lat+','+at.lng+hd+'&pitch=0&fov=90"></iframe>';
+  }).catch(e=>say('Couldn’t load Street View — '+e.message,true));
+})();
+</script>
+</body>
+</html>
