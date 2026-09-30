@@ -380,7 +380,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   other non-Google map added to it, any link from the embed to one, and any calculator logic or browser storage there.
   `GOOGLE_MAPS_EMBED_KEY` lives in Vercel env only and goes out only in `/api/street?mode=view` (which `streetview.html`
   calls), not in the card's full answer. It reaches the browser by design, so it must stay restricted to the Maps Embed
-  API and by HTTP referrer. `mode=view` sends no CORS header, so other sites can't read the key from it.
+  API and by HTTP referrer to `ttv-site-analyzer.vercel.app/*` only (no `*.vercel.app/*`: any Vercel site could use a
+  copied key; previews show Google's referrer error in the frame and keep the Maps link). `mode=view` sends no CORS
+  header, so other sites can't read the key from it.
   `streetview.html` refuses to render inside a frame, so it can't be pulled back onto an analyzer screen. The card's
   "Google Maps" link is a plain Maps URLs link-out that opens Google's own product in a new tab; nothing from Google is
   shown on Site Intelligence. Without the key, the page links out.

@@ -20,9 +20,11 @@ No `vercel.json` is needed — Vercel serves the static files as-is.
 The Street Check card on Site Intelligence links out to Google Street View with no setup. To show Street View on the
 analyzer's own Street View page (`streetview.html`, opened from the card; Google's Maps terms don't allow it on the same
 screen as the analyzer's parcel drawing), create a Google Maps Platform API key restricted to the **Maps Embed API** only, with an **HTTP referrer**
-restriction for `ttv-site-analyzer.vercel.app/*` (add `*.vercel.app/*` for preview URLs), and set it as
+restriction for `ttv-site-analyzer.vercel.app/*` only, and set it as
 `GOOGLE_MAPS_EMBED_KEY` in Vercel (Production + Preview). The Maps Embed API has no usage charge. The key reaches
 the browser by design (it's in the embed URL), which is why the restrictions matter; don't commit it.
+Preview deployments aren't on the key's referrer list (a `*.vercel.app/*` entry would let any Vercel site use a copied
+key), so on a preview the Street View page shows Google's referrer error inside the frame: use its Google Maps link there.
 
 ## Structure
 
