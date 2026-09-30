@@ -253,6 +253,14 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .upg-cost{font-family:var(--f-num);font-size:10px;color:var(--text-dim)}
 .upg-total-bar{display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:10px;border-top:1px solid var(--border-bright)}
 
+.sv-frame{display:block;width:100%;height:320px;border:0;border-radius:var(--radius-sm);margin-bottom:8px;background:rgba(94,128,149,0.08)}
+@media (max-width:640px){.sv-frame{height:240px}}
+.st-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.st-tbl th{font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-dim);text-align:right;padding:4px 6px;border-bottom:1px solid var(--border)}
+.st-tbl th:first-child,.st-tbl td:first-child{text-align:left;padding-left:0}
+.st-tbl td{padding:5px 6px;border-bottom:1px solid rgba(94,128,149,0.18);text-align:right;font-family:var(--f-num)}
+.st-tbl td:first-child{font-family:inherit;color:var(--text-mid)}
+.st-chip{display:inline-block;font-size:10px;font-family:inherit;padding:1px 7px;border-radius:9px;white-space:nowrap}
 .topo-btn{font-size:11px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.25);padding:6px 12px;border-radius:var(--radius-sm);text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin:3px}
 .topo-btn:hover{background:rgba(94,128,149,0.25)}
 
@@ -725,7 +733,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.17 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.19 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -821,6 +829,10 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <p class="note">Auto-filled from your setbacks sheet. Always verify against the UDO.</p>
       </div>
       <div id="zone-udo-link" style="margin-top:10px;display:none"></div>
+    </div>
+    <div class="card" id="street-card" style="display:none">
+      <div class="card-title"><span class="dot"></span>Street Check</div>
+      <div id="street-body"></div>
     </div>
     <div id="meck-context" style="display:none">
       <div class="card" style="border-color:rgba(94,128,149,0.25);background:rgba(94,128,149,0.04)">
@@ -1828,7 +1840,7 @@ async function pullCountyComps(){
   if(!pid){ say('Run <b>\ud83d\udef0 Auto-fill from County GIS</b> on Site Intelligence first \u2014 the comp search keys off the county parcel id.','var(--amber)'); return; }
   // Guard against a stale cache even if onAddrChange never fired (paste, autofill, restored deal).
   if(gis.addrSig && gis.addrSig!==gisAddressSignature()){
-    window._lastGis=null;
+    window._lastGis=null;hideStreetCheck();
     say('The address changed since the last GIS lookup, so the cached parcel id belongs to a different property. Run <b>\ud83d\udef0 Auto-fill from County GIS</b> again first.','var(--amber)');
     return;
   }
@@ -2096,6 +2108,7 @@ function invalidateGisIfAddressMoved(){
     if(gisAddressSignature()===g.addrSig) return;
     window._lastGis=null;renderZoneNote();
     const box=$('gis-result'); if(box){box.style.display='none';}
+    hideStreetCheck();
     setGisStatus('Address changed \u2014 run the County GIS auto-fill again before pulling comps.');
     const msg=$('county-comps-msg'); if(msg){msg.style.display='none';}
   }catch(_){ }
@@ -2148,7 +2161,7 @@ function gisLotMoved(){
   return !t.streets.includes(st)||(!!zip&&t.zips.length>0&&!t.zips.includes(zip))||(!!city&&t.cities.length>0&&!t.cities.includes(city));
 }
 function onAddrCommit(){if(gisLotMoved())clearGisSite();}
-function dropLotEnvelope(){clearEnvelope();Object.assign(planOverlay,{positioned:false,snapshotPositioned:false});}   // v8.17: clearEnvelope() also drops buildPolysFt and zeroes buildableArea
+function dropLotEnvelope(){clearEnvelope();Object.assign(planOverlay,{positioned:false,snapshotPositioned:false});}   // v8.19: clearEnvelope() also drops buildPolysFt and zeroes buildableArea
 function clearGisSite(){
   const t=_gisLot;_gisLot=null;
   const fields={};SITE_FIELDS.forEach(id=>{const e=$(id);if(e)fields[id]=e.value;});
@@ -2388,7 +2401,7 @@ function setGisZoning(zoneVal,sameParcel){
   if(sameParcel&&(sel.value===opt.value||sel.value.indexOf(opt.value+' \u00b7 ')===0))return true;
   sel.value=opt.value;onZoneChange();return true;
 }
-// ── v8.17 BUILDABLE ENVELOPE ──────────────────────────────────────────────
+// ── v8.19 BUILDABLE ENVELOPE ──────────────────────────────────────────────
 // The setback for one edge designation. A blank Corner Side field falls back to the side setback.
 function edgeSetbackFt(des){
   if(des==='front')return pv('sb-front');
@@ -2489,7 +2502,7 @@ function loadParcelPolygon(rings,edgeInfo){
   if(ring.length>2){const a=ring[0],b=ring[ring.length-1];if(a[0]===b[0]&&a[1]===b[1])ring=ring.slice(0,-1);}
   if(ring.length<3)return false;
   // v7.7: the proxy classifies each edge of the ring as sent (edge i = ring[i]->ring[i+1], indices unaffected by the
-  // Y-flip below). v8.17: merge the vertices that only split a straight lot line first, carrying the ROW flags and the
+  // Y-flip below). v8.19: merge the vertices that only split a straight lot line first, carrying the ROW flags and the
   // front edge along, then designate every edge (designateParcelEdges), not just one front and one rear.
   const hasRow=!!(edgeInfo&&Array.isArray(edgeInfo.row)&&edgeInfo.row.length===ring.length);
   const fi0=(hasRow&&typeof edgeInfo.front_index==='number'&&edgeInfo.front_index>=0&&edgeInfo.front_index<ring.length)?edgeInfo.front_index:null;
@@ -2505,7 +2518,7 @@ function loadParcelPolygon(rings,edgeInfo){
   const sc=$('canvas-scale-ft');if(sc)sc.value=canvasWidthFt;
   const fpp=canvasWidthFt/W;
   const offX=(W-spanX/fpp)/2, offY=(H-spanY/fpp)/2;
-  // v8.17: kept to 1/100 px; whole pixels moved each corner up to 0.15 ft (2723 Dellinger read 7,170 sf against 7,145)
+  // v8.19: kept to 1/100 px; whole pixels moved each corner up to 0.15 ft (2723 Dellinger read 7,170 sf against 7,145)
   polyPoints=ring.map(p=>({
     x:Math.round((offX+(p[0]-minX)/fpp)*100)/100,
     y:Math.round((offY+(spanY-(p[1]-minY))/fpp)*100)/100   // flip Y so north is up on screen
@@ -2536,6 +2549,7 @@ function applyGisData(d,sig){
     const cleared=!!_gisLot;if(cleared)clearGisSite();
     window._lastGis=null;renderZoneNote();
     const box=$('gis-result');if(box)box.style.display='none';
+    hideStreetCheck();
     setGisStatus((m.message||'No county address point matches that address.')
       +(cleared?' The lot, zone and setbacks on screen were loaded for this address, so they were cleared too.':''),'error');
     return;
@@ -2583,6 +2597,7 @@ function applyGisData(d,sig){
     cama:d.cama||null,site:d.site||null};}catch(_){ }
   renderZoneNote();   // v8.15: now that the cache holds this parcel's zoning string (and any suffix)
   renderGisResult(d);
+  if(d.parcel&&d.parcel.pid)checkStreet();else hideStreetCheck();   // v8.18: not awaited, the lookup is done
 }
 // v7.13: turn the county's own site facts into lot-factor starting points. Each field is only
 // written while it still holds its shipped default, so anything the user typed survives a re-lookup.
@@ -2650,6 +2665,73 @@ function renderGisResult(d){
   h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">Zoning &amp; lot loaded into the form above \u2014 override anything off-benchmark. Parcel shown is the current GIS shape; for a subdivision, draw the intended sublot.</div>';
   box.innerHTML=h;box.style.display='';
 }
+// ── STREET CHECK (v8.18) ──────────────────────────────────────────────────────
+// "A bad street in a good area": /api/street compares the lot's own stretch of street with its assessor neighbourhood
+// from the county's records, and says where to stand to look at the lot in Street View. Display only: nothing here
+// feeds a calculation, the save file or an export, and it doesn't touch the comps or the ARV. The Street View window is
+// Google's plain Maps Embed for a person to look (nothing is read from the imagery: Google's terms forbid that), shown
+// when GOOGLE_MAPS_EMBED_KEY is set in Vercel; without it the card links out to Google Maps.
+let _streetFor=null;   // the PID the card on screen is for
+function hideStreetCheck(){_streetFor=null;const c=$('street-card');if(c)c.style.display='none';}
+async function checkStreet(){
+  const card=$('street-card'),body=$('street-body');if(!card||!body)return;
+  const g=window._lastGis,pid=g&&g.pid;
+  if(!pid||(g.addrSig&&g.addrSig!==gisAddressSignature())){hideStreetCheck();return;}
+  const gen=_dealGen,sig=gisAddressSignature();   // request-time, like gisLookup(): an answer for an old address is dropped
+  _streetFor=pid;card.style.display='';
+  body.innerHTML='<div class="note">Comparing the street with its neighbourhood…</div>';
+  const stale=()=>gen!==_dealGen||gisAddressSignature()!==sig||!window._lastGis||window._lastGis.pid!==pid||_streetFor!==pid;
+  try{
+    const r=await fetch('/api/street?pid='+encodeURIComponent(pid));
+    const d=await r.json();
+    if(stale())return;
+    if(d.error)throw new Error(d.error);
+    renderStreetCheck(d);
+  }catch(e){
+    if(stale())return;
+    body.innerHTML='<div class="note" style="color:var(--red)">Street check failed — '+String(e.message).replace(/</g,'&lt;')
+      +'. <button class="btn btn-ghost" style="padding:1px 8px;font-size:11px" onclick="checkStreet()">Try again</button></div>';
+  }
+}
+function renderStreetCheck(d){
+  const body=$('street-body');if(!body)return;
+  const E=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const sv=d.streetview||{},s=d.street,n=d.neighborhood,sub=d.subject||{},dim='var(--text-dim)';
+  let h='';
+  const at=sv.camera||(sv.lat!=null&&sv.lng!=null?{lat:sv.lat,lng:sv.lng}:null),hd=sv.camera&&sv.heading!=null?'&heading='+sv.heading:'';
+  if(at){
+    if(sv.embed_key)h+='<iframe class="sv-frame" title="Street View of the lot" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps/embed/v1/streetview?key='
+      +encodeURIComponent(sv.embed_key)+'&location='+at.lat+','+at.lng+hd+'&pitch=0&fov=90"></iframe>';
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><a class="topo-btn" style="margin:0" target="_blank" rel="noopener" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint='
+      +at.lat+','+at.lng+hd+'">🚶 Walk '+E(sub.street_label||sub.street||'the street')+' in Google Street View ↗</a>'
+      +'<span style="font-size:11px;color:'+dim+'">'+(sv.camera?'Opens on the street in front of the lot, facing it. Check the capture date in the corner.':'Opens at the lot.')+'</span></div>';
+  }
+  if(d.verdict){
+    const v=d.verdict.level,col=v==='weaker'?'var(--red)':v==='watch'?'var(--amber)':v==='in-line'?'var(--green)':dim;
+    h+='<div style="border-left:3px solid '+col+';padding:6px 10px;margin:4px 0 6px;font-size:12.5px;background:rgba(94,128,149,0.06)">'+E(d.verdict.text)+'</div>';
+  }
+  if(s&&n){
+    const fmt=(k,v)=>v==null?'—':(k==='sale_psf'||k==='value_psf')?'$'+Math.round(v).toLocaleString()+'/sf':(Math.round(v*10)/10)+'%';
+    const cnt=(k,p)=>k==='sale_psf'?p.sale_count+' sale'+(p.sale_count===1?'':'s'):k==='value_psf'?p.value_count+' homes'
+      :k==='below_avg_pct'?p.graded+' graded':k==='new_builds_pct'?p.homes+' homes':p.parcels+' parcels';
+    const CH={weaker:['Weaker','var(--red)'],stronger:['Stronger','var(--green)'],similar:['Similar',dim],thin:['Too few',dim]};
+    const area=n.kind==='radius'?'Half mile':'Neighbourhood';
+    h+='<div style="font-size:11px;color:'+dim+'">This street: '+E(s.label)+' · '+s.homes+' homes on '+s.parcels+' parcels. '
+      +area+': '+E(n.label)+' · '+n.homes.toLocaleString()+' homes.</div>';
+    h+='<table class="st-tbl"><tr><th>Check</th><th>This street</th><th>'+area+'</th><th></th></tr>';
+    (d.checks||[]).forEach(c=>{const [t,col]=CH[c.verdict]||CH.thin;
+      h+='<tr><td>'+E(c.label)+'</td><td title="'+E(cnt(c.key,s))+'">'+fmt(c.key,c.street)+'</td><td title="'+E(cnt(c.key,n))+'">'+fmt(c.key,c.nbh)
+        +'</td><td><span class="st-chip" style="color:'+col+';border:1px solid '+col+'">'+t+'</span></td></tr>';});
+    h+='</table>';
+    if(s.nonres_uses&&s.nonres_uses.length)h+='<div style="font-size:11.5px;color:var(--text-mid);margin-top:6px">Commercial on this street: '
+      +s.nonres_uses.map(u=>E(u.n+' '+u.use.toLowerCase())).join(', ')+'.</div>';
+  }
+  if(d.notes&&d.notes.length)h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">'+d.notes.map(E).join(' ')+'</div>';
+  if(d.errors&&d.errors.length)h+='<div style="font-size:11px;color:var(--red);margin-top:4px">'+d.errors.map(E).join('; ')+'</div>';
+  h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">Mecklenburg County assessor records: buildings, lots and land use only. Sales are each home’s last market sale in '
+    +((d.params&&d.params.months)||60)+' months. A screening check: it doesn’t change the ARV or any number on The Underwrite, and the thresholds are judgement, not backtested.</div>';
+  body.innerHTML=h;
+}
 
 // ═══════════════════ PAGE 2 — LOT MODE ═══════════════════
 function setLotMode(mode){
@@ -2666,10 +2748,10 @@ function setLotMode(mode){
 // ── LOT POINT EDITOR STATE ────────────────────────────────────────────────
 let polyPoints = [];      // [{x,y}] in canvas pixels
 let polyDragIdx = -1;     // which point is being dragged
-let _fitHeld = false;     // v8.17: a fit grid skipped mid-drag, drawn on release
+let _fitHeld = false;     // v8.19: a fit grid skipped mid-drag, drawn on release
 let polyDragOffX = 0, polyDragOffY = 0;
 let edgeDesignations = []; // 'front'|'rear'|'side'|'corner' per edge i
-let _edgeNote = null;      // v8.17: {pts,warn,text} from loadParcelPolygon, shown while polyPoints is still that lot
+let _edgeNote = null;      // v8.19: {pts,warn,text} from loadParcelPolygon, shown while polyPoints is still that lot
 
 function getScaleFtPerPx(){
   const canvas = $('lot-editor-canvas');
@@ -2734,7 +2816,7 @@ function initEdgeDesignations(){
 }
 
 function cycleEdgeDesignation(edgeIdx){
-  const cycle=['front','rear','side','corner'];   // v8.17: corner side uses sb-corner
+  const cycle=['front','rear','side','corner'];   // v8.19: corner side uses sb-corner
   const cur=edgeDesignations[edgeIdx]||'side';
   const next=cycle[(cycle.indexOf(cur)+1)%cycle.length];
   // Multiple fronts and rears allowed — no restriction
@@ -2832,7 +2914,7 @@ function redrawEditor(){
     ctx.fillText(badge,lx,ly+8);
   }
 
-  // Draw setback inset using per-edge setbacks (v8.17: the envelope can come in more than one piece)
+  // Draw setback inset using per-edge setbacks (v8.19: the envelope can come in more than one piece)
   const env=insetPolygonPerEdge(pts,edgeDesignations),insetPts=env.rings[0]||null;
   if(insetPts){
     env.rings.forEach(r=>{
@@ -2882,7 +2964,7 @@ function redrawEditor(){
     if(planOverlay.active&&!planOverlay.positioned){
       planOverlay.x=icx;planOverlay.y=icy;planOverlay.positioned=true;
     }
-  } else clearEnvelope(); // fewer than 3 corners, or the setbacks leave nothing (v8.17: no stale envelope for the fit check)
+  } else clearEnvelope(); // fewer than 3 corners, or the setbacks leave nothing (v8.19: no stale envelope for the fit check)
 
   // Draw corner dots
   for(let i=0;i<n;i++){
@@ -2923,7 +3005,7 @@ function redrawEditor(){
   if(en){const on=!!(_edgeNote&&_edgeNote.pts===polyPoints);en.style.display=on?'':'none';en.className=on&&_edgeNote.warn?'warn':'note';en.textContent=on?_edgeNote.text:'';}
   updatePolyStats();
 }
-// No envelope (v8.17): drop the last one too, so fitStatus() and the overlays can't keep using it
+// No envelope (v8.19): drop the last one too, so fitStatus() and the overlays can't keep using it
 function clearEnvelope(){
   if(lotMode==='poly')buildableArea=0;
   planOverlay.buildPolyFt=null;planOverlay.buildPolysFt=null;planOverlay.buildPoly=null;
@@ -3058,7 +3140,7 @@ function fragmentsToRingsFt(frags,lines){
 // nothing can spike or turn inside out, and setbacks that meet across the lot leave nothing. lot: [{x,y}] ft; sbs:
 // setback (ft) per edge i (lot[i]->lot[i+1]). Returns {rings: outlines, largest first, positive orientation; area: sf}.
 function buildEnvelopeFt(lot,sbs){
-  // a repeated corner (saved before v8.17 at whole pixels, or two corners dragged onto one spot) is a zero-length edge
+  // a repeated corner (saved before v8.19 at whole pixels, or two corners dragged onto one spot) is a zero-length edge
   // with no direction: drop it; the corner keeps the setback of the edge that leaves it
   const P=[],S0=[];
   lot.forEach((p,i)=>{const q=P[P.length-1];if(q&&Math.hypot(p.x-q.x,p.y-q.y)<1e-6)S0[S0.length-1]=sbs[i];else{P.push(p);S0.push(sbs[i]);}});
@@ -3071,7 +3153,7 @@ function buildEnvelopeFt(lot,sbs){
   const turn=i=>{const p=E[(i-1+n)%n],q=E[i];return p.tx*q.ty-p.ty*q.tx;};   // > 0: lot[i] is a convex corner
   const dot=i=>{const p=E[(i-1+n)%n],q=E[i];return p.tx*q.tx+p.ty*q.ty;};
   const cvx=L.map((_,i)=>turn(i)>1e-9);
-  // a corner that's straight or turns inward by under 0.5° (a GIS dent, or a whole-pixel corner saved before v8.17)
+  // a corner that's straight or turns inward by under 0.5° (a GIS dent, or a whole-pixel corner saved before v8.19)
   // doesn't stop another edge's run-on passing through it; of the two pieces that meet there, only the one with the
   // larger setback runs on past it (two pieces with the same setback just meet, so a short piece's slightly turned line
   // isn't carried across the lot)
@@ -3136,7 +3218,7 @@ function buildEnvelopeFt(lot,sbs){
   return{rings,area:rings.length?area:0};
 }
 
-// Per-edge setback inset. v8.17: the lot minus each edge's setback band (buildEnvelopeFt) instead of intersecting
+// Per-edge setback inset. v8.19: the lot minus each edge's setback band (buildEnvelopeFt) instead of intersecting
 // neighbouring offset lines, which left spikes into the setbacks and turned inside out when setbacks met across the lot.
 // pts: lot corners in editor px. Returns {rings: outlines in px, largest first; ringsFt: the same in ft; area: sf}, with
 // no rings when the setbacks leave nothing.
@@ -3751,7 +3833,7 @@ function selectPlanFromTile(planKey){
 
 function renderFitCheck(){
   const grid=$('fit-grid'),empty=$('fit-empty');if(!grid)return;
-  // v8.17: while a lot corner is being dragged the grid waits for the release (on an irregular lot it can take 100+ ms)
+  // v8.19: while a lot corner is being dragged the grid waits for the release (on an irregular lot it can take 100+ ms)
   if(lotMode==='poly'&&polyDragIdx>=0){_fitHeld=true;return;}
   if(!buildableArea||buildableArea<=0){grid.innerHTML='';if(empty)empty.style.display='';return;}
   if(empty)empty.style.display='none';
@@ -3825,7 +3907,7 @@ function ptInPolyFt(px,py,poly){
 }
 
 function polyAreaFt(p){let a=0,n=p.length;for(let i=0;i<n;i++){const A=p[i],B=p[(i+1)%n];a+=A.x*B.y-B.x*A.y;}return a/2;}
-// v8.17: turns under tolDeg (1.5° unless given) don't count as concave, so GIS jitter or a pixel of rounding no longer
+// v8.19: turns under tolDeg (1.5° unless given) don't count as concave, so GIS jitter or a pixel of rounding no longer
 // pushes a plain lot off the exact solver. A U-turn always does. The exact solver on a nearly convex polygon stays safe
 // (it only places plans inside every edge's half-plane, which is inside the polygon), but it can miss a fit there, so
 // planFitsInPolyFt() checks those with the whole-rectangle test too.
@@ -3887,7 +3969,7 @@ function planFitsInPolyFt(fpW,fpD){
   if(!main||main.length<3)return'no';
   // an envelope can come in more than one piece (a pinched lot); a plan has to fit inside one of them
   const rings=(planOverlay.buildPolysFt&&planOverlay.buildPolysFt[0]===main)?planOverlay.buildPolysFt:[main];
-  // v8.17: the fit grid, the plan card, the comparison and the subplot card all ask about the same envelope, which is
+  // v8.19: the fit grid, the plan card, the comparison and the subplot card all ask about the same envelope, which is
   // built afresh whenever the lot or a setback changes, so each answer is kept on its ring
   if(!main._fit)Object.defineProperty(main,'_fit',{value:new Map(),enumerable:false});
   const memo=main._fit,key=fpW+'x'+fpD+(rings.length>1?'':'/1');
@@ -3913,7 +3995,7 @@ function planFitsInPolyFt(fpW,fpD){
   memo.set(key,best);
   return best;
 }
-// Non-convex envelope (v8.17). A placement counts only when the whole rectangle is inside: first the exact solver on the
+// Non-convex envelope (v8.19). A placement counts only when the whole rectangle is inside: first the exact solver on the
 // part every edge's half-plane keeps (inside the envelope, so never a false fit), then rectFitsPolyFt. "Fits" needs 5 ft
 // clear of the envelope's edges: the same test in the envelope shrunk 5 ft (buildEnvelopeFt with 5 ft on every edge,
 // kept on the ring as ring._e5).
@@ -5864,6 +5946,7 @@ function restoreDeal(d){
     // The previous deal's county card, its status line and its comps box (whose Apply button carries that deal's
     // $/sf) sit outside .page, so clear them too. The offer letter resets itself for a new address (generateOfferLetter).
     {const g=$('gis-result'),m=$('county-comps-msg');if(g)g.style.display='none';if(m)m.style.display='none';setGisStatus('');}
+    hideStreetCheck();   // v8.18: the street card is the last deal's too
     _tapSig=null;   // taps were just reset, so let the jurisdiction autofill in step 1 run again
     ['tap-water','tap-sewer'].forEach(id=>{const e=$(id);if(e)delete e.dataset.manual;});   // v8.14: nor the last deal's typed quotes
     // A deal saved before v8.2 has no profit-rule fields; it was underwritten on the SOP, so pin that rather than
@@ -5941,6 +6024,7 @@ function restoreDeal(d){
      if(mm){_gisMismatch=mm;window._lastGis=null;
        setGisStatus(`This deal was saved with the County GIS parcel at ${mm.matched}, which isn\u2019t ${st}. Its lot and zoning may be that parcel\u2019s, so its County GIS record was dropped: run the auto-fill again.`,'warn');}}
     renderZoneNote();
+    if(window._lastGis&&window._lastGis.pid)checkStreet();   // v8.18: the saved parcel's street, fetched again (nothing is saved)
     // 7) re-render + recalc through the existing pipeline only
     if(typeof renderUpgrades==='function')renderUpgrades();
     renderComps();renderShortlist();
@@ -6015,16 +6099,21 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.17', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.19', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
- {v:'8.17',date:'Sep 2026',name:'Buildable envelope rebuilt for County GIS lots',items:[
+ {v:'8.19',date:'Sep 2026',name:'Buildable envelope rebuilt for County GIS lots',items:[
    'The buildable envelope is now the lot with each edge\u2019s setback strip taken off: a setback line parallel to each lot line, carried across to the next lot line. The old outline could spike deep into a setback wherever the county drew an extra corner along a lot line (32 ft into the rear setback on 2723 Dellinger), which made the fit check turn down plans that fit: Galloway, Linden, Dublin 1 Car and the Oxford Duet now show on 2723. 2723 Dellinger reads 3,309 sf (was 3,327).',
    'County GIS lots: corners that only split a straight lot line are merged, and every piece of the street line is the front and every piece of the rear line the rear, including a rear line with a jog, a skew or a curve (a curved or cul-de-sac frontage counts as front too). 2731 Dellinger\u2019s 26 ft rear line used to get the 5 ft side setback (envelope 2,010 sf, now 1,649 sf). The lot outline keeps the county\u2019s corners to 1/100 of a pixel, so the lot area matches the county\u2019s to within a few sf (2723: 7,145 sf, was 7,170) and the BUA limit moves with it.',
    'Corner lots: the second street line is a Corner side edge (purple in the lot editor) and uses the Corner Side setback, so a 60 ft N1-B corner lot is 41.5 ft wide inside the setbacks, not 50. Clicking an edge now cycles Front \u2192 Rear \u2192 Side \u2192 Corner side.',
    'Alley and through lots: the rear setback goes on the line opposite the street even when that line faces an alley or a second street, with a note to check it (1724 Thomas Ave: 4,439 sf and 24 plans that fit, was 2,237 sf and none). When the county finds no street edge, the front is a guess (the lowest edge on the map) with a note, instead of every edge getting the 5 ft side setback.',
    'Setbacks that meet across the lot now leave 0 sf and say so, instead of an inside-out outline that small plans \u201cfit\u201d into.',
    'Irregular outlines (a jog or notch in the lot): the fit check tests the whole plan rectangle, not just its four corners, so a plan can\u2019t straddle a notch, and it finds the tight fits the old check missed. \u201cFits\u201d means 5 ft clear of the envelope there too, measured the same way as on a regular lot.',
-   'Deals saved before 8.17 keep their saved edge designations; run the County GIS lookup again to get the new ones.']},
+   'Deals saved before 8.19 keep their saved edge designations; run the County GIS lookup again to get the new ones.']},
+ {v:'8.18',date:'Sep 2026',name:'Street check',items:[
+   'After a County GIS lookup, Site Intelligence has a Street Check card with a button that opens Google Street View on the street in front of the lot, facing it. Once a Google Maps key is set up, Street View shows inside the card, so you can walk the street without leaving the deal.',
+   'Below it, the lot\u2019s own stretch of street (1,000 ft each way) is compared with its assessor neighbourhood on the county\u2019s records: recent sale $/sf, assessed building value $/sf, homes graded below Average, vacant lots, commercial and industrial parcels, and homes built 2020+. It says when the street looks weaker than its neighbourhood, the \u201cbad street in a good area\u201d case.',
+   'A new lot takes the neighbourhood most common around it. A home coded to a commercial market area (\u201cRetail \u2013 Northeast Submarket\u201d) is compared with everything within half a mile. The subject\u2019s own other parcels on the street are left out.',
+   'It\u2019s a screening check: it doesn\u2019t change the ARV, the comps or any number on The Underwrite, and it looks only at buildings, lots and land use (multi-family and affordable housing never count against a street).']},
  {v:'8.16',date:'Sep 2026',name:'County GIS loads the parcel you typed',items:[
    'County GIS auto-fill now matches the exact house number and the whole street (direction, name and type), and uses the ZIP and city to choose between places. It used to match the number and the first word after it as text and take the first hit, so “1500 N Davidson St” loaded 1500 Eastcrest Dr, “3000 N Tryon St” loaded 3000 Central Ave and “1932 Park Rd” loaded 11932 Bradford Park Dr in Davidson: another parcel’s lot, zoning and lot factor, with only the card header to show it.',
    'When no county address fits, nothing is loaded and the status line says why: no such number (with the nearest numbers on the street: 300 Clarice Ave → 400, 401, 409…), more than one street fits (3000 Tryon St is both N and S Tryon: add the direction or ZIP), the street isn’t in the city or ZIP typed, or the address’s units are separate parcels (a split duplex: type the unit). The ZIP and city pick the place first, so “2100 Sharon Rd, 28210” is Sharon Rd W there, not Sharon Rd in 28207. An address that matches with a part left out or a different ZIP (1500 N Davidson St typed with 28206; the county has 28205) loads, with an amber note saying what differs. A parcel County GIS has no zoning for (the towns outside Charlotte’s zoning map) says so and shows the setback fields.',
