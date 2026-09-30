@@ -245,8 +245,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   tower has 450 unit points at one number). `match.status` is `exact`, `close` (loaded, with `diffs`: a part left out,
   a ZIP or city that differs, another street at the number, one unit of a building), or refused: `none` (with the
   nearest numbers on the street), `ambiguous` (N and S Tryon both fit, or the address's units are separate parcels)
-  or `locality` (the street isn't in the typed city or ZIP). A refused match returns no parcel and no zoning. v5 matched the number and the
-  first word after it as substrings and took the first hit, so "1500 N Davidson St" loaded 15004 Annan Ct. Flag a
+  or `locality` (the street isn't in the typed city or ZIP). Units count as separate parcels by `GIS_PID` (condo units
+  share one; a split duplex's don't), and a building point that sits on one of them doesn't stand in for the site. A refused match returns no parcel and no zoning. v5 matched the number and the
+  first word after it as substrings and took the first hit, so "1500 N Davidson St" loaded another parcel (15004 Annan
+  Ct in the audit, 1500 Eastcrest Dr the next day). Flag a
   geocode that matches the number as a substring, drops the direction or type, takes the first feature without
   comparing, or loads a parcel for a refused match. A close match must stay visible (amber status and card row).
 - Parcel area uses the **shoelace** of the geometry, **not** the bounding box. Flag a
@@ -368,7 +370,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   drawn on a fresh page is tied once a lookup loads zoning or a parcel for its address. Before this, the last deal's lot and fit
   results stayed under a new address, including after a lookup that found only zoning or nothing. On reopen, a saved
   parcel whose `matched` address isn't the deal's (`gisMatchFits()`: deals saved before v8.16 can hold a G1 parcel) is
-  flagged and its whole County GIS record dropped. The flag is saved with the deal (`gisMismatch`) until a lookup loads data.
+  flagged and its whole County GIS record dropped. The flag is saved with the deal (`gisMismatch`) until a lookup loads a
+  lot polygon. Only records from before the v8.16 matcher get that check: a record with `mpt` was matched by it.
+  Units: `addrWords()` keeps "1207-A" as one house number, and the reopen check ignores a typed unit.
 - **Never infer "untouched" from a field's value.** An analyst can legitimately type a number that
   equals a shipped default (a real $2,000 survey quote, a real $2,500 grading allowance), and the
   value-based check silently overwrote it — a Codex P1 on PR #17. Auto-fill gates on the explicit

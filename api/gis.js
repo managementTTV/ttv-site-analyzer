@@ -138,7 +138,7 @@ function bboxWxD(g){ const r=g&&g.rings&&g.rings[0]; if(!r) return null; const x
 // repl_txt_roadway_abbrev (USPS type; full_address and address print the county's 2-letter cde_roadway_type instead),
 // cde_street_dir_suff, txt_addr_unit, cde_zip1, nme_city / nme_po_city. v5 matched the house number and the first word
 // after it as substrings and took the first hit, so "1500 N Davidson St" searched for '%1500%' and '%N%' and loaded
-// 15004 Annan Ct. Now the number is exact, candidates come from their street names, and each is compared with the
+// another parcel (15004 Annan Ct in the 2026-09-28 audit, 1500 Eastcrest Dr the next day). Now the number is exact, candidates come from their street names, and each is compared with the
 // typed street part by part, after both sides go through the same spelling map.
 const DIR_WORDS={NORTH:'N',SOUTH:'S',EAST:'E',WEST:'W',NORTHEAST:'NE',NORTHWEST:'NW',SOUTHEAST:'SE',SOUTHWEST:'SW'};
 const DIR_ABBR=new Set(['N','S','E','W','NE','NW','SE','SW']);
@@ -162,16 +162,18 @@ const ADDR_FIELDS='OBJECTID,txt_street_number,cde_street_dir_prfx,nme_street,rep
 function canonTok(t){ const o=String(t).replace(/^(\d+)(ST|ND|RD|TH)$/,'$1'); return DIR_WORDS[o]||NAME_ALIAS[o]||TYPE_WORDS[o]||o; }
 // words compare without apostrophes, and a hyphen splits words: the county files "FISHER'S FARM" and
 // "MT HOLLY-HUNTERSVILLE", but "BEATTIES FORD"
-function splitToks(a){ return a.flatMap(t=>String(t).replace(/'/g,'').split('-')).filter(Boolean); }
+function splitToks(a){ return a.flatMap(t=>String(t).replace(/^([A-Z])'(?=[A-Z])/,'$1-').replace(/'/g,'').split('-')).filter(Boolean); }
 function canonToks(a){ return splitToks(a).map(canonTok); }
 const eqToks=(a,b)=>a.length===b.length&&a.every((t,i)=>t===b[i]);
+// the same words, spacing aside: "JW Clay" is J W CLAY, "O'Henry" is O HENRY, "W WT Harris" is W W T HARRIS
+const sameStreet=(a,b)=>a.join('')===b.join('');
 const cleanTok=t=>String(t||'').toUpperCase().replace(/[^A-Z0-9&'\-]/g,'');
 // "1500 N Davidson St, Charlotte, NC, 28206" (the client's fullAddr()) -> {num, unit, toks, city, zip}. Also takes the
 // whole address typed into the street field ("... Dr Charlotte NC 28269"), a city segment with the state and ZIP in it,
 // a unit after the street ("Apt 2", "#2", "2723B") or in its own segment. Periods become spaces, as the county files
 // initials spaced: "W.T. Harris" is W T HARRIS.
 function parseTypedAddress(address){
-  const segs=String(address||'').toUpperCase().replace(/’/g,"'").replace(/\./g,' ').replace(/#/g,' # ')
+  const segs=String(address||'').toUpperCase().replace(/’/g,"'").replace(/\b([NS])\.\s?C\.?(?=[\s,]|$)/g,'$1C').replace(/\./g,' ').replace(/#/g,' # ')
     .split(',').map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
   let zip='', city='', unit='';
   const street=segs.shift()||'';
@@ -203,7 +205,7 @@ function streetNameVariants(toks){
     for(const [k,v] of Object.entries(NAME_ALIAS)){ if(t===k)o.add(v); if(t===v)o.add(k); }
     const d=t.match(/^(\d+)(ST|ND|RD|TH)?$/);
     if(d){ const n=+d[1], sfx=(n%100>=11&&n%100<=13)?'TH':({1:'ST',2:'ND',3:'RD'}[n%10]||'TH'); o.add(d[1]); o.add(d[1]+sfx); }
-    if(/['\-]/.test(t)) o.add(t.replace(/'/g,'').replace(/-/g,' '));
+    if(/['\-]/.test(t)){ o.add(t.replace(/'/g,'').replace(/-/g,' ')); o.add(t.replace(/['\-]/g,' ').trim()); }
     return [...o]; };
   const out=new Set();
   for(let i=0;i<toks.length&&i<8;i++) for(let j=i;j<toks.length&&j<i+6;j++){
@@ -224,7 +226,7 @@ function pointParts(a){
   const s=v=>String(v==null?'':v).replace(/\s+/g,' ').trim().toUpperCase();
   const P={ num:a.txt_street_number, dir:s(a.cde_street_dir_prfx), name:s(a.nme_street),
     type:s(a.repl_txt_roadway_abbrev||a.cde_roadway_type), cde:s(a.cde_roadway_type), sdir:s(a.cde_street_dir_suff), unit:s(a.txt_addr_unit),
-    city:s(a.nme_city), po_city:s(a.nme_po_city), zip:s(a.cde_zip1), status:s(a.cde_status), pid:s(a.TAX_PID||a.GIS_PID),
+    city:s(a.nme_city), po_city:s(a.nme_po_city), zip:s(a.cde_zip1), status:s(a.cde_status), gpid:s(a.GIS_PID||a.TAX_PID),
     full:s(a.full_address) };
   P.street=streetLine(P);   // USPS types ("111 XAVIER WAY"); the county's address / full_address print "WY"
   return P;
@@ -242,13 +244,13 @@ function compareStreet(typedToks, P){
   const parts=[['dir',P.dir,'direction'],['type',P.type,'street type'],['sdir',P.sdir,'suffix']].filter(p=>p[1]);
   let T=canonToks(typedToks), cityFromStreet='';
   for(const c of [P.city,P.po_city]){ const ct=c?canonToks(c.split(' ')):[];
-    if(ct.length&&T.length>ct.length&&eqToks(T.slice(-ct.length),ct)&&!fulls.some(f=>eqToks(T,f))){ T=T.slice(0,-ct.length); cityFromStreet=c; break; } }
-  if(fulls.some(f=>eqToks(T,f))) return {level:'exact',missing:[],cityFromStreet};
+    if(ct.length&&T.length>ct.length&&eqToks(T.slice(-ct.length),ct)&&!fulls.some(f=>sameStreet(T,f))){ T=T.slice(0,-ct.length); cityFromStreet=c; break; } }
+  if(fulls.some(f=>sameStreet(T,f))) return {level:'exact',missing:[],cityFromStreet};
   for(let mask=1;mask<(1<<parts.length);mask++){
     const drop=new Set(parts.filter((_,i)=>mask&(1<<i)).map(p=>p[0]));
     for(const t of (types.length?types:[''])){
       const v=build(drop.has('dir')?'':P.dir,drop.has('type')?'':t,drop.has('sdir')?'':P.sdir);
-      if(eqToks(T,v)) return {level:'partial',missing:parts.filter(p=>drop.has(p[0])).map(p=>p[2]+' '+p[1]),cityFromStreet};
+      if(sameStreet(T,v)) return {level:'partial',missing:parts.filter(p=>drop.has(p[0])).map(p=>p[2]+' '+p[1]),cityFromStreet};
     }
   }
   for(let i=0;i+nameT.length<=T.length;i++) if(eqToks(T.slice(i,i+nameT.length),nameT)) return {level:'name',missing:[],cityFromStreet};
@@ -298,16 +300,17 @@ function chooseAddressPoint(typed, feats, near){
     out.message=`“${typedLine}” fits ${groups.length} county addresses: ${groups.slice(0,5).join(', ')}. Add the direction, street type or ZIP, then run the auto-fill again.`;
     return out;
   }
-  // one street and place. With no unit typed and only unit points on file, units on separate parcels (a split duplex,
-  // townhomes) are separate properties: say which, rather than loading one unit's lot as the site.
-  const units=pool.filter(x=>x.P.unit);
-  if(!typed.unit&&units.length===pool.length){
-    const pids=uniq(units.map(x=>x.P.pid).filter(Boolean)), us=uniq(units.map(x=>x.P.unit));
-    if(pids.length>1){
-      out.status='ambiguous'; out.candidates=us.slice(0,8).map(u=>groups[0].replace(' (',' #'+u+' ('));
-      out.message=`The county files ${groups[0]} by unit, and the units are separate parcels (${us.slice(0,8).join(', ')}${us.length>8?'…':''}). Type the unit (e.g. “${streetLine(pool[0].P)} Unit ${us[0]}”) to load that parcel, or draw the whole site.`;
-      return out;
-    }
+  // one street and place. When its units sit on separate GIS parcels (a split duplex, townhomes), they're separate
+  // properties: unless the typed unit is one of them, say which, rather than loading one unit's lot as the site. A
+  // building point on a common parcel of its own (a condo's ...C99) isn't split; condo units share one parcel.
+  const units=pool.filter(x=>x.P.unit), bldg=pool.filter(x=>!x.P.unit);
+  const unitParcels=uniq(units.map(x=>x.P.gpid).filter(Boolean)), us=uniq(units.map(x=>x.P.unit));
+  const split=unitParcels.length>1&&bldg.every(b=>!b.P.gpid||unitParcels.includes(b.P.gpid));
+  if(split&&!(typed.unit&&units.some(x=>x.P.unit===typed.unit))){
+    out.status='ambiguous'; out.candidates=us.slice(0,8).map(u=>groups[0].replace(' (',' #'+u+' ('));
+    out.message=(typed.unit?`There’s no unit ${typed.unit} at ${groups[0]}. `:'')
+      +`The county files ${groups[0]} by unit, and the units are separate parcels (${us.slice(0,8).join(', ')}${us.length>8?'…':''}). Type the unit (e.g. “${streetLine(pool[0].P)} Unit ${us[0]}”) to load that parcel, or draw the whole site.`;
+    return out;
   }
   // the typed unit's point, else the building's own (no unit), else any; an active point first
   const rank=x=>(typed.unit&&x.P.unit===typed.unit?0:!x.P.unit?1:2)*2+(x.P.status==='A'?0:1);
@@ -378,7 +381,11 @@ export default async function handler(req, res){
         raw.address = debug?{where:nameWhere,count:feats.length}:undefined;
         // nothing on that street at that number: the nearest numbers on it, for the message
         if(!feats.some(f=>{ const c=compareStreet(typed.toks,pointParts(f.attributes||{})); return c&&c.level!=='name'; })){
-          try{ near = await nearestNumbers(nameWhere, typed); }catch(_){ /* suggestions only */ }
+          // the IN list, plus any county name the number query found that compareStreet recognises (FISHER'S FARM),
+          // not the LIKE, which on a common word ("Oak") would fill the ordered rows with other streets
+          const seen=[...new Set(feats.map(f=>pointParts(f.attributes||{})).filter(P=>compareStreet(typed.toks,P)).map(P=>P.name))];
+          const nearWhere=`nme_street IN (${[inList].concat(seen.map(n=>"'"+n.replace(/'/g,"''")+"'")).join(',')})`;
+          try{ near = await nearestNumbers(nearWhere, typed); }catch(_){ /* suggestions only */ }
         }
       }
       const m = chooseAddressPoint(typed, feats, near);
