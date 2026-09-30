@@ -17,8 +17,9 @@ No `vercel.json` is needed — Vercel serves the static files as-is.
 
 ### Optional: Street View window (`GOOGLE_MAPS_EMBED_KEY`)
 
-The Street Check card on Site Intelligence links out to Google Street View with no setup. To show Street View inside
-the card, create a Google Maps Platform API key restricted to the **Maps Embed API** only, with an **HTTP referrer**
+The Street Check card on Site Intelligence links out to Google Street View with no setup. To show Street View on the
+analyzer's own Street View page (`streetview.html`, opened from the card; Google's Maps terms don't allow it on the same
+screen as the analyzer's parcel drawing), create a Google Maps Platform API key restricted to the **Maps Embed API** only, with an **HTTP referrer**
 restriction for `ttv-site-analyzer.vercel.app/*` (add `*.vercel.app/*` for preview URLs), and set it as
 `GOOGLE_MAPS_EMBED_KEY` in Vercel (Production + Preview). The Maps Embed API has no usage charge. The key reaches
 the browser by design (it's in the embed URL), which is why the restrictions matter; don't commit it.
@@ -27,6 +28,7 @@ the browser by design (it's in the embed URL), which is why the restrictions mat
 
 ```
 index.html      # the entire app (UI + logic + plan data)
+streetview.html # the lot's Street View on its own page (Maps Embed only, no other maps)
 api/            # Vercel functions: gis.js, comps.js, street.js (Mecklenburg county data), permits.js
 plans/          # plan images (one per Slate plan) — see plans/README.md
 README.md

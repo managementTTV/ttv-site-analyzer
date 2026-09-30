@@ -9,7 +9,10 @@
 // Why county data and not AI on Street View photos: Google Maps Platform terms §3.2.3 forbid taking Street View
 // imagery out of Google's service and building data from it (their example: "an index of tree locations within a city
 // from Street View imagery"), which a photo-based street score would be. Checked 2026-09-30. The Street View window
-// on the page is the plain Maps Embed (a person looks; nothing is read from the imagery).
+// is the plain Maps Embed on its own page, streetview.html (a person looks; nothing is read from the imagery). Google's
+// Street View guidelines also ban screenshotting Street View and "using applications to analyze and extract information"
+// from it, so no AI looks at it by any route, in the app or out of it. ?mode=view returns only the camera spot and the
+// embed key, for streetview.html.
 //
 // Fair housing: every check is about buildings, lots and land use, never about who lives there. Affordable and
 // multi-family housing are NOT counted against a street. Keep it that way.
@@ -204,11 +207,37 @@ function nearestOnLine(ref, layers){
   return best;
 }
 
+// The lot's own street centreline near it (City and State maintained layers). CAMA drops the direction ("DAVIDSON ST"
+// for N and S Davidson); the centreline keeps it ("N DAVIDSON ST").
+function centrelines(street, lat, lng){
+  return Promise.all(STREET_LAYERS.map(l=>ajPost(`${CITY}/${l}/query`, Object.assign({
+    where:`WHOLESTNAME='${sq(street)}' OR WHOLESTNAME LIKE '% ${sq(street)}'`, outFields:'WHOLESTNAME',
+    returnGeometry:'true', outSR:'4326', f:'json'}, within(lat, lng, CAMERA_MAX_FT))).catch(()=>({features:[]}))));
+}
+// The centreline's name when it's this street with a direction ("N DAVIDSON ST" for CAMA's "DAVIDSON ST"), else null
+function directedName(cam, street){ const m = cam && cam.name && cam.name.match(/^(N|S|E|W)\s+(.+)$/); return m && m[2]===street ? m : null; }
+// Where a Street View camera should stand (the nearest point on that centreline) and which way it faces (the lot).
+// The Maps Embed key goes out only with mode=view, which only streetview.html asks for: the embed must never share a
+// screen with the analyzer's non-Google maps (Maps Platform ToS §3.2.3(e)).
+function streetviewFor(lat, lng, cam, withKey){
+  const camera = cam && cam.d>=5 ? fromFt({lat, lng}, cam.pt) : null;
+  const sv = {
+    lat, lng,
+    camera: camera ? {lat:+camera.lat.toFixed(7), lng:+camera.lng.toFixed(7), ft_from_lot:Math.round(cam.d), street:cam.name||null} : null,
+    heading: camera ? Math.round(bearing(camera, {lat, lng})) : null,
+  };
+  // browser-side by design (it's in the embed URL), so it's restricted to the Maps Embed API and by HTTP referrer in
+  // Google Cloud, and set in Vercel env only
+  if(withKey) sv.embed_key = process.env.GOOGLE_MAPS_EMBED_KEY || null;
+  return sv;
+}
+
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const q = req.query || {};
   const pid = (q.pid||'').trim();
   const ft = Math.min(Math.max(parseInt(q.ft)||STREET_FT, 300), 2640);
+  const view = q.mode === 'view';   // streetview.html: the lot and its camera spot only, no county profile
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
   // a partial answer (a county layer down) isn't cached, so a re-check can get the whole one
@@ -234,16 +263,22 @@ export default async function handler(req, res){
     out.subject = {pid, street:street||null, number:(a.streetnumber||'').trim()||null, lat, lng, neighborhood:nb};
     if(lat==null || lng==null){ out.errors.push('No location for PID '+pid+'.'); return send(); }
     if(!street) out.notes.push('The assessor record has no street name for this lot, so there is no street to compare.');
+    if(view){
+      let cam = null;
+      if(street){ try{ cam = nearestOnLine({lat, lng}, await centrelines(street, lat, lng)); }catch(e){ out.errors.push('centreline: '+e.message); } }
+      const dm = directedName(cam, street);
+      out.subject.street_label = (dm ? cam.name : street) || null;
+      out.streetview = streetviewFor(lat, lng, cam, true);
+      if(street && !out.streetview.camera) out.notes.push('No City or State maintained centreline for this street near the lot (a private street?), so Street View opens at the lot without a facing.');
+      return send();
+    }
 
     // 2) independent, non-fatal, in parallel: this street, the street centreline, and the neighbourhood when the lot
     //    has a code (else the parcels right around it, to borrow one)
     const useCode = nb.code && !COMMERCIAL_AREA.test(nb.name||'');
     const [stR, lineR, nbR, nearR] = await Promise.allSettled([
       street ? camaRows(Object.assign({where:`streetname='${sq(street)}'`}, within(lat, lng, ft))) : Promise.resolve(null),
-      street ? Promise.all(STREET_LAYERS.map(l=>ajPost(`${CITY}/${l}/query`, Object.assign({
-        // CAMA drops the direction ("DAVIDSON ST" for N and S Davidson); the centreline keeps it ("N DAVIDSON ST")
-        where:`WHOLESTNAME='${sq(street)}' OR WHOLESTNAME LIKE '% ${sq(street)}'`, outFields:'WHOLESTNAME',
-        returnGeometry:'true', outSR:'4326', f:'json'}, within(lat, lng, CAMERA_MAX_FT))).catch(()=>({features:[]})))) : Promise.resolve(null),
+      street ? centrelines(street, lat, lng) : Promise.resolve(null),
       useCode ? camaRows({where:`neighborhood='${sq(nb.code)}'`}) : Promise.resolve(null),
       nb.code ? Promise.resolve(null) : camaRows(Object.assign({where:'1=1'}, within(lat, lng, NEAR_FT))),
     ]);
@@ -255,8 +290,8 @@ export default async function handler(req, res){
     // 3) the street. With a direction on the centreline ("N DAVIDSON ST"), parcels addressed on the other half
     //    ("S DAVIDSON ST", or no direction) are dropped, since CAMA files both under "DAVIDSON ST".
     let stRows = stR.status==='fulfilled' && stR.value ? stR.value.rows : null, label = street;
-    const dm = cam && cam.name && cam.name.match(/^(N|S|E|W)\s+(.+)$/);
-    if(stRows && dm && dm[2]===street){
+    const dm = directedName(cam, street);
+    if(stRows && dm){
       label = cam.name;
       try{
         const nm = street.split(/\s+/).slice(0,-1).join(' ') || street;   // "DAVIDSON ST" -> DAVIDSON (type dropped)
@@ -323,17 +358,9 @@ export default async function handler(req, res){
       out.verdict = verdictFor(out.checks, out.street, out.neighborhood.kind==='radius'?'the half mile around it':'its neighbourhood');
     }
 
-    // 6) Street View camera: the nearest point on the lot's own street centreline, facing the lot
-    const camera = cam && cam.d>=5 ? fromFt({lat, lng}, cam.pt) : null;
-    out.streetview = {
-      lat, lng,
-      camera: camera ? {lat:+camera.lat.toFixed(7), lng:+camera.lng.toFixed(7), ft_from_lot:Math.round(cam.d), street:cam.name||null} : null,
-      heading: camera ? Math.round(bearing(camera, {lat, lng})) : null,
-      // Maps Embed API key: browser-side by design, so it's restricted by HTTP referrer in Google Cloud, and set in
-      // Vercel env only. Without it the page links out to Google Maps instead of embedding.
-      embed_key: process.env.GOOGLE_MAPS_EMBED_KEY || null,
-    };
-    if(street && !camera) out.notes.push('No City or State maintained centreline for this street near the lot (a private street?), so Street View opens at the lot without a facing.');
+    // 6) Street View camera: the nearest point on the lot's own street centreline, facing the lot (no key: see mode=view)
+    out.streetview = streetviewFor(lat, lng, cam, false);
+    if(street && !out.streetview.camera) out.notes.push('No City or State maintained centreline for this street near the lot (a private street?), so Street View opens at the lot without a facing.');
     send();
   }catch(e){
     out.errors.push('fatal: '+e.message);

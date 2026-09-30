@@ -253,8 +253,6 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .upg-cost{font-family:var(--f-num);font-size:10px;color:var(--text-dim)}
 .upg-total-bar{display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:10px;border-top:1px solid var(--border-bright)}
 
-.sv-frame{display:block;width:100%;height:320px;border:0;border-radius:var(--radius-sm);margin-bottom:8px;background:rgba(94,128,149,0.08)}
-@media (max-width:640px){.sv-frame{height:240px}}
 .st-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
 .st-tbl th{font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-dim);text-align:right;padding:4px 6px;border-bottom:1px solid var(--border)}
 .st-tbl th:first-child,.st-tbl td:first-child{text-align:left;padding-left:0}
@@ -733,7 +731,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.19 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.20 &middot; Sep 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1410,6 +1408,9 @@ body[data-screen="2"] .page{padding-bottom:108px}
   <span>Tide &amp; Timber Ventures, LLC — management@tidetimberventures.com</span>
   <span>Internal use only — not financial advice</span>
 </div>
+<div style="padding:0 28px 14px;font-size:10.5px;color:var(--text-dim)">This app includes Google Maps features and content (Google Maps links and Street View). Use of them is subject to the
+  <a href="https://maps.google.com/help/terms_maps/" target="_blank" rel="noopener" style="color:var(--teal-light)">Google Maps/Google Earth Additional Terms of Service</a> and the
+  <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" style="color:var(--teal-light)">Google Privacy Policy</a>.</div>
 
 <script>
 // ═══════════════════ DATA ═══════════════════
@@ -2699,12 +2700,16 @@ function renderStreetCheck(d){
   const sv=d.streetview||{},s=d.street,n=d.neighborhood,sub=d.subject||{},dim='var(--text-dim)';
   let h='';
   const at=sv.camera||(sv.lat!=null&&sv.lng!=null?{lat:sv.lat,lng:sv.lng}:null),hd=sv.camera&&sv.heading!=null?'&heading='+sv.heading:'';
+  // v8.20: Street View opens on its own page (streetview.html) or on Google Maps, never on this screen. Maps Platform
+  // ToS §3.2.3(e) bars showing Street View on the same screen as a non-Google map, and this screen draws the county
+  // parcel. So don't put a Maps Embed (or any Street View imagery) back in this card.
   if(at){
-    if(sv.embed_key)h+='<iframe class="sv-frame" title="Street View of the lot" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps/embed/v1/streetview?key='
-      +encodeURIComponent(sv.embed_key)+'&location='+at.lat+','+at.lng+hd+'&pitch=0&fov=90"></iframe>';
-    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><a class="topo-btn" style="margin:0" target="_blank" rel="noopener" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint='
-      +at.lat+','+at.lng+hd+'">🚶 Walk '+E(sub.street_label||sub.street||'the street')+' in Google Street View ↗</a>'
-      +'<span style="font-size:11px;color:'+dim+'">'+(sv.camera?'Opens on the street in front of the lot, facing it. Check the capture date in the corner.':'Opens at the lot.')+'</span></div>';
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+      +(sub.pid?'<a class="topo-btn" style="margin:0" target="_blank" rel="noopener" href="streetview.html?pid='+encodeURIComponent(sub.pid)+'">🚶 Walk '
+        +E(sub.street_label||sub.street||'the street')+' in Street View ↗</a>':'')
+      +'<a class="topo-btn" style="margin:0" target="_blank" rel="noopener" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint='
+      +at.lat+','+at.lng+hd+'">Google Maps ↗</a>'
+      +'<span style="font-size:11px;color:'+dim+'">'+(sv.camera?'Opens in a new tab on the street in front of the lot, facing it. Check the photo date in the corner.':'Opens at the lot, in a new tab.')+'</span></div>';
   }
   if(d.verdict){
     const v=d.verdict.level,col=v==='weaker'?'var(--red)':v==='watch'?'var(--amber)':v==='in-line'?'var(--green)':dim;
@@ -6099,8 +6104,12 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.19', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.20', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.20',date:'Sep 2026',name:'Street View on its own page',items:[
+   'The Street Check card now opens Street View on a page of its own, in a new tab: the street in front of the lot, facing it, with arrows to walk the block. It used to show inside the card. Google\u2019s Maps terms don\u2019t allow Street View on the same screen as another map, and Site Intelligence draws the county parcel.',
+   'The card also keeps a Google Maps link. The rest of the Street Check (the street against its neighbourhood) is unchanged.',
+   'The page footer now says the app includes Google Maps features and content, with links to Google\u2019s Maps terms and privacy policy, as the Maps terms require.']},
  {v:'8.19',date:'Sep 2026',name:'Buildable envelope rebuilt for County GIS lots',items:[
    'The buildable envelope is now the lot with each edge\u2019s setback strip taken off: a setback line parallel to each lot line, carried across to the next lot line. The old outline could spike deep into a setback wherever the county drew an extra corner along a lot line (32 ft into the rear setback on 2723 Dellinger), which made the fit check turn down plans that fit: Galloway, Linden, Dublin 1 Car and the Oxford Duet now show on 2723. 2723 Dellinger reads 3,309 sf (was 3,327).',
    'County GIS lots: corners that only split a straight lot line are merged, and every piece of the street line is the front and every piece of the rear line the rear, including a rear line with a jog, a skew or a curve (a curved or cul-de-sac frontage counts as front too). 2731 Dellinger\u2019s 26 ft rear line used to get the 5 ft side setback (envelope 2,010 sf, now 1,649 sf). The lot outline keeps the county\u2019s corners to 1/100 of a pixel, so the lot area matches the county\u2019s to within a few sf (2723: 7,145 sf, was 7,170) and the BUA limit moves with it.',

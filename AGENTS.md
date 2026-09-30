@@ -29,7 +29,8 @@ in the repo, version it with the code.
   plan data, ~4,900 lines) + four serverless functions in `api/`: `gis.js` (Charlotte/Meck
   GIS + county assessor proxy), `comps.js` (county new-build comps), `street.js` (the street check,
   v8.18) and `permits.js` (the permitting board's data proxy) + `plans/` images + `assets/` logos. No framework, no build
-  step, no database. Everything runs in the browser.
+  step, no database. Everything runs in the browser. Two small static pages sit beside it: `permits.html` (below) and
+  `streetview.html` (v8.20, the lot's Street View on its own page; see Street check).
 - **Deploy model — why review matters:** Vercel serves the static files; **every push to
   `main` auto-deploys to production.** There is no build gate and no test suite catching
   regressions. The PR review *is* the safety net. Non-`main` branches get a Vercel
@@ -363,12 +364,26 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Display only.** The card on Site Intelligence doesn't feed a calculation, `serializeDeal()`, the PDF or the Excel,
   and it doesn't touch the comps or the ARV (same-street comp matching was backtested and not better; see Comps). Flag
   a change that moves a street check number into the math or the save file without a backtest behind it.
-- **No AI or data extraction on Google imagery.** Google Maps Platform terms §3.2.3 forbid exporting Street View
-  imagery and creating content from it (their own example is an index built from Street View). The card uses the plain
-  Maps Embed API (a person looks) and a Maps URLs link-out, nothing else. Flag any fetch of Street View Static images,
-  any imagery sent to a model, or any caching of Google responses. `GOOGLE_MAPS_EMBED_KEY` lives in Vercel env only;
-  it reaches the browser by design, so it must stay restricted to the Maps Embed API and by HTTP referrer. Without it
-  the card links out.
+- **No AI or data extraction on Google imagery, by any route.** Google Maps Platform terms §3.2.3 forbid exporting Street
+  View imagery and creating content from it (their own example is an index built from Street View; (c)(vii) also bars
+  using it to train, test or validate AI). §3.2 makes TTV answer for any user doing it through the app, and a breach allows
+  immediate suspension (§5.2(d)) of the `tidetimber-crm-maps` project, which also runs the CRM map. Google's Street View
+  guidelines (https://about.google/brand-resource-center/products-and-services/geo-guidelines/) separately ban
+  screenshotting Street View "for any purpose" and "using applications to analyze and extract information" from it,
+  which rules out an AI walking google.com/maps in a browser too (robots.txt only covers crawling). Flag any fetch of
+  Street View Static images, any capture of the embed (canvas readback, getDisplayMedia, extensions), any imagery sent
+  to a model, or any caching of Google responses.
+- **Street View lives on `streetview.html`, never on an analyzer screen (v8.20).** Maps Platform ToS §3.2.3(e) bars showing
+  Street View "and non-Google Maps on the same screen", and Site Intelligence draws the county parcel. The card links to
+  `streetview.html?pid=…` (new tab) and to Google Maps (Maps URLs); it holds no Maps Embed. `streetview.html` shows only
+  the embed, the address, a Google Maps link, text and the terms notice: flag any county map, parcel drawing, aerial or
+  other non-Google map added to it, any link from the embed to one, and any calculator logic or browser storage there.
+  `GOOGLE_MAPS_EMBED_KEY` lives in Vercel env only and goes out only in `/api/street?mode=view` (which `streetview.html`
+  calls), not in the card's full answer. It reaches the browser by design, so it must stay restricted to the Maps Embed
+  API and by HTTP referrer. Without it the page links out.
+- **Google Maps terms notice (§3.2.2(a)(i)).** The app footer, and `streetview.html`'s, say the app includes Google Maps
+  features and content subject to the Google Maps/Google Earth Additional Terms and the Google Privacy Policy, with links.
+  Keep both notices; any new page that uses Google Maps needs one.
 - **Fair housing.** Every check is about buildings, lots and land use, never who lives there. Multi-family, affordable
   housing, mobile homes and senior housing never count against a street (`HOUSING_DESC` overrides a commercial land-use
   code). Flag a check that adds occupant, ownership-type or demographic data, or counts housing of any kind as a
