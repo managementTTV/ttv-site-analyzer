@@ -15,7 +15,8 @@ in the repo, version it with the code.
 
 - **What it is:** an internal new-construction underwriting tool for Tide & Timber's
   Charlotte/Carolinas deals. Since v8.0, two screens: **Site Intelligence** (address → zoning →
-  lot → buildable area & plan fit; geometry only, no money) and **The Underwrite** (hero numbers,
+  lot → buildable area & plan fit; geometry only, no underwriting money: the county's own facts, such as the GIS card's
+  tax value and last sale and the v8.18 street check's $/sf, show there as context and feed nothing) and **The Underwrite** (hero numbers,
   live levers and the worst/base/best board first, then collapsible Plan & build / Lot factor /
   Financing / Sales comps inputs; money only, no geometry), plus PDF/Excel/offer-letter exports.
 - **UI vs. math (v8.0).** The two-screen layout is presentation only. Sections keep their old
@@ -352,7 +353,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   Excel export keep working unchanged. Flag a parallel comps model.
 
 ### Street check (`api/street.js`, v8.18)
-- **What it is:** the lot's own stretch of street (same CAMA `streetname`, `STREET_FT` = 1,000 ft) compared with its
+- **What it is:** the lot's own stretch of street (same CAMA `streetname`, `STREET_FT` = 1,000 ft; CAMA drops the
+  direction, so when the centreline is "N DAVIDSON ST" the parcels addressed on the other half are dropped via the Accela
+  address points) compared with its
   assessor neighbourhood on the county records (recent sale $/sf, assessed building value $/sf, homes graded below
   Average, vacant lots, commercial / industrial parcels, homes built 2020+), for the "bad street in a good area" case.
   Mecklenburg-only, like `gis.js` and `comps.js`. Plus a Street View camera spot: the nearest point on the street's
@@ -372,8 +375,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   negative.
 - **The comparison area.** The assessor neighbourhood, unless it's a commercial market area (`SUBMARKET` in its name:
   "RETAIL - NORTHEAST SUBMARKET") or has fewer than `MIN_AREA_HOMES` homes; then every parcel within half a mile. A new
-  lot with no code takes the most common non-commercial code within 300 ft. Parcels with the subject's owner are left
-  out of the street (usually the rest of the same site).
+  lot with no code takes the most common non-commercial code within 300 ft. Unbuilt lots with the subject's owner are
+  left out of the street (usually the rest of the same site); a builder's finished homes still count.
+- **Sales are home sales.** Each home's CAMA last sale counts when market-valid (blank or Z), in the window, not before
+  the year built, and not sold as vacant on `TaxParcelSales` (newest market row, `/^Y/i`, as in comps): a builder's lot
+  purchase in the build year would otherwise count at lot price. Both sides need enough evidence (`CHECKS[].enough`)
+  or the check reads "Too few". A partial answer (a county layer down) is sent `no-store`.
 - **Thresholds are judgement, not backtested** (`CHECKS`), and the card says so. Don't present the verdict as measured
   until it has been backtested against the team's own "bad street" calls.
 - **Stale answers.** `checkStreet()` takes `gisAddressSignature()` and `_dealGen` before the fetch and drops an answer

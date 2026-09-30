@@ -1839,7 +1839,7 @@ async function pullCountyComps(){
   if(!pid){ say('Run <b>\ud83d\udef0 Auto-fill from County GIS</b> on Site Intelligence first \u2014 the comp search keys off the county parcel id.','var(--amber)'); return; }
   // Guard against a stale cache even if onAddrChange never fired (paste, autofill, restored deal).
   if(gis.addrSig && gis.addrSig!==gisAddressSignature()){
-    window._lastGis=null;
+    window._lastGis=null;hideStreetCheck();
     say('The address changed since the last GIS lookup, so the cached parcel id belongs to a different property. Run <b>\ud83d\udef0 Auto-fill from County GIS</b> again first.','var(--amber)');
     return;
   }
@@ -2612,7 +2612,7 @@ function renderStreetCheck(d){
     if(sv.embed_key)h+='<iframe class="sv-frame" title="Street View of the lot" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps/embed/v1/streetview?key='
       +encodeURIComponent(sv.embed_key)+'&location='+at.lat+','+at.lng+hd+'&pitch=0&fov=90"></iframe>';
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><a class="topo-btn" style="margin:0" target="_blank" rel="noopener" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint='
-      +at.lat+','+at.lng+hd+'">🚶 Walk '+E(sub.street||'the street')+' in Google Street View ↗</a>'
+      +at.lat+','+at.lng+hd+'">🚶 Walk '+E(sub.street_label||sub.street||'the street')+' in Google Street View ↗</a>'
       +'<span style="font-size:11px;color:'+dim+'">'+(sv.camera?'Opens on the street in front of the lot, facing it. Check the capture date in the corner.':'Opens at the lot.')+'</span></div>';
   }
   if(d.verdict){
@@ -2622,7 +2622,7 @@ function renderStreetCheck(d){
   if(s&&n){
     const fmt=(k,v)=>v==null?'—':(k==='sale_psf'||k==='value_psf')?'$'+Math.round(v).toLocaleString()+'/sf':(Math.round(v*10)/10)+'%';
     const cnt=(k,p)=>k==='sale_psf'?p.sale_count+' sale'+(p.sale_count===1?'':'s'):k==='value_psf'?p.value_count+' homes'
-      :k==='below_avg'?p.graded+' graded':k==='new_builds'?p.homes+' homes':p.parcels+' parcels';
+      :k==='below_avg_pct'?p.graded+' graded':k==='new_builds_pct'?p.homes+' homes':p.parcels+' parcels';
     const CH={weaker:['Weaker','var(--red)'],stronger:['Stronger','var(--green)'],similar:['Similar',dim],thin:['Too few',dim]};
     const area=n.kind==='radius'?'Half mile':'Neighbourhood';
     h+='<div style="font-size:11px;color:'+dim+'">This street: '+E(s.label)+' · '+s.homes+' homes on '+s.parcels+' parcels. '

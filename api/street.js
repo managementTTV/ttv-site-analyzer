@@ -20,29 +20,33 @@
 //
 // Sources, all Mecklenburg County / City of Charlotte public ArcGIS (no key):
 //   TaxParcel_camadata   -> land use, vacant/improved, grade, year built, heated sf, building value, last sale
+//   TaxParcelSales       -> the sold-as-vacant flag on those last sales (a builder's lot purchase isn't a home sale)
 //   TaxParcelBoundaries  -> the subject's centre when the CAMA record has no coordinates
+//   Accela 1             -> address points, to tell N Davidson St from S Davidson St (CAMA drops the direction)
 //   Accela 2 / 3         -> City / State maintained street centrelines (camera spot for Street View)
 // Mecklenburg-only by design, same as api/gis.js and api/comps.js. Hit /api/street?pid=04118535
 const MECK = 'https://meckgis.mecklenburgcountync.gov/server/rest/services';
 const CAMA_LAYER   = `${MECK}/TaxParcel_camadata/MapServer/0`;
+const SALES_LAYER  = `${MECK}/TaxParcelSales/MapServer/0`;
 const PARCEL_LAYER = `${MECK}/TaxParcelBoundaries/MapServer/0`;
 const CITY = 'https://gis.charlottenc.gov/arcgis/rest/services/Accela/Accela/MapServer';
-const STREET_LAYERS = [2, 3];
+const ADDRESS_LAYER = 1, STREET_LAYERS = [2, 3];
 const CAMA_FIELDS = 'pid,streetname,streetnumber,neighborhood,neighbordesc,lusecode,landuse_description,vacorimprov,'
   + 'grade,yearbuilt,heatedarea,totalbldgval,saleprice,saledate,validsale,xcoord,ycoord,ownrlstnme,ownrfrstnme';
 
 const STREET_FT = 1000;          // how far along the street, each way, counts as "this street" (about two blocks)
 const NEAR_FT = 300;             // parcels this close stand in for a new lot that has no neighbourhood code yet
 const CAMERA_MAX_FT = 400;       // a centreline further than this from the lot isn't its street
-const SALE_MONTHS = 60;         // one street has only a few sales a year; the same window applies to both sides
-const MIN_SALE = 50000;          // drops lot and family transfers the validity code missed
-const NEW_SINCE = 2020;
+const SALE_MONTHS = 60;          // one street has only a few sales a year; the same window applies to both sides
+const MIN_SALE = 50000;          // drops family transfers the validity code missed
+const NEW_SINCE = 2020;          // same "new build" line as api/comps.js minYear
 const AREA_FT = 2640;            // the fallback comparison area: every parcel within half a mile
 const MIN_AREA_HOMES = 30;       // fewer homes than this in the assessor neighbourhood: too few to compare with
 // The assessor also codes parcels to commercial market areas ("APARTMENT - NORTHWEST SUBMARKET", "RETAIL - …",
 // "OFFICE - …", "INDUSTRIAL - …", codes AP / RE / OF / IN), which aren't neighbourhoods.
-const COMMERCIAL_AREA = /SUBMARKET/i;          // same "new build" line as api/comps.js minYear
+const COMMERCIAL_AREA = /SUBMARKET/i;
 const PAGE = 2000, MAX_PAGES = 4;  // CAMA maxRecordCount is 2000; the largest neighbourhoods are ~3,300 parcels
+const PID_CHUNK = 250;             // parcel ids per sales-layer query (POST, so no URL limit)
 // Sale-validity codes counted as market sales: blank = arm's length, Z = builder sale (same as api/comps.js).
 const MARKET_VALIDITY = ['', 'Z'];
 const GRADE_RANK = { MINIMUM:1, FAIR:2, AVERAGE:3, GOOD:4, 'VERY GOOD':5, EXCELLENT:6, CUSTOM:6 };
@@ -51,15 +55,22 @@ const GRADE_RANK = { MINIMUM:1, FAIR:2, AVERAGE:3, GOOD:4, 'VERY GOOD':5, EXCELL
 // counted.
 const NONRES_USE = /^(C|I|O)\d/i, NONRES_CODES = ['9100', '9404'];
 
-// What "weaker" means for each check. Minimum evidence on the street first, then the gap to the neighbourhood.
-const CHECKS = {
-  sale_psf:   { min:3, weaker:-0.15, stronger:0.10 },   // median recent sale $/sf, relative gap
-  value_psf:  { min:5, weaker:-0.15, stronger:0.15 },   // median assessed building value $/sf, relative gap
-  below_avg:  { min:5, weaker:15 },                     // % of homes graded Fair / Minimum, points above
-  vacant:     { minCount:2, weaker:10 },                // % of parcels that are vacant lots, points above
-  nonres:     { minCount:2, weaker:10 },                // % commercial / industrial / utility, points above
-  new_builds: { minCount:2, stronger:10 },              // % of homes built NEW_SINCE+, points above (a good sign)
-};
+// What "weaker" means, check by check. `enough` is the evidence both sides need (else "Too few"); `gap` is the
+// street's value relative to the area's ('rel', a fraction) or minus it ('pts', percentage points).
+const CHECKS = [
+  {key:'sale_psf', label:'Recent sales, $/sf', gap:'rel',
+    enough:(s,n)=>s.sale_count>=3 && n.sale_count>=5, weaker:g=>g<=-0.15, stronger:g=>g>=0.10},
+  {key:'value_psf', label:'Assessed building value, $/sf', gap:'rel',
+    enough:(s,n)=>s.value_count>=5 && n.value_count>=10, weaker:g=>g<=-0.15, stronger:g=>g>=0.15},
+  {key:'below_avg_pct', label:'Homes graded below Average', gap:'pts',
+    enough:(s,n)=>s.graded>=5 && n.graded>=10, weaker:g=>g>=15},
+  {key:'vacant_pct', label:'Vacant lots', gap:'pts',
+    enough:(s,n)=>s.parcels>=5 && n.parcels>=10, weaker:(g,s)=>s.vacant>=2 && g>=10},
+  {key:'nonres_pct', label:'Commercial / industrial parcels', gap:'pts',
+    enough:(s,n)=>s.parcels>=5 && n.parcels>=10, weaker:(g,s)=>s.nonres>=2 && g>=10},
+  {key:'new_builds_pct', label:`Homes built ${NEW_SINCE}+`, gap:'pts', info:true,   // a good sign, never a weakness
+    enough:(s,n)=>s.homes>=5 && n.homes>=10, stronger:(g,s)=>s.new_builds>=2 && g>=10},
+];
 
 async function ajPost(url, params){
   const body = new URLSearchParams(params).toString();
@@ -74,37 +85,62 @@ const sq = s => String(s).replace(/'/g, "''");
 function median(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); const m=s.length>>1;
   return s.length%2 ? s[m] : (s[m-1]+s[m])/2; }
 const pct = (n, d) => d ? Math.round(n/d*1000)/10 : null;
-// Metres-free local plane: feet east / north of a reference point. Good to a fraction of a foot over a few blocks.
+// Local plane: feet east / north of a reference point. Good to a fraction of a foot over a few blocks.
 function toFt(ref, lat, lng){ const k=364000; return {x:(lng-ref.lng)*k*Math.cos(ref.lat*Math.PI/180), y:(lat-ref.lat)*k}; }
 function fromFt(ref, p){ const k=364000; return {lat:ref.lat+p.y/k, lng:ref.lng+p.x/(k*Math.cos(ref.lat*Math.PI/180))}; }
 function bearing(a, b){ const r=d=>d*Math.PI/180, y=Math.sin(r(b.lng-a.lng))*Math.cos(r(b.lat)),
   x=Math.cos(r(a.lat))*Math.sin(r(b.lat))-Math.sin(r(a.lat))*Math.cos(r(b.lat))*Math.cos(r(b.lng-a.lng));
   return (Math.atan2(y,x)*180/Math.PI+360)%360; }
 
-// Every CAMA row matching a where / spatial filter, paged.
-async function camaRows(params){
+// Every row matching a where / spatial filter, paged.
+async function allRows(layer, params, outFields){
   const rows = [];
   for(let p=0; p<MAX_PAGES; p++){
-    const j = await ajPost(`${CAMA_LAYER}/query`, Object.assign({outFields:CAMA_FIELDS, returnGeometry:'false',
-      orderByFields:'objectid_1', resultOffset:String(p*PAGE), resultRecordCount:String(PAGE), f:'json'}, params));
+    const j = await ajPost(`${layer}/query`, Object.assign({outFields, returnGeometry:'false',
+      resultOffset:String(p*PAGE), resultRecordCount:String(PAGE), f:'json'}, params));
     (j.features||[]).forEach(f=>rows.push(f.attributes));
     if(!j.exceededTransferLimit && (j.features||[]).length < PAGE) return {rows, truncated:false};
   }
   return {rows, truncated:true};
 }
+const camaRows = params => allRows(CAMA_LAYER, Object.assign({orderByFields:'objectid_1'}, params), CAMA_FIELDS);
 const within = (lat, lng, ft) => ({geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint', inSR:'4326',
   spatialRel:'esriSpatialRelIntersects', distance:String(ft), units:'esriSRUnit_Foot'});
 
 function isVacant(r){ return /^VAC/i.test((r.vacorimprov||'').trim()) && !(num(r.heatedarea)>0); }
 // Some homes carry a commercial code ("C700 MULTI FAMILY", "O400 MULTI FAMILY"): the description decides, so housing of
-// any kind never counts as a commercial neighbour.
+// any kind never counts as a commercial neighbour. A commercial, office or warehouse condominium is still commercial.
 const HOUSING_DESC = /RESIDENTIAL|MULTI ?FAMIL|APARTMENT|AFFORDABLE|CONDO|TOWN ?HOUSE|DUPLEX|TRIPLEX|MOBILE HOME|HOME FOR THE AGED/i;
-function isNonRes(r){ const c=(r.lusecode||'').trim();
-  return (NONRES_USE.test(c) || NONRES_CODES.includes(c)) && !HOUSING_DESC.test(r.landuse_description||''); }
+const BUSINESS_DESC = /COMMERCIAL|OFFICE|WAREHOUSE|MEDICAL|RETAIL|INDUSTRIAL|HOTEL/i;
+function isNonRes(r){ const c=(r.lusecode||'').trim(), d=r.landuse_description||'';
+  return (NONRES_USE.test(c) || NONRES_CODES.includes(c)) && (BUSINESS_DESC.test(d) || !HOUSING_DESC.test(d)); }
 function isHome(r){ const c=(r.lusecode||'').trim(), d=(r.landuse_description||'');
   return num(r.heatedarea)>0 && (/^R/i.test(c) || (!c && /RESIDENTIAL|TOWN ?HOUSE|CONDO/i.test(d))); }
+// The CAMA row carries each parcel's last sale. A home sale counts when it's market-valid (blank or Z), in the window,
+// and not before the house was built (that sold the lot or the old house; same rule as api/comps.js).
+function isHomeSale(r, since){
+  const v=(r.validsale||'').trim().toUpperCase(), d=r.saledate, p=num(r.saleprice);
+  if(!isHome(r) || !MARKET_VALIDITY.includes(v) || !(p>=MIN_SALE) || !(typeof d==='number' && d>=since)) return false;
+  return !(r.yearbuilt && new Date(d).getUTCFullYear() < r.yearbuilt);
+}
+// Parcels whose newest market-valid sale in the window was sold as vacant: a builder's lot purchase in the year the house
+// was built passes the year-built test, and at lot price it would drag the street's $/sf down (api/comps.js drops these
+// too; the county stores the flag as 'Yes' / 'No').
+async function lotSalePids(pids, since){
+  const lots = new Set(), iso = new Date(since).toISOString().slice(0,10);
+  for(let i=0; i<pids.length; i+=PID_CHUNK){
+    const chunk = pids.slice(i, i+PID_CHUNK);
+    const {rows} = await allRows(SALES_LAYER, {where:`parcelid IN (${chunk.map(p=>`'${sq(p)}'`).join(',')}) AND saledate >= DATE '${iso}'`,
+      orderByFields:'objectid'}, 'parcelid,saledate,salesvalidity,soldasvacantflag');
+    const newest = new Map();
+    rows.forEach(a=>{ if(!MARKET_VALIDITY.includes((a.salesvalidity||'').trim().toUpperCase())) return;
+      const prev = newest.get(a.parcelid); if(!prev || (a.saledate||0) > (prev.saledate||0)) newest.set(a.parcelid, a); });
+    newest.forEach((a, p)=>{ if(/^Y/i.test((a.soldasvacantflag||'').trim())) lots.add(p); });
+  }
+  return lots;
+}
 
-function profile(rows, since){
+function profile(rows, since, lots){
   const homes = rows.filter(isHome);
   const vacant = rows.filter(isVacant).length;
   const nonres = rows.filter(isNonRes);
@@ -115,13 +151,8 @@ function profile(rows, since){
   const years = homes.map(r=>r.yearbuilt).filter(y=>y>1800);
   const newB = years.filter(y=>y>=NEW_SINCE).length;
   const vpsf = homes.map(r=>num(r.totalbldgval)/num(r.heatedarea)).filter(v=>isFinite(v)&&v>0);
-  // The CAMA row carries each parcel's last sale. Counted: a market-valid sale in the window, not before the house
-  // was built (that sold the lot or the old house; same rule as api/comps.js).
-  const sales = homes.filter(r=>{
-    const v=(r.validsale||'').trim().toUpperCase(), d=r.saledate, p=num(r.saleprice);
-    if(!MARKET_VALIDITY.includes(v) || !(p>=MIN_SALE) || !(typeof d==='number' && d>=since)) return false;
-    return !(r.yearbuilt && new Date(d).getUTCFullYear() < r.yearbuilt);
-  }).map(r=>num(r.saleprice)/num(r.heatedarea));
+  const sold = rows.filter(r=>isHomeSale(r, since)), lotSales = sold.filter(r=>lots.has(r.pid)).length;
+  const sales = sold.filter(r=>!lots.has(r.pid)).map(r=>num(r.saleprice)/num(r.heatedarea));
   return {
     parcels: rows.length, homes: homes.length,
     vacant, vacant_pct: pct(vacant, rows.length),
@@ -132,39 +163,25 @@ function profile(rows, since){
     median_year_built: years.length ? Math.round(median(years)) : null,
     new_builds: newB, new_builds_pct: pct(newB, years.length),
     value_psf: vpsf.length ? Math.round(median(vpsf)) : null, value_count: vpsf.length,
-    sale_psf: sales.length ? Math.round(median(sales)) : null, sale_count: sales.length,
+    sale_psf: sales.length ? Math.round(median(sales)) : null, sale_count: sales.length, lot_sales_left_out: lotSales,
   };
 }
 
-// Street vs neighbourhood, check by check. 'thin' = too little on the street to say.
+// Street vs area, check by check. 'thin' = too little evidence on either side to say.
 function compare(s, n){
-  const out = [];
-  const rel = (a, b) => (a!=null && b) ? a/b-1 : null;
-  const push = (key, label, verdict, street, nbh, gap) => out.push({key, label, verdict, street, nbh, gap});
-  { const c=CHECKS.sale_psf, g=rel(s.sale_psf, n.sale_psf);
-    push('sale_psf', 'Recent sales, $/sf', s.sale_count<c.min||g==null?'thin':g<=c.weaker?'weaker':g>=c.stronger?'stronger':'similar',
-      s.sale_psf, n.sale_psf, g==null?null:Math.round(g*100)); }
-  { const c=CHECKS.value_psf, g=rel(s.value_psf, n.value_psf);
-    push('value_psf', 'Assessed building value, $/sf', s.value_count<c.min||g==null?'thin':g<=c.weaker?'weaker':g>=c.stronger?'stronger':'similar',
-      s.value_psf, n.value_psf, g==null?null:Math.round(g*100)); }
-  { const c=CHECKS.below_avg, g=(s.below_avg_pct!=null&&n.below_avg_pct!=null)?s.below_avg_pct-n.below_avg_pct:null;
-    push('below_avg', 'Homes graded below Average', s.graded<c.min||g==null?'thin':g>=c.weaker?'weaker':'similar',
-      s.below_avg_pct, n.below_avg_pct, g==null?null:Math.round(g)); }
-  { const c=CHECKS.vacant, g=(s.vacant_pct!=null&&n.vacant_pct!=null)?s.vacant_pct-n.vacant_pct:null;
-    push('vacant', 'Vacant lots', g==null?'thin':(s.vacant>=c.minCount&&g>=c.weaker)?'weaker':'similar',
-      s.vacant_pct, n.vacant_pct, g==null?null:Math.round(g)); }
-  { const c=CHECKS.nonres, g=(s.nonres_pct!=null&&n.nonres_pct!=null)?s.nonres_pct-n.nonres_pct:null;
-    push('nonres', 'Commercial / industrial parcels', g==null?'thin':(s.nonres>=c.minCount&&g>=c.weaker)?'weaker':'similar',
-      s.nonres_pct, n.nonres_pct, g==null?null:Math.round(g)); }
-  { const c=CHECKS.new_builds, g=(s.new_builds_pct!=null&&n.new_builds_pct!=null)?s.new_builds_pct-n.new_builds_pct:null;
-    push('new_builds', `Homes built ${NEW_SINCE}+`, g==null?'thin':(s.new_builds>=c.minCount&&g>=c.stronger)?'stronger':'similar',
-      s.new_builds_pct, n.new_builds_pct, g==null?null:Math.round(g)); }
-  return out;
+  return CHECKS.map(c=>{
+    const a = s[c.key], b = n[c.key];
+    const g = (a==null || b==null) ? null : c.gap==='rel' ? (b ? a/b-1 : null) : a-b;
+    const verdict = (g==null || !c.enough(s,n)) ? 'thin' : (c.weaker && c.weaker(g,s)) ? 'weaker'
+      : (c.stronger && c.stronger(g,s)) ? 'stronger' : 'similar';
+    return {key:c.key, label:c.label, verdict, street:a, nbh:b, gap:g==null?null:Math.round(c.gap==='rel'?g*100:g)};
+  });
 }
 // area: 'its neighbourhood' or 'the half mile around it'
 function verdictFor(checks, s, area){
   const weak = checks.filter(c=>c.verdict==='weaker'), strong = checks.filter(c=>c.verdict==='stronger');
-  const judged = checks.filter(c=>c.verdict!=='thin' && c.key!=='new_builds').length;
+  const info = new Set(CHECKS.filter(c=>c.info).map(c=>c.key));
+  const judged = checks.filter(c=>c.verdict!=='thin' && !info.has(c.key)).length;
   const names = a => a.map(c=>c.label.toLowerCase()).join(', ');
   if(s.homes < 3 && !weak.length) return {level:'thin', text:`Only ${s.homes} home${s.homes===1?'':'s'} on this stretch of street, too few to compare. Walk it in Street View.`};
   if(weak.length >= 2) return {level:'weaker', text:`This street looks weaker than ${area} on ${weak.length} of ${judged} checks (${names(weak)}). Walk it before you trust the area's numbers.`};
@@ -172,21 +189,38 @@ function verdictFor(checks, s, area){
   return {level:'in-line', text:`In line with ${area} on the county data${strong.length?` (stronger on ${names(strong)})`:''}. Still walk it: the records can't see upkeep, traffic or what's across the street.`};
 }
 
+// The nearest point on the lot's street centreline, in the local plane around ref (the lot), and that line's name.
+function nearestOnLine(ref, layers){
+  let best = null;
+  (layers||[]).forEach(j=>(j.features||[]).forEach(f=>((f.geometry&&f.geometry.paths)||[]).forEach(path=>{
+    for(let i=0;i<path.length-1;i++){
+      const A=toFt(ref,path[i][1],path[i][0]), B=toFt(ref,path[i+1][1],path[i+1][0]);
+      const dx=B.x-A.x, dy=B.y-A.y, L=dx*dx+dy*dy;
+      const t=L?Math.max(0,Math.min(1,(-A.x*dx-A.y*dy)/L)):0;
+      const C={x:A.x+t*dx, y:A.y+t*dy}, d=Math.hypot(C.x, C.y);
+      if(!best || d<best.d) best={d, pt:C, name:((f.attributes&&f.attributes.WHOLESTNAME)||'').trim().toUpperCase()};
+    }
+  })));
+  return best;
+}
+
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin','*');
-  res.setHeader('Cache-Control','s-maxage=3600, stale-while-revalidate');
   const q = req.query || {};
   const pid = (q.pid||'').trim();
   const ft = Math.min(Math.max(parseInt(q.ft)||STREET_FT, 300), 2640);
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
-  if(!/^[0-9A-Z]{8}$/i.test(pid)){ res.status(400).json({error:'pass ?pid= (an 8-character Mecklenburg parcel id)'}); return; }
+  // a partial answer (a county layer down) isn't cached, so a re-check can get the whole one
+  const send = () => { res.setHeader('Cache-Control', out.errors.length ? 'no-store' : 's-maxage=3600, stale-while-revalidate');
+    res.status(200).json(out); };
+  if(!/^[0-9A-Z]{8}$/i.test(pid)){ res.setHeader('Cache-Control','no-store'); res.status(400).json({error:'pass ?pid= (an 8-character Mecklenburg parcel id)'}); return; }
 
   try{
     // 1) the subject: street name, neighbourhood code and a point
     const sj = await ajPost(`${CAMA_LAYER}/query`, {where:`pid='${sq(pid)}'`, outFields:CAMA_FIELDS, returnGeometry:'false', f:'json'});
     const a = (sj.features||[])[0] && sj.features[0].attributes;
-    if(!a){ out.errors.push('No assessor record for PID '+pid+'.'); res.status(200).json(out); return; }
+    if(!a){ out.errors.push('No assessor record for PID '+pid+'.'); return send(); }
     let lat = num(a.xcoord), lng = num(a.ycoord);   // camadata stores latitude in xcoord, longitude in ycoord
     if(lat==null || lng==null){
       try{
@@ -196,99 +230,113 @@ export default async function handler(req, res){
       }catch(e){ out.errors.push('subject_parcel: '+e.message); }
     }
     const street = (a.streetname||'').trim().toUpperCase();
-    out.subject = {pid, street:street||null, number:(a.streetnumber||'').trim()||null, lat, lng,
-      neighborhood:{code:(a.neighborhood||'').trim()||null, name:(a.neighbordesc||'').trim()||null, inferred:false}};
-    if(lat==null || lng==null){ out.errors.push('No location for PID '+pid+'.'); res.status(200).json(out); return; }
+    const nb = {code:(a.neighborhood||'').trim()||null, name:(a.neighbordesc||'').trim()||null, inferred:false};
+    out.subject = {pid, street:street||null, number:(a.streetnumber||'').trim()||null, lat, lng, neighborhood:nb};
+    if(lat==null || lng==null){ out.errors.push('No location for PID '+pid+'.'); return send(); }
     if(!street) out.notes.push('The assessor record has no street name for this lot, so there is no street to compare.');
 
-    // 2) this street, the parcels right around the lot, and the street centreline: independent, non-fatal
-    const [stR, nearR, lineR] = await Promise.allSettled([
+    // 2) independent, non-fatal, in parallel: this street, the street centreline, and the neighbourhood when the lot
+    //    has a code (else the parcels right around it, to borrow one)
+    const useCode = nb.code && !COMMERCIAL_AREA.test(nb.name||'');
+    const [stR, lineR, nbR, nearR] = await Promise.allSettled([
       street ? camaRows(Object.assign({where:`streetname='${sq(street)}'`}, within(lat, lng, ft))) : Promise.resolve(null),
-      camaRows(Object.assign({where:'1=1'}, within(lat, lng, NEAR_FT))),
       street ? Promise.all(STREET_LAYERS.map(l=>ajPost(`${CITY}/${l}/query`, Object.assign({
         // CAMA drops the direction ("DAVIDSON ST" for N and S Davidson); the centreline keeps it ("N DAVIDSON ST")
         where:`WHOLESTNAME='${sq(street)}' OR WHOLESTNAME LIKE '% ${sq(street)}'`, outFields:'WHOLESTNAME',
         returnGeometry:'true', outSR:'4326', f:'json'}, within(lat, lng, CAMERA_MAX_FT))).catch(()=>({features:[]})))) : Promise.resolve(null),
+      useCode ? camaRows({where:`neighborhood='${sq(nb.code)}'`}) : Promise.resolve(null),
+      nb.code ? Promise.resolve(null) : camaRows(Object.assign({where:'1=1'}, within(lat, lng, NEAR_FT))),
     ]);
     if(stR.status==='rejected') out.errors.push('street: '+stR.reason.message);
+    if(nbR.status==='rejected') out.errors.push('neighborhood: '+nbR.reason.message);
     if(nearR.status==='rejected') out.errors.push('nearby: '+nearR.reason.message);
+    const cam = lineR.status==='fulfilled' ? nearestOnLine({lat, lng}, lineR.value) : null;
 
-    // a new lot has no neighbourhood code yet: take the most common one right around it
-    const nb = out.subject.neighborhood;
-    if(!nb.code && nearR.status==='fulfilled'){
+    // 3) the street. With a direction on the centreline ("N DAVIDSON ST"), parcels addressed on the other half
+    //    ("S DAVIDSON ST", or no direction) are dropped, since CAMA files both under "DAVIDSON ST".
+    let stRows = stR.status==='fulfilled' && stR.value ? stR.value.rows : null, label = street;
+    const dm = cam && cam.name && cam.name.match(/^(N|S|E|W)\s+(.+)$/);
+    if(stRows && dm && dm[2]===street){
+      label = cam.name;
+      try{
+        const nm = street.split(/\s+/).slice(0,-1).join(' ') || street;   // "DAVIDSON ST" -> DAVIDSON (type dropped)
+        const {rows} = await allRows(`${CITY}/${ADDRESS_LAYER}`, Object.assign({
+          where:`nme_street='${sq(nm)}' AND (cde_street_dir_prfx IS NULL OR cde_street_dir_prfx<>'${dm[1]}')`,
+          orderByFields:'OBJECTID'}, within(lat, lng, ft)), 'TAX_PID,GIS_PID');
+        const other = new Set(); rows.forEach(r=>{ if(r.TAX_PID) other.add(r.TAX_PID); if(r.GIS_PID) other.add(r.GIS_PID); });
+        const before = stRows.length; stRows = stRows.filter(r=>!other.has(r.pid));
+        if(stRows.length < before) out.notes.push(`${before-stRows.length} parcel${before-stRows.length===1?'':'s'} on the other half of ${street} (not ${cam.name}) left out.`);
+      }catch(e){ out.errors.push('direction: '+e.message); }
+    }
+    out.subject.street_label = label || null;
+    // The rest of the same site: other vacant lots with the subject's owner on the street (a three-lot sub-division
+    // shouldn't count its own lots against the street). Only unbuilt lots, so a builder's finished homes still count.
+    const own = (a.ownrlstnme||'').trim().toUpperCase()+'|'+(a.ownrfrstnme||'').trim().toUpperCase();
+    const sameSite = r => !!(a.ownrlstnme||'').trim() && !(num(r.heatedarea)>0)
+      && ((r.ownrlstnme||'').trim().toUpperCase()+'|'+(r.ownrfrstnme||'').trim().toUpperCase())===own;
+    if(stRows){
+      const rest = stRows.filter(r=>r.pid!==pid), kept = rest.filter(r=>!sameSite(r));
+      if(kept.length < rest.length) out.notes.push(`${rest.length-kept.length} other unbuilt lot${rest.length-kept.length===1?'':'s'} with the subject's owner left out of the street (likely the same site).`);
+      stRows = kept;
+    }
+
+    // 4) the comparison area: the assessor neighbourhood (the county's own market area, the strongest pricing signal
+    //    in the comps backtest). A new lot borrows the most common code within NEAR_FT. A commercial market area
+    //    ("RETAIL - NORTHEAST SUBMARKET"), a neighbourhood with few homes, or no code at all: everything within half a mile.
+    let areaRows = null, area = null;
+    if(nbR.status==='fulfilled' && nbR.value) areaRows = nbR.value;
+    if(!nb.code && nearR.status==='fulfilled' && nearR.value){
       const count = {}; nearR.value.rows.forEach(r=>{ const c=(r.neighborhood||'').trim(); if(c && !COMMERCIAL_AREA.test(r.neighbordesc||'')){ count[c]=count[c]||{n:0,name:(r.neighbordesc||'').trim()}; count[c].n++; } });
       const best = Object.entries(count).sort((x,y)=>y[1].n-x[1].n)[0];
       if(best){ nb.code=best[0]; nb.name=best[1].name||null; nb.inferred=true;
-        out.notes.push(`The lot has no assessor neighbourhood yet (a new lot), so it takes ${nb.name||nb.code}, the most common one within ${NEAR_FT} ft.`); }
+        out.notes.push(`The lot has no assessor neighbourhood yet (a new lot), so it takes ${nb.name||nb.code}, the most common one within ${NEAR_FT} ft.`);
+        try{ areaRows = await camaRows({where:`neighborhood='${sq(nb.code)}'`}); }catch(e){ out.errors.push('neighborhood: '+e.message); }
+      }
     }
-
-    // 3) the neighbourhood
-    const since = Date.now() - SALE_MONTHS*30.44*86400000;
-    const own = (a.ownrlstnme||'').trim().toUpperCase()+'|'+(a.ownrfrstnme||'').trim().toUpperCase();
-    // The subject and anything else its owner holds on the street (usually the rest of the same site) are left out,
-    // so a three-lot sub-division doesn't count its own vacant lots against the street.
-    const others = rows => rows.filter(r=>r.pid!==pid && !((r.ownrlstnme||'').trim() && ((r.ownrlstnme||'').trim().toUpperCase()+'|'+(r.ownrfrstnme||'').trim().toUpperCase())===own));
-    if(stR.status==='fulfilled' && stR.value){
-      const rows = others(stR.value.rows), mine = stR.value.rows.length - rows.length - (stR.value.rows.some(r=>r.pid===pid)?1:0);
-      out.street = Object.assign({label:`${street} within ${ft.toLocaleString()} ft`}, profile(rows, since));
-      if(mine>0) out.notes.push(`${mine} other parcel${mine===1?'':'s'} with the subject's owner left out of the street (likely the same site).`);
-    }
-    // The comparison area is the assessor neighbourhood: the county's own market area, the strongest pricing signal in
-    // the comps backtest. Some homes sit in a commercial market area ("RETAIL - NORTHEAST SUBMARKET") with a handful
-    // of homes, and some have no code at all; those compare with every parcel within half a mile instead.
-    if(nb.code && COMMERCIAL_AREA.test(nb.name||'')) out.notes.push(`The lot's assessor code is a commercial market area (${nb.name}), not a neighbourhood, so the street is compared with everything within half a mile.`);
-    else if(nb.code){
-      try{
-        const nr = await camaRows({where:`neighborhood='${sq(nb.code)}'`});
-        const p = profile(others(nr.rows), since);
-        if(p.homes >= MIN_AREA_HOMES){
-          out.neighborhood = Object.assign({label:`${nb.name||'Neighbourhood'} (${nb.code})`, kind:'neighborhood'}, p);
-          if(nr.truncated) out.notes.push(`The neighbourhood has more than ${(PAGE*MAX_PAGES).toLocaleString()} parcels; the first ${(PAGE*MAX_PAGES).toLocaleString()} were used.`);
-        } else out.notes.push(`The assessor neighbourhood (${nb.name||nb.code}) has only ${p.homes} home${p.homes===1?'':'s'}, so the street is compared with everything within half a mile instead.`);
-      }catch(e){ out.errors.push('neighborhood: '+e.message); }
-    } else out.notes.push('No assessor neighbourhood for this lot or its neighbours, so the street is compared with everything within half a mile.');
-    if(!out.neighborhood){
+    if(areaRows){
+      const homes = areaRows.rows.filter(r=>r.pid!==pid && isHome(r)).length;
+      if(homes >= MIN_AREA_HOMES){
+        area = {label:`${nb.name||'Neighbourhood'} (${nb.code})`, kind:'neighborhood', rows:areaRows.rows.filter(r=>r.pid!==pid)};
+        if(areaRows.truncated) out.notes.push(`The neighbourhood has more than ${(PAGE*MAX_PAGES).toLocaleString()} parcels; the first ${(PAGE*MAX_PAGES).toLocaleString()} were used.`);
+      } else out.notes.push(`The assessor neighbourhood (${nb.name||nb.code}) has only ${homes} home${homes===1?'':'s'}, so the street is compared with everything within half a mile instead.`);
+    } else if(nb.code && !useCode && !nb.inferred) out.notes.push(`The lot's assessor code is a commercial market area (${nb.name}), not a neighbourhood, so the street is compared with everything within half a mile.`);
+    else if(!nb.code) out.notes.push('No assessor neighbourhood for this lot or its neighbours, so the street is compared with everything within half a mile.');
+    if(!area && stRows){
       try{
         const ar = await camaRows(Object.assign({where:'1=1'}, within(lat, lng, AREA_FT)));
-        out.neighborhood = Object.assign({label:'Everything within half a mile', kind:'radius'}, profile(others(ar.rows), since));
+        area = {label:'Everything within half a mile', kind:'radius', rows:ar.rows.filter(r=>r.pid!==pid)};
         if(ar.truncated) out.notes.push(`More than ${(PAGE*MAX_PAGES).toLocaleString()} parcels within half a mile; the first ${(PAGE*MAX_PAGES).toLocaleString()} were used.`);
       }catch(e){ out.errors.push('area: '+e.message); }
     }
 
+    // 5) profiles, after one sold-as-vacant check over every home sale either side counts
+    const since = Date.now() - SALE_MONTHS*30.44*86400000;
+    let lots = new Set();
+    const salePids = [...new Set([...(stRows||[]), ...(area?area.rows:[])].filter(r=>isHomeSale(r, since)).map(r=>r.pid))];
+    try{ lots = await lotSalePids(salePids, since); }
+    catch(e){ out.errors.push('sales: '+e.message+' (lot purchases may be counted as home sales)'); }
+    if(stRows) out.street = Object.assign({label:`${label} within ${ft.toLocaleString()} ft`}, profile(stRows, since, lots));
+    if(area) out.neighborhood = Object.assign({label:area.label, kind:area.kind}, profile(area.rows, since, lots));
+    if(out.street && out.street.lot_sales_left_out) out.notes.push(`${out.street.lot_sales_left_out} lot purchase${out.street.lot_sales_left_out===1?'':'s'} (sold as vacant) left out of the street's sales.`);
     if(out.street && out.neighborhood){
       out.checks = compare(out.street, out.neighborhood);
       out.verdict = verdictFor(out.checks, out.street, out.neighborhood.kind==='radius'?'the half mile around it':'its neighbourhood');
     }
 
-    // 4) Street View camera: the nearest point on the lot's own street centreline, facing the lot
-    const ref = {lat, lng};
-    let cam = null;
-    if(lineR.status==='fulfilled' && lineR.value){
-      const P = {x:0, y:0};
-      lineR.value.forEach(j=>(j.features||[]).forEach(f=>((f.geometry&&f.geometry.paths)||[]).forEach(path=>{
-        for(let i=0;i<path.length-1;i++){
-          const A=toFt(ref,path[i][1],path[i][0]), B=toFt(ref,path[i+1][1],path[i+1][0]);
-          const dx=B.x-A.x, dy=B.y-A.y, L=dx*dx+dy*dy;
-          const t=L?Math.max(0,Math.min(1,((P.x-A.x)*dx+(P.y-A.y)*dy)/L)):0;
-          const C={x:A.x+t*dx, y:A.y+t*dy}, d=Math.hypot(C.x, C.y);
-          if(!cam || d<cam.d) cam={d, pt:C, name:f.attributes&&f.attributes.WHOLESTNAME};
-        }
-      })));
-    }
-    const camera = cam && cam.d>=5 ? fromFt(ref, cam.pt) : null;
+    // 6) Street View camera: the nearest point on the lot's own street centreline, facing the lot
+    const camera = cam && cam.d>=5 ? fromFt({lat, lng}, cam.pt) : null;
     out.streetview = {
       lat, lng,
       camera: camera ? {lat:+camera.lat.toFixed(7), lng:+camera.lng.toFixed(7), ft_from_lot:Math.round(cam.d), street:cam.name||null} : null,
-      heading: camera ? Math.round(bearing(camera, ref)) : null,
+      heading: camera ? Math.round(bearing(camera, {lat, lng})) : null,
       // Maps Embed API key: browser-side by design, so it's restricted by HTTP referrer in Google Cloud, and set in
       // Vercel env only. Without it the page links out to Google Maps instead of embedding.
       embed_key: process.env.GOOGLE_MAPS_EMBED_KEY || null,
     };
-    if(!camera) out.notes.push('No City or State maintained centreline for this street near the lot (a private street?), so Street View opens at the lot without a facing.');
-
-    res.status(200).json(out);
+    if(street && !camera) out.notes.push('No City or State maintained centreline for this street near the lot (a private street?), so Street View opens at the lot without a facing.');
+    send();
   }catch(e){
     out.errors.push('fatal: '+e.message);
-    res.status(200).json(out);
+    send();
   }
 }
