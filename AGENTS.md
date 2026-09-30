@@ -448,11 +448,13 @@ most deals take.
     under 2 ft), but only while the merged line stays within 1 sf of the county's. So a GIS lot's area stays within a
     few sf of the county shoelace. It carries the proxy's ROW flags (by length) and front edge along.
   - `designateParcelEdges()` then sets:
-    - front = the proxy's front edge plus the rest of the street line: ROW edges within 45° of it, short ROW chords that
-      keep bending gently (a curve or a cul-de-sac bulb), and collinear edges;
-    - rear = among the back-facing edges that reach within 10 ft of the deepest point (**ROW edges included**: alley
-      and through lots), the one with the most length facing the street, plus the rest of that line (pieces within 15°
-      of the last rear piece);
+    - front = the proxy's front edge plus the rest of the street line: ROW edges within 45° of it, and collinear
+      edges. Past 45°, a run of short ROW chords is front as a cul-de-sac bulb, unless it reaches a longer street edge,
+      when it's a side street's corner radius (corner);
+    - rear = among the back-facing edges that reach within 30 ft of the deepest point (**ROW edges included**: alley
+      and through lots), the most length facing the street, weighted by depth, plus the rest of that line (pieces that
+      face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
+      those 30 ft or at least 40% of the lot's width (an L-shaped lot's step; a notch stays a side);
     - corner = ROW edges running on from the front that turn 45° or more away from it (a side street);
     - each walk passes over one jog of up to 15 ft, which stays a side.
   - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and

@@ -2424,11 +2424,14 @@ function mergeParcelRing(ring,row){
 }
 // Front, rear and corner-side edges for a GIS lot. P: [[x,y]] ft; row: ROW flags or null; fi: the street edge (the
 // proxy's front, or a guess). A jog of up to 15 ft along a line is passed over (it stays a side).
-// - Front = fi plus the rest of the street line: ROW edges within 45° of it, short ROW chords (under 20 ft) that bend
-//   less than 35° from the last front piece (a curve or a cul-de-sac bulb), and edges collinear with it.
+// - Front = fi plus the rest of the street line: ROW edges within 45° of it, and edges collinear with it. Past 45°, a
+//   run of short ROW chords (under 20 ft, each bending less than 35° from the last) is front too, as a cul-de-sac bulb,
+//   unless the run reaches a longer street edge: then it's the corner radius of a side street, and corner.
 // - Rear = of the edges facing away from the street (ROW included: an alley or a second street), the ones reaching
-//   within 10 ft of the deepest point; of those, the one with the most length facing the street. Then the rest of that
-//   line: the pieces either side within 15° of the last rear piece that still face away.
+//   within 30 ft of the deepest point; of those, the most length facing the street, weighted by depth. Then the rest of
+//   that line (pieces that face away squarely, or within 15° of the last rear piece), and any other edge that faces away
+//   squarely and is either 6 ft or more within those 30 ft (a stepped rear) or at least 40% of the lot's width and 20 ft
+//   (the step of an L-shaped lot, which the lot backs onto; a notch stays a side).
 // - Corner side = ROW edges running on from the front that turn 45° or more away from it (a side street).
 // Everything else is a side.
 function designateParcelEdges(P,row,fi){
@@ -2447,22 +2450,33 @@ function designateParcelEdges(P,row,fi){
   const walk=(j0,d,take)=>{let j=j0,last=j0,passed=false;for(let k=1;k<n;k++){j=nxt(j,d);if(des[j]!=='side')break;const t=take(j,last);if(t){des[j]=t;last=j;passed=false;continue;}if(!passed&&E[j].L<=15){passed=true;continue;}break;}};
   des[fi]='front';
   const rw=j=>!!(row&&row[j]);
-  const frontLike=(j,last)=>((rw(j)&&(ang(j,fi)<45||(E[j].L<20&&ang(j,last)<35)))||(ang(j,fi)<8&&offF(E[j].a)<3&&offF(E[j].b)<3))?'front':'';
+  const frontLike=j=>((rw(j)&&ang(j,fi)<45)||(ang(j,fi)<8&&offF(E[j].a)<3&&offF(E[j].b)<3))?'front':'';
   walk(fi,1,frontLike);walk(fi,-1,frontLike);
+  const end=d=>{let j=fi;for(let k=1;k<n&&des[nxt(j,d)]==='front';k++)j=nxt(j,d);return j;};
+  for(const d of [1,-1]){   // a cul-de-sac bulb, or a corner radius (left for the corner walk)
+    let j=end(d),last=j;const run=[];
+    for(let k=1;k<n;k++){const i=nxt(j,d);if(des[i]!=='side')break;if(rw(i)&&E[i].L<20&&ang(i,last)<35){run.push(i);last=j=i;continue;}if(rw(i))run.length=0;break;}
+    run.forEach(i=>{des[i]='front';});
+  }
   let maxD=0;for(let j=0;j<n;j++)maxD=Math.max(maxD,dep(E[j].a),dep(E[j].b));
   let rear=-1,best=0;
+  const deep=j=>Math.max(dep(E[j].a),dep(E[j].b));
   for(let j=0;j<n;j++){
-    if(des[j]!=='side'||facing(j)<0.64||Math.max(dep(E[j].a),dep(E[j].b))<maxD-10)continue;
-    const sc=facing(j)*E[j].L;if(sc>best){best=sc;rear=j;}
+    if(des[j]!=='side'||facing(j)<0.64||deep(j)<maxD-30)continue;
+    const sc=facing(j)*E[j].L*Math.max(0,deep(j))/(maxD||1);if(sc>best){best=sc;rear=j;}
   }
   if(rear<0){   // nothing faces away (a triangle, say): the edge whose midpoint is most opposite the front's, as before
     const cx=P.reduce((t,p)=>t+p[0],0)/n,cy=P.reduce((t,p)=>t+p[1],0)/n,fdx=F.mx-cx,fdy=F.my-cy;best=-Infinity;
     for(let j=0;j<n;j++){if(des[j]!=='side')continue;const sc=-((E[j].mx-cx)*fdx+(E[j].my-cy)*fdy);if(sc>best){best=sc;rear=j;}}
   }
-  if(rear>=0){des[rear]='rear';const rearLike=(j,last)=>(facing(j)>=0.64&&ang(j,last)<=15)?'rear':'';walk(rear,1,rearLike);walk(rear,-1,rearLike);}
+  if(rear>=0){
+    des[rear]='rear';const rearLike=(j,last)=>(facing(j)>=0.9||(facing(j)>=0.64&&ang(j,last)<=15))?'rear':'';walk(rear,1,rearLike);walk(rear,-1,rearLike);
+    const u=P.map(p=>p[0]*F.tx+p[1]*F.ty),wid=Math.max(...u)-Math.min(...u);
+    for(let j=0;j<n;j++)if(des[j]==='side'&&facing(j)>=0.9&&((E[j].L>=6&&deep(j)>=maxD-30)||(E[j].L>=Math.max(20,0.4*wid))))des[j]='rear';
+  }
   if(row){
     const cornerLike=j=>(rw(j)&&ang(j,fi)>=45)?'corner':'';
-    for(const d of [1,-1]){let j=fi;for(let k=1;k<n&&des[nxt(j,d)]==='front';k++)j=nxt(j,d);walk(j,d,cornerLike);}
+    for(const d of [1,-1])walk(end(d),d,cornerLike);
   }
   return des;
 }
