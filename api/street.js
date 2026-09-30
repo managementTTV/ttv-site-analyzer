@@ -215,7 +215,7 @@ function centrelines(street, lat, lng){
     returnGeometry:'true', outSR:'4326', f:'json'}, within(lat, lng, CAMERA_MAX_FT))).catch(()=>({features:[]}))));
 }
 // The centreline's name when it's this street with a direction ("N DAVIDSON ST" for CAMA's "DAVIDSON ST"), else null
-function directedName(cam, street){ const m = cam && cam.name && cam.name.match(/^(N|S|E|W)\s+(.+)$/); return m && m[2]===street ? m : null; }
+function directedName(cam, street){ const m = cam && cam.name && cam.name.match(/^(N|S|E|W)\s+(.+)$/); return m && m[2]===street ? cam.name : null; }
 // Where a Street View camera should stand (the nearest point on that centreline) and which way it faces (the lot).
 // The Maps Embed key goes out only with mode=view, which only streetview.html asks for: the embed must never share a
 // screen with the analyzer's non-Google maps (Maps Platform ToS §3.2.3(e)).
@@ -231,13 +231,15 @@ function streetviewFor(lat, lng, cam, withKey){
   if(withKey) sv.embed_key = process.env.GOOGLE_MAPS_EMBED_KEY || null;
   return sv;
 }
+const NO_CENTRELINE = 'No City or State maintained centreline for this street near the lot (a private street?), so Street View opens at the lot without a facing.';
 
 export default async function handler(req, res){
-  res.setHeader('Access-Control-Allow-Origin','*');
   const q = req.query || {};
-  const pid = (q.pid||'').trim();
-  const ft = Math.min(Math.max(parseInt(q.ft)||STREET_FT, 300), 2640);
   const view = q.mode === 'view';   // streetview.html: the lot and its camera spot only, no county profile
+  // mode=view carries the embed key, so it is same-origin only: another site can't read the key from here
+  if(!view) res.setHeader('Access-Control-Allow-Origin','*');
+  const pid = (q.pid||'').trim().toUpperCase();   // county PIDs are upper case ("08308C99"); the CAMA match is exact
+  const ft = Math.min(Math.max(parseInt(q.ft)||STREET_FT, 300), 2640);
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
   // a partial answer (a county layer down) isn't cached, so a re-check can get the whole one
@@ -266,10 +268,9 @@ export default async function handler(req, res){
     if(view){
       let cam = null;
       if(street){ try{ cam = nearestOnLine({lat, lng}, await centrelines(street, lat, lng)); }catch(e){ out.errors.push('centreline: '+e.message); } }
-      const dm = directedName(cam, street);
-      out.subject.street_label = (dm ? cam.name : street) || null;
+      out.subject.street_label = directedName(cam, street) || street || null;
       out.streetview = streetviewFor(lat, lng, cam, true);
-      if(street && !out.streetview.camera) out.notes.push('No City or State maintained centreline for this street near the lot (a private street?), so Street View opens at the lot without a facing.');
+      if(street && !out.streetview.camera) out.notes.push(NO_CENTRELINE);
       return send();
     }
 
@@ -292,7 +293,7 @@ export default async function handler(req, res){
     let stRows = stR.status==='fulfilled' && stR.value ? stR.value.rows : null, label = street;
     const dm = directedName(cam, street);
     if(stRows && dm){
-      label = cam.name;
+      label = dm;
       try{
         const nm = street.split(/\s+/).slice(0,-1).join(' ') || street;   // "DAVIDSON ST" -> DAVIDSON (type dropped)
         const {rows} = await allRows(`${CITY}/${ADDRESS_LAYER}`, Object.assign({
@@ -360,7 +361,7 @@ export default async function handler(req, res){
 
     // 6) Street View camera: the nearest point on the lot's own street centreline, facing the lot (no key: see mode=view)
     out.streetview = streetviewFor(lat, lng, cam, false);
-    if(street && !out.streetview.camera) out.notes.push('No City or State maintained centreline for this street near the lot (a private street?), so Street View opens at the lot without a facing.');
+    if(street && !out.streetview.camera) out.notes.push(NO_CENTRELINE);
     send();
   }catch(e){
     out.errors.push('fatal: '+e.message);

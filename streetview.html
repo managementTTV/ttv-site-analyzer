@@ -51,7 +51,9 @@ body{font-family:'Montserrat','Helvetica Neue',Arial,sans-serif;background:var(-
   const $=id=>document.getElementById(id);
   const E=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const say=(t,err)=>{$('stage').innerHTML='<div class="msg'+(err?' err':'')+'">'+E(t)+'</div>';};
-  const pid=(new URLSearchParams(location.search).get('pid')||'').trim();
+  // Street View must never be framed into another page (the analyzer's screens draw non-Google maps: ToS §3.2.3(e))
+  if(window.top!==window.self){document.body.innerHTML='<div class="msg err">Street View opens in its own tab. <a class="btn" target="_blank" rel="noopener" href="'+location.href.replace(/"/g,'%22')+'">Open it</a></div>';return;}
+  const pid=(new URLSearchParams(location.search).get('pid')||'').trim().toUpperCase();
   if(!/^[0-9A-Z]{8}$/i.test(pid)){say('Open this page from the Street Check card in the analyzer (it needs a Mecklenburg parcel id).',true);return;}
   fetch('/api/street?pid='+encodeURIComponent(pid)+'&mode=view').then(r=>r.json()).then(d=>{
     if(d.error)throw new Error(d.error);

@@ -380,7 +380,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   other non-Google map added to it, any link from the embed to one, and any calculator logic or browser storage there.
   `GOOGLE_MAPS_EMBED_KEY` lives in Vercel env only and goes out only in `/api/street?mode=view` (which `streetview.html`
   calls), not in the card's full answer. It reaches the browser by design, so it must stay restricted to the Maps Embed
-  API and by HTTP referrer. Without it the page links out.
+  API and by HTTP referrer. `mode=view` sends no CORS header, so other sites can't read the key from it.
+  `streetview.html` refuses to render inside a frame, so it can't be pulled back onto an analyzer screen. The card's
+  "Google Maps" link is a plain Maps URLs link-out that opens Google's own product in a new tab; nothing from Google is
+  shown on Site Intelligence. Without the key, the page links out.
 - **Google Maps terms notice (§3.2.2(a)(i)).** The app footer, and `streetview.html`'s, say the app includes Google Maps
   features and content subject to the Google Maps/Google Earth Additional Terms and the Google Privacy Policy, with links.
   Keep both notices; any new page that uses Google Maps needs one.
