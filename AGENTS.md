@@ -15,7 +15,8 @@ in the repo, version it with the code.
 
 - **What it is:** an internal new-construction underwriting tool for Tide & Timber's
   Charlotte/Carolinas deals. Since v8.0, two screens: **Site Intelligence** (address → zoning →
-  lot → buildable area & plan fit; geometry only, no money) and **The Underwrite** (hero numbers,
+  lot → buildable area & plan fit; geometry only, no underwriting money: the county's own facts, such as the GIS card's
+  tax value and last sale and the v8.18 street check's $/sf, show there as context and feed nothing) and **The Underwrite** (hero numbers,
   live levers and the worst/base/best board first, then collapsible Plan & build / Lot factor /
   Financing / Sales comps inputs; money only, no geometry), plus PDF/Excel/offer-letter exports.
 - **UI vs. math (v8.0).** The two-screen layout is presentation only. Sections keep their old
@@ -25,9 +26,9 @@ in the repo, version it with the code.
   `markAllManual()` select `.page input[id]`). Hero tiles and section summaries are display-only,
   filled from `getReportData()` in `updateHero()`.
 - **Architecture:** a **single, fully client-side `index.html`** (UI + all logic + all
-  plan data, ~4,900 lines) + three serverless functions in `api/`: `gis.js` (Charlotte/Meck
-  GIS + county assessor proxy), `comps.js` (county new-build comps) and `permits.js` (the
-  permitting board's data proxy) + `plans/` images + `assets/` logos. No framework, no build
+  plan data, ~4,900 lines) + four serverless functions in `api/`: `gis.js` (Charlotte/Meck
+  GIS + county assessor proxy), `comps.js` (county new-build comps), `street.js` (the street check,
+  v8.18) and `permits.js` (the permitting board's data proxy) + `plans/` images + `assets/` logos. No framework, no build
   step, no database. Everything runs in the browser.
 - **Deploy model — why review matters:** Vercel serves the static files; **every push to
   `main` auto-deploys to production.** There is no build gate and no test suite catching
@@ -350,6 +351,41 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   backwards in the source data; don't 'fix' the distance maths.
 - Comps land in the same `COMPS` model the manual table uses, so the blended $/sf, the PDF and the
   Excel export keep working unchanged. Flag a parallel comps model.
+
+### Street check (`api/street.js`, v8.18)
+- **What it is:** the lot's own stretch of street (same CAMA `streetname`, `STREET_FT` = 1,000 ft; CAMA drops the
+  direction, so when the centreline is "N DAVIDSON ST" the parcels addressed on the other half are dropped via the Accela
+  address points) compared with its
+  assessor neighbourhood on the county records (recent sale $/sf, assessed building value $/sf, homes graded below
+  Average, vacant lots, commercial / industrial parcels, homes built 2020+), for the "bad street in a good area" case.
+  Mecklenburg-only, like `gis.js` and `comps.js`. Plus a Street View camera spot: the nearest point on the street's
+  City / State centreline, facing the lot.
+- **Display only.** The card on Site Intelligence doesn't feed a calculation, `serializeDeal()`, the PDF or the Excel,
+  and it doesn't touch the comps or the ARV (same-street comp matching was backtested and not better; see Comps). Flag
+  a change that moves a street check number into the math or the save file without a backtest behind it.
+- **No AI or data extraction on Google imagery.** Google Maps Platform terms §3.2.3 forbid exporting Street View
+  imagery and creating content from it (their own example is an index built from Street View). The card uses the plain
+  Maps Embed API (a person looks) and a Maps URLs link-out, nothing else. Flag any fetch of Street View Static images,
+  any imagery sent to a model, or any caching of Google responses. `GOOGLE_MAPS_EMBED_KEY` lives in Vercel env only;
+  it reaches the browser by design, so it must stay restricted to the Maps Embed API and by HTTP referrer. Without it
+  the card links out.
+- **Fair housing.** Every check is about buildings, lots and land use, never who lives there. Multi-family, affordable
+  housing, mobile homes and senior housing never count against a street (`HOUSING_DESC` overrides a commercial land-use
+  code). Flag a check that adds occupant, ownership-type or demographic data, or counts housing of any kind as a
+  negative.
+- **The comparison area.** The assessor neighbourhood, unless it's a commercial market area (`SUBMARKET` in its name:
+  "RETAIL - NORTHEAST SUBMARKET") or has fewer than `MIN_AREA_HOMES` homes; then every parcel within half a mile. A new
+  lot with no code takes the most common non-commercial code within 300 ft. Unbuilt lots with the subject's owner are
+  left out of the street (usually the rest of the same site); a builder's finished homes still count.
+- **Sales are home sales.** Each home's CAMA last sale counts when market-valid (blank or Z), in the window, not before
+  the year built, and not sold as vacant on `TaxParcelSales` (newest market row, `/^Y/i`, as in comps): a builder's lot
+  purchase in the build year would otherwise count at lot price. Both sides need enough evidence (`CHECKS[].enough`)
+  or the check reads "Too few". A partial answer (a county layer down) is sent `no-store`.
+- **Thresholds are judgement, not backtested** (`CHECKS`), and the card says so. Don't present the verdict as measured
+  until it has been backtested against the team's own "bad street" calls.
+- **Stale answers.** `checkStreet()` takes `gisAddressSignature()` and `_dealGen` before the fetch and drops an answer
+  if either moved or `_lastGis.pid` changed. The card hides when the address moves (`invalidateGisIfAddressMoved()`),
+  on a refused match and in `restoreDeal()` step 0; a restore re-runs it for the saved parcel.
 
 ### Lot-factor auto-fill (v7.13)
 - **A cached GIS result must not outlive its address.** `window._lastGis` carries the PID the comps
