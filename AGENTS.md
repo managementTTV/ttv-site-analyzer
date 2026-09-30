@@ -455,7 +455,9 @@ most deals take.
       and through lots), the most length facing the street, weighted by depth, plus the rest of that line (pieces that
       face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
       those 30 ft or at least 40% of the lot's width (an L-shaped lot's step; a notch stays a side);
-    - corner = ROW edges running on from the front that turn 45° or more away from it (a side street);
+    - corner = ROW edges running on from the front that turn 45° or more away from it (a side street), and the pieces
+      that follow it bending gently (a curving side street). A ROW piece the corner walk reaches that runs back within 45°
+      of the street is front (street line past a longer jog). A reached ROW piece never ends up a side;
     - each walk passes over one jog of up to 15 ft, which stays a side (the corner walk starts past a jog the front walk
       stepped over).
   - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and
@@ -473,7 +475,8 @@ most deals take.
   - A straight corner, or one that turns inward by under 0.5° (a GIS dent, a whole-pixel corner from an old save), doesn't
     stop another edge's run-on. Of its own two pieces, only the one with the larger setback runs on past it.
   - At a concave corner the band stops square and a cap covers the corner (true distance). On a concave lot the convex
-    corners get caps too, for where the lot carries on past a short neighbour.
+    corners get caps too, for where the lot carries on past a short neighbour. Each edge's setback also applies on the
+    far side of its line there, since a lot that wraps round a sharp corner can come back within it.
   - A repeated corner (a zero-length edge, e.g. a deal saved at whole pixels before v8.17) is dropped first.
   - The result can be several outlines, in `planOverlay.buildPolysFt` (largest first, which is `buildPolyFt`). It can
     also be none, when the setbacks meet across the lot: `clearEnvelope()` then nulls `buildPolyFt`, so nothing is
@@ -491,6 +494,9 @@ most deals take.
   - "Fits" (5 ft clear) on a non-convex envelope is the same test in the envelope shrunk 5 ft (`buildEnvelopeFt` with
     5 ft on every edge, cached on the ring as `_e5`). That's the same distance rule the convex path uses.
   - Neither can report a placement that isn't inside the envelope. Flag a corners-only containment test (audit G6).
+  - Speed: each verdict is kept on its ring (`_fit`), and one plan's verdict settles smaller or bigger plans (a fit is
+    monotone in size). While a lot corner is dragged, `renderFitCheck()` waits for the release (`_fitHeld`). A first
+    draw on an irregular envelope can still take up to ~200 ms.
 - **`redrawEditor()` owns `buildableArea` in poly mode**, as the envelope's area (all pieces). `updatePolyStats()` must
   not assign it (v8.3).
 - **`polyPoints` keep 1/100 px**, not whole pixels, which moved GIS corners up to 0.15 ft.

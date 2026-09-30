@@ -2432,7 +2432,9 @@ function mergeParcelRing(ring,row){
 //   that line (pieces that face away squarely, or within 15° of the last rear piece), and any other edge that faces away
 //   squarely and is either 6 ft or more within those 30 ft (a stepped rear) or at least 40% of the lot's width and 20 ft
 //   (the step of an L-shaped lot, which the lot backs onto; a notch stays a side).
-// - Corner side = ROW edges running on from the front that turn 45° or more away from it (a side street).
+// - Corner side = ROW edges running on from the front that turn 45° or more away from it (a side street), and the
+//   pieces that follow it bending gently (a curving side street). A ROW piece the walk reaches that runs back within
+//   45° of the street (past a jog too long to step over) is more street line: front. A reached ROW piece is never a side.
 // Everything else is a side.
 function designateParcelEdges(P,row,fi){
   const n=P.length,des=Array(n).fill('side');
@@ -2476,7 +2478,7 @@ function designateParcelEdges(P,row,fi){
     for(let j=0;j<n;j++)if(des[j]==='side'&&facing(j)>=0.9&&((E[j].L>=6&&deep(j)>=maxD-30)||(E[j].L>=Math.max(20,0.4*wid))))des[j]='rear';
   }
   if(row){
-    const cornerLike=j=>(rw(j)&&ang(j,fi)>=45)?'corner':'';
+    const cornerLike=(j,last)=>!rw(j)?'':(ang(j,fi)>=45||(des[last]==='corner'&&ang(j,last)<35))?'corner':'front';
     for(const d of [1,-1])walk(end(d),d,cornerLike);
   }
   return des;
@@ -2664,6 +2666,7 @@ function setLotMode(mode){
 // ── LOT POINT EDITOR STATE ────────────────────────────────────────────────
 let polyPoints = [];      // [{x,y}] in canvas pixels
 let polyDragIdx = -1;     // which point is being dragged
+let _fitHeld = false;     // v8.17: a fit grid skipped mid-drag, drawn on release
 let polyDragOffX = 0, polyDragOffY = 0;
 let edgeDesignations = []; // 'front'|'rear'|'side'|'corner' per edge i
 let _edgeNote = null;      // v8.17: {pts,warn,text} from loadParcelPolygon, shown while polyPoints is still that lot
@@ -2978,7 +2981,7 @@ function subtractConvexFt(frags,H){
   const out=[];
   for(const F of frags){
     let core=F;for(const h of H){core=clipHPLabFt(core,h);if(core.length<3)break;}
-    if(!keepFragFt(core)){out.push(F);continue;}
+    if(!keepFragFt(core)){if(keepFragFt(F))out.push(F);continue;}
     let rest=F;
     for(const h of H){
       const piece=clipHPLabFt(rest,{x:-h.x,y:-h.y,b:-h.b,k:h.k});
@@ -2997,7 +3000,7 @@ function triangulateFt(P,lab,lines){
     let cut=false;
     for(let a=0;a<idx.length&&!cut;a++){
       const m=idx.length,i0=idx[(a-1+m)%m],i1=idx[a],i2=idx[(a+1)%m],A=P[i0],B=P[i1],C=P[i2];
-      if((B.x-A.x)*(C.y-B.y)-(B.y-A.y)*(C.x-B.x)<=1e-12)continue;
+      if((B.x-A.x)*(C.y-B.y)-(B.y-A.y)*(C.x-B.x)<=1e-9*Math.hypot(B.x-A.x,B.y-A.y)*Math.hypot(C.x-B.x,C.y-B.y))continue;   // not an ear, or three corners in a line
       if(idx.some(j=>j!==i0&&j!==i1&&j!==i2&&inTri(P[j],A,B,C)))continue;
       const d=lab.n++,dx=A.x-C.x,dy=A.y-C.y,Ld=Math.hypot(dx,dy)||1;lines[d]={x:-dy/Ld,y:dx/Ld,b:(-dy*C.x+dx*C.y)/Ld};
       out.push([{x:A.x,y:A.y,k:L[i0]},{x:B.x,y:B.y,k:L[i1]},{x:C.x,y:C.y,k:d}]);
@@ -3073,7 +3076,7 @@ function buildEnvelopeFt(lot,sbs){
   // larger setback runs on past it (two pieces with the same setback just meet, so a short piece's slightly turned line
   // isn't carried across the lot)
   const flat=L.map((_,i)=>!cvx[i]&&turn(i)>-0.0087&&dot(i)>0);
-  const run=L.map((_,i)=>cvx[i]||flat[i]);
+  const run=L.map((_,i)=>cvx[i]||flat[i]),concave=cvx.some(c=>!c);
   const lines={},lab={n:n};
   E.forEach((e,i)=>{lines[i]={x:-e.nx,y:-e.ny,b:-(e.nx*e.a.x+e.ny*e.a.y)};});
   const hp=(x,y,px,py,k)=>{if(k==null){k=lab.n++;lines[k]={x,y,b:x*px+y*py};}return{x,y,b:x*px+y*py,k};};   // keeps (x,y)·p <= (x,y)·(px,py)
@@ -3096,6 +3099,9 @@ function buildEnvelopeFt(lot,sbs){
     const strip=[hp(-e.nx,-e.ny,e.a.x,e.a.y,i),hp(e.nx,e.ny,e.a.x+e.nx*e.sb,e.a.y+e.ny*e.sb)];
     const pa=hp(-e.tx,-e.ty,e.a.x,e.a.y),pb=hp(e.tx,e.ty,e.b.x,e.b.y);   // alongside the edge: past its start, short of its end
     obst.push(strip.concat([pa,pb]));
+    // a concave lot can wrap round past a sharp corner onto the far side of an edge's line: the setback applies
+    // there too (true distance). On a convex lot that side is all outside the lot.
+    if(concave)obst.push([hp(e.nx,e.ny,e.a.x,e.a.y),hp(-e.nx,-e.ny,e.a.x-e.nx*e.sb,e.a.y-e.ny*e.sb),pa,pb]);
     const j=(i+1)%n;
     if(cvx[i]||(flat[i]&&e.sb>E[(i-1+n)%n].sb))obst.push(runOn(i,-1,strip.concat([neg(pa)])));
     if(cvx[j]||(flat[j]&&e.sb>E[j].sb))obst.push(runOn(i,1,strip.concat([neg(pb)])));
@@ -3114,7 +3120,7 @@ function buildEnvelopeFt(lot,sbs){
     if(q.sb>p.sb)obst.push(fan(v,q.nx,q.ny,-q.tx,-q.ty,0,Math.PI,q.sb,[hp(q.tx,q.ty,v.x,v.y)]));
   }
   // on a concave lot, a half-disc past each edge's end at a convex corner too (on a convex lot it lies in the run-on)
-  if(cvx.some(c=>!c))for(let i=0;i<n;i++){
+  if(concave)for(let i=0;i<n;i++){
     if(!cvx[i])continue;
     const p=E[(i-1+n)%n],q=E[i],v=L[i];
     if(p.sb>0)obst.push(fan(v,p.nx,p.ny,p.tx,p.ty,0,Math.PI,p.sb,[hp(-p.tx,-p.ty,v.x,v.y)]));
@@ -3123,7 +3129,7 @@ function buildEnvelopeFt(lot,sbs){
   const lotL=L.map((p,i)=>({x:p.x,y:p.y,k:i}));
   let frags=null;
   if(L.every((_,i)=>cvx[i]||(turn(i)>-1e-9&&dot(i)>0)))frags=[lotL];   // convex (straight corners allowed, not a U-turn)
-  else{const T=triangulateFt(lotL.filter((_,i)=>Math.abs(turn(i))>1e-9||dot(i)<0),lab,lines);frags=T||[lotL];}
+  else{const T=triangulateFt(lotL.filter((_,i)=>Math.abs(turn(i))>1e-9||dot(i)<0),lab,lines);frags=T?T.filter(keepFragFt):[lotL];}   // no zero-area triangles (three collinear corners)
   for(const H of obst){frags=subtractConvexFt(frags,H);if(!frags.length)break;}
   const area=frags.reduce((t,f)=>t+Math.abs(polyAreaFt(f)),0);
   const rings=area>0.01?fragmentsToRingsFt(frags,lines).map(r=>r.map(p=>({x:p.x+ox,y:p.y+oy}))):[];
@@ -3233,6 +3239,7 @@ function initLotEditorDrag(){
   window.addEventListener('mouseup',()=>{
     polyDragIdx=-1;
     const c=$('lot-editor-canvas');if(c)c.style.cursor='crosshair';
+    if(_fitHeld){_fitHeld=false;renderFitCheck();}
   });
   canvas.addEventListener('touchstart',e=>{
     e.preventDefault();const pos=getPos(e);polyDragIdx=-1;
@@ -3260,7 +3267,7 @@ function initLotEditorDrag(){
     };
     redrawEditor();calcBuildable();
   },{passive:false});
-  window.addEventListener('touchend',()=>{polyDragIdx=-1;});
+  window.addEventListener('touchend',()=>{polyDragIdx=-1;if(_fitHeld){_fitHeld=false;renderFitCheck();}});
 }
 
 // Keep old stubs so nothing breaks
@@ -3744,6 +3751,8 @@ function selectPlanFromTile(planKey){
 
 function renderFitCheck(){
   const grid=$('fit-grid'),empty=$('fit-empty');if(!grid)return;
+  // v8.17: while a lot corner is being dragged the grid waits for the release (on an irregular lot it can take 100+ ms)
+  if(lotMode==='poly'&&polyDragIdx>=0){_fitHeld=true;return;}
   if(!buildableArea||buildableArea<=0){grid.innerHTML='';if(empty)empty.style.display='';return;}
   if(empty)empty.style.display='none';
   const currentPlanVal=($('plan-sel')||{}).value||'';
@@ -3837,7 +3846,7 @@ function rectFitsPolyFt(poly,W,H){
   const n=poly.length;
   if(!poly._rot){
     const angs=[],add=a=>{a=((a%(Math.PI/2))+Math.PI/2)%(Math.PI/2);if(!angs.some(b=>Math.abs(b-a)<0.0035||Math.abs(b-a)>Math.PI/2-0.0035))angs.push(a);};
-    for(let i=0;i<n;i++){const a=poly[i],b=poly[(i+1)%n];if(Math.hypot(b.x-a.x,b.y-a.y)>=2)add(Math.atan2(b.y-a.y,b.x-a.x));}
+    for(let i=0;i<n;i++){const a=poly[i],b=poly[(i+1)%n];if(Math.hypot(b.x-a.x,b.y-a.y)>=8)add(Math.atan2(b.y-a.y,b.x-a.x));}   // lot lines, not the short chords of a corner cap
     for(let k=0;k<12;k++)add(k*Math.PI/24);
     const hull=hullFt(poly);
     Object.defineProperty(poly,'_rot',{value:angs.map(th=>{const R=rotPolyFt(poly,-th),xs=R.map(p=>p.x),ys=R.map(p=>p.y);return{R,hp:hpFromConvexFt(rotPolyFt(hull,-th)),x0:Math.min(...xs),x1:Math.max(...xs),y0:Math.min(...ys),y1:Math.max(...ys)};}),enumerable:false});
@@ -3878,6 +3887,18 @@ function planFitsInPolyFt(fpW,fpD){
   if(!main||main.length<3)return'no';
   // an envelope can come in more than one piece (a pinched lot); a plan has to fit inside one of them
   const rings=(planOverlay.buildPolysFt&&planOverlay.buildPolysFt[0]===main)?planOverlay.buildPolysFt:[main];
+  // v8.17: the fit grid, the plan card, the comparison and the subplot card all ask about the same envelope, which is
+  // built afresh whenever the lot or a setback changes, so each answer is kept on its ring
+  if(!main._fit)Object.defineProperty(main,'_fit',{value:new Map(),enumerable:false});
+  const memo=main._fit,key=fpW+'x'+fpD+(rings.length>1?'':'/1');
+  if(memo.has(key))return memo.get(key);
+  // a fit is monotone in size (the angles tried don't depend on the plan): a plan no bigger either way than one that
+  // fits also fits, and one at least as big either way as a plan that doesn't also doesn't
+  const le=(a,b,c,d)=>(a<=c&&b<=d)||(a<=d&&b<=c);
+  let floor='no';
+  for(const [k,v] of memo){const [w,h]=k.split('/')[0].split('x').map(Number);
+    if(v==='no'&&le(w,h,fpW,fpD)){memo.set(key,'no');return'no';}
+    if(v!=='no'&&le(fpW,fpD,w,h)){if(v==='fits'){memo.set(key,'fits');return'fits';}floor='tight';}}
   let best='no';
   for(const ring of rings){
     if(ring.length<3)continue;
@@ -3886,20 +3907,21 @@ function planFitsInPolyFt(fpW,fpD){
       r=canPlaceRectConvexFt(ring,fpW,fpD,5)?'fits':canPlaceRectConvexFt(ring,fpW,fpD,0)?'tight':'no';   // 5ft clearance achievable in some orientation / fits but MUST be within 5ft of a line
       if(r!=='fits'&&!polyIsConvexFt(ring,0))r=null;   // nearly convex: the exact solver only saw the part inside every edge's line
     }
-    if(r==null)r=planFitsSamplingFt(fpW,fpD,ring);
-    if(r==='fits')return'fits';if(r==='tight')best='tight';
+    if(r==null)r=planFitsSamplingFt(fpW,fpD,ring,floor==='tight');
+    if(r==='fits'){best='fits';break;}if(r==='tight')best='tight';
   }
+  memo.set(key,best);
   return best;
 }
 // Non-convex envelope (v8.17). A placement counts only when the whole rectangle is inside: first the exact solver on the
 // part every edge's half-plane keeps (inside the envelope, so never a false fit), then rectFitsPolyFt. "Fits" needs 5 ft
 // clear of the envelope's edges: the same test in the envelope shrunk 5 ft (buildEnvelopeFt with 5 ft on every edge,
 // kept on the ring as ring._e5).
-function planFitsSamplingFt(fpW,fpD,ring){
+function planFitsSamplingFt(fpW,fpD,ring,known){   // known: a plan at least this big already fits, so skip to "fits"
   const poly=ring||planOverlay.buildPolyFt;
   if(!poly||poly.length<3)return'no';
-  if(fpW*fpD>Math.abs(polyAreaFt(poly))+1e-6)return'no';
-  if(!(canPlaceRectConvexFt(poly,fpW,fpD,0)||rectFitsPolyFt(poly,fpW,fpD)))return'no';
+  if(!known&&fpW*fpD>Math.abs(polyAreaFt(poly))+1e-6)return'no';
+  if(!known&&!(canPlaceRectConvexFt(poly,fpW,fpD,0)||rectFitsPolyFt(poly,fpW,fpD)))return'no';
   if(canPlaceRectConvexFt(poly,fpW,fpD,5))return'fits';
   if(!poly._e5)Object.defineProperty(poly,'_e5',{value:buildEnvelopeFt(poly,poly.map(()=>5)).rings,enumerable:false});
   return poly._e5.some(r=>(polyIsConvexFt(r,0)?canPlaceRectConvexFt(r,fpW,fpD,0):(canPlaceRectConvexFt(r,fpW,fpD,0)||rectFitsPolyFt(r,fpW,fpD))))?'fits':'tight';
