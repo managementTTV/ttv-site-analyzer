@@ -476,6 +476,67 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - The sub-lot estimate shows "?" (minimums unknown), not the "—" of a row with no minimums.
   - When a saved stub reopens on its base row with setbacks that differ from that row, `_zoneRestoreNote` says so.
 
+### Buildable envelope & plan fit (poly mode, v8.19)
+Every County GIS lookup switches the lot to poly mode (`loadParcelPolygon` → `setLotMode('poly')`), so this is the path
+most deals take.
+- **`loadParcelPolygon()` merges, then designates.**
+  - `mergeParcelRing()` drops each vertex that sits within 0.5 ft of the line its neighbours make (1 ft next to a piece
+    under 2 ft), but only while the merged line stays within 1 sf of the county's. So a GIS lot's area stays within a
+    few sf of the county shoelace. It carries the proxy's ROW flags (by length) and front edge along.
+  - `designateParcelEdges()` then sets:
+    - front = the proxy's front edge plus the rest of the street line: ROW edges within 45° of it, and collinear
+      edges. Past 45°, a run of short ROW chords is front as a cul-de-sac bulb, unless it reaches a longer street edge,
+      when it's a side street's corner radius (corner);
+    - rear = among the back-facing edges that reach within 30 ft of the deepest point (**ROW edges included**: alley
+      and through lots), the most length facing the street, weighted by depth, plus the rest of that line (pieces that
+      face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
+      those 30 ft or at least 40% of the lot's width (an L-shaped lot's step; a notch stays a side);
+    - corner = ROW edges running on from the front that turn 45° or more away from it (a side street), and the pieces
+      that follow it bending gently (a curving side street). A ROW piece the corner walk reaches that runs back within 45°
+      of the street is front (street line past a longer jog). A reached ROW piece never ends up a side;
+    - each walk passes over one jog of up to 15 ft, which stays a side (the corner walk starts past a jog the front walk
+      stepped over).
+  - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and
+    `#edge-auto-note` says so.
+  - Flag a change that goes back to one front and one rear edge, skips ROW edges as rear candidates, or makes every edge
+    a side when no front is found (audit G3, G13, G14).
+- **Edges are `'front' | 'rear' | 'side' | 'corner'`.**
+  - `edgeSetbackFt()` is the single reader. Corner uses `sb-corner`; a blank Corner Side falls back to `sb-sides`.
+  - The editor's edge click cycles all four (audit G5).
+- **The envelope is the lot minus each edge's setback band** (`buildEnvelopeFt()`).
+  - It is worked as disjoint convex pieces cut with `clipHPLabFt`, then joined back into outlines.
+  - At a convex corner a band runs on past the edge's end inside the next lot lines, as far as the first concave corner.
+    So a convex lot comes out as the lot clipped by every edge's offset half-plane. On a concave lot the run-on can't
+    cut across the lot beyond that corner.
+  - A straight corner, or one that turns inward by under 0.5° (a GIS dent, a whole-pixel corner from an old save), doesn't
+    stop another edge's run-on. Of its own two pieces, only the one with the larger setback runs on past it.
+  - At a concave corner the band stops square and a cap covers the corner (true distance). On a concave lot the convex
+    corners get caps too, for where the lot carries on past a short neighbour. Each edge's setback also applies on the
+    far side of its line there, since a lot that wraps round a sharp corner can come back within it.
+  - A repeated corner (a zero-length edge, e.g. a deal saved at whole pixels before v8.19) is dropped first.
+  - The result can be several outlines, in `planOverlay.buildPolysFt` (largest first, which is `buildPolyFt`). It can
+    also be none, when the setbacks meet across the lot: `clearEnvelope()` then nulls `buildPolyFt`, so nothing is
+    fitted into a stale outline.
+  - Flag any return to intersecting neighbouring offset lines. That left spikes into the setbacks and turned inside out
+    when the setbacks met across the lot (audit G4, G12).
+  - This half-plane reading is stricter on irregular lots with obtuse corners than "distance to the nearest point of
+    the lot line". Flag a change that switches between the two without saying so.
+- **Fit check.**
+  - A convex envelope uses the exact half-plane solver (`polyIsConvexFt` ignores turns under 1.5°).
+  - A nearly convex one gets the exact solver first, then `planFitsSamplingFt()` if that finds no "fits".
+  - A non-convex one uses `planFitsSamplingFt()`: the exact solver on the envelope's kernel, then `rectFitsPolyFt()`.
+    That tests the whole rectangle (no envelope edge inside it, and its centre inside). It is exact across x and tries y
+    at every vertex height and every 0.25 ft, within the heights where the rectangle fits the convex hull.
+  - "Fits" (5 ft clear) on a non-convex envelope is the same test in the envelope shrunk 5 ft (`buildEnvelopeFt` with
+    5 ft on every edge, cached on the ring as `_e5`). That's the same distance rule the convex path uses.
+  - Neither can report a placement that isn't inside the envelope. Flag a corners-only containment test (audit G6).
+  - Speed: each verdict is kept on its ring (`_fit`), and one plan's verdict settles smaller or bigger plans (a fit is
+    monotone in size). While a lot corner is dragged, `renderFitCheck()` waits for the release (`_fitHeld`). A first
+    draw on an irregular envelope can still take up to ~200 ms.
+- **`redrawEditor()` owns `buildableArea` in poly mode**, as the envelope's area (all pieces). `updatePolyStats()` must
+  not assign it (v8.3).
+- **`polyPoints` keep 1/100 px**, not whole pixels, which moved GIS corners up to 0.15 ft.
+
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
   adds a release-notes / changelog entry. Flag a mismatch.
@@ -486,6 +547,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   (PID 04118536, 3,455 sf) and 2731 (PID 04118537, 4,312 sf), all N1-B, Central Catawba. The older
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
+  Reference numbers since v8.19:
+  - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
+    17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
+  - 3 × Dayton Townhomes, land $75,000, $265/sf: Max land **$262,309**, lot factor $25,850.
+  - Rect mode, N1-B: 40×180 → 3,540 sf, 80×180 → 8,260 sf.
   Flag a math-touching PR that ships without one.
 
 ---
