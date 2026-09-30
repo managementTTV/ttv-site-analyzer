@@ -184,6 +184,26 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   zone) leaves the setbacks alone too (`setGisZoning`). Flag a table fill moved after the blanket
   restore, a field `onPlanChange()` writes without a re-apply, or an entry-time auto-default whose
   signature isn't saved and restored: each one silently changes a reopened deal's numbers.
+- **`onPlanChange()` sets Units only when the plan changes (v8.14).** It also runs for things that
+  aren't a plan change: `applyGcBuildFee()` rebuilds the dropdown and calls it, and so does every
+  custom-footprint keystroke (`applyCustomDims()`). Writing the plan's default each time put a
+  3-townhome deal back to 1 unit on a GC fee edit, which cut Dellinger's Max land from $262,309 to
+  $69,756. `_unitsFor` records the plan (or, for a custom footprint, its `cust-u`) whose default
+  Units last took, and the default is written only when that changes. Flag a new path that writes
+  `units` from a plan default without that check.
+- **Taps keep a typed quote (v8.14).** `tap-water` / `tap-sewer` call `markManual(this)`, and
+  `applyTapDefaults()` never writes over a `data-manual` tap. `renderTapHint()` builds `#tap-hint` from
+  the current record, flags and values (a missing fee reads "no … fee on file", never $0). It runs after
+  the defaults, on the tap fields' blur, and after a restore. It names a typed quote next to the schedule
+  it differs from, and adds the record's `cityNote` where the default is one city's or the county's
+  schedule (Gaston, Catawba, Iredell). It re-defaults only when the fee *record* changes
+  (`tapRecordFor()` maps a `county|city` signature to its `CITY_TAP` / `COUNTY_TAP` row), so a city
+  edit that lands on the same record (Charlotte → Mint Hill) doesn't run it. Before this, any city
+  edit put Charlotte Water's $17,340 back over a typed quote; on Dellinger's real $6,907/lot
+  Alternate Install that meant $31k of Max land. `serializeDeal()` saves `tapManual`.
+  `restoreDeal()` clears the taps' flags in step 0 and re-applies `tapManual` after `markAllManual()`,
+  so a switch still due on reopen can still land on default taps. Files from before v8.14 have no
+  `tapManual`, and their taps count as defaults, which is how v8.9–v8.13 treated them.
 
 ### Architecture & footguns
 - **Stay single-file & buildless.** Flag any added framework, bundler, npm build step, or
@@ -269,6 +289,18 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Sale-validity filter is the heart of it.** Keep blank (arm's length) and **Z (builder sale)**;
   everything else is a disqualified transfer. Flag a change that widens this without a reason, or
   that drops Z — builder sales are the new-build resales TTV is actually pricing.
+- **Lot sales are not comps (v8.14).** The county stores `soldasvacantflag` as `'Yes'` / `'No'`. The
+  old check compared it with `'Y'`, so it never matched, and builder lot purchases were joined to the
+  house the assessor now shows and counted as new-build comps (~$94/sf against ~$213/sf for real
+  ones). A parcel is left out when its **newest** market-valid sale was sold as vacant. The flag is
+  read on the newest row, not before picking it, so an older sale of the torn-down house can't stand
+  in for the lot sale. A sale recorded before the year the current house was built is left out as
+  well. The assessor sometimes dates a house to the year after a Q4 closing, so a few real closings go too
+  (2 of 24 rows county-wide over 24 months; the other 22 were bulk deeds, lot takedowns and teardowns).
+  All 24 sit at `saleYear = yb-1`, so narrowing it needs the multi-parcel-deed check and a guard for
+  single-parcel teardown or lot sales first. Both counts go into `notes`, and the
+  county comps box shows them under "Left out". Flag a vacant check that isn't case- and length-tolerant
+  (`/^Y/i`), or one moved ahead of the newest-row pick.
 - **The ARV is capped at the highest sold comp.** The SOP is explicit that $/sf math must never run
   past a real nearby sale. Flag removal of the cap or of the `capped` flag it sets.
 - **Comps are clipped to the true `radius`.** The ArcGIS query takes a rectangle, so the envelope's
@@ -313,9 +345,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   equals a shipped default (a real $2,000 survey quote, a real $2,500 grading allowance), and the
   value-based check silently overwrote it — a Codex P1 on PR #17. Auto-fill gates on the explicit
   `data-manual` flag instead: `markManual()` sets it on any human edit, `restoreDeal()` sets it on
-  every field of a saved deal, and `isManual()` is what `applySurveyDefault()` and
-  `applyCountyDefaults()` check. Flag any auto-fill that compares against a default value, or an
-  input added without `markManual(this)` on its handler.
+  every field of a saved deal, and `isManual()` is what `applySurveyDefault()`,
+  `applyCountyDefaults()` and (v8.14) `applyTapDefaults()` check. Flag any auto-fill that compares
+  against a default value, or an input added without `markManual(this)` on its handler.
 - **The three mappings are deliberate:** demo square footage from the assessor's heated area (falling
   back to the mapped footprint when there is no CAMA record, e.g. a newly created lot); clearing tier
   from canopy % (`CANOPY_CLEARING`); grading from the slope band (`SLOPE_GRADING`). These are
