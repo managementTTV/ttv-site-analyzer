@@ -612,6 +612,7 @@ body[data-screen="1"] #sub-nav-site,body[data-screen="2"] #sub-nav-uw{display:fl
 .sc-line-val.hi{color:var(--ink);font-weight:700}
 .uw-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
 .uw-shortlist{margin-top:8px}
+.uw-handoff{margin-top:16px;padding:10px 12px;border-left:3px solid var(--pine);background:var(--green-dim);border-radius:0 6px 6px 0;font-size:12px;color:var(--ink)}
 /* collapsible input sections */
 details.uw-sec{margin-bottom:10px}
 .uw-sum{display:flex;align-items:center;gap:12px;list-style:none;cursor:pointer;background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);transition:border-color .15s}
@@ -731,7 +732,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.20 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.21 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1116,7 +1117,9 @@ body[data-screen="2"] .page{padding-bottom:108px}
   </div>
 
 
+  <div id="sheet-handoff" class="uw-handoff" style="display:none"></div>
   <div class="uw-actions">
+    <button class="btn btn-pine" id="btn-deal-sheet" onclick="sendToDealSheet()">&#128196; Send to deal sheet</button>
     <button class="btn btn-primary" onclick="generateReportPackage()">&#128230; Report package (PDF + Excel)</button>
     <button class="btn btn-pine" onclick="generateSheet()">&#128202; Excel model (live formulas)</button>
     <button class="btn btn-ghost" onclick="generateOfferLetter()">&#9993;&#65039; Offer letter</button>
@@ -2093,6 +2096,7 @@ function onAddrChange(){
   updateLinks();
   validateAddress();
   invalidateGisIfAddressMoved();
+  renderSheetHandoff();
 }
 // The cached GIS result carries the PID that the comps pull keys off. If the analyst edits the
 // address after a lookup, that PID belongs to the PREVIOUS property — pulling comps then would
@@ -5216,6 +5220,71 @@ function planCostSplit(){
   return po?{custom:false,baseUnit:po.base||0,feePct:GC_BUILD_FEE}
            :{custom:val==='__CUSTOM__',baseUnit:currentPlanCost||0,feePct:0};
 }
+// ── DEAL-SHEET HAND-OFF (v8.21) ──
+// "Send to deal sheet" opens api/deal-sheet#uw=<deal>, which redirects to the team's New Deal web app (Apps Script,
+// runs as management@ so the copy keeps the template's formula locks). Browsers carry the #fragment across the
+// redirect and never send it to a server, so the deal goes from this tab to Google's page, which reads it there and
+// fills the new sheet's inputs (createDealFromAnalyzer in the "UW Template - Formula Lock & Color Code" project). After
+// that the sheet is the deal's home; sending the same address again only opens it. HANDOFF_VERSION there must match `v`.
+const DEAL_SHEET_PATH='api/deal-sheet';
+let _sheetHandoff=null;   // {ts, street}: this deal was sent; street = addrWords() of the address it was sent for
+// The payload, read through the exporters' own readers (getReportData, collectModelInputs) so the sheet starts from the
+// numbers on screen. Per-site figures (land, lot factor, survey, appraisal, insurance) go as site totals; the sheet
+// divides them by Units for its per-unit model.
+function sheetHandoffPayload(){
+  const d=getReportData(),M=collectModelInputs(d),g=d.gis||{};
+  const f=id=>(($(id)||{}).value||'').trim();
+  const planVal=f('plan-sel'),po=planVal&&planVal!=='__CUSTOM__'?PLANS.find(p=>p.n===planNameFromVal(planVal)):null;
+  const fp=planVal==='__CUSTOM__'?{w:pv('cust-w'),d:pv('cust-d')}:po?{w:po.w,d:po.d}:{w:0,d:0};
+  const none=v=>v==='\u2014'?'':v;
+  return {v:1,app:APP_VERSION,
+    addr:{street:f('addr-street'),city:f('addr-city'),state:f('addr-state'),zip:f('addr-zip')},
+    county:f('county-sel'),zone:none(d.zone),corner:!!($('corner-lot')||{}).checked,
+    lot:{mode:d.lotMode,w:d.lotW,d:d.lotD,buildable:d.buildable_sf},
+    plan:{name:none(d.plan),custom:M.customBuild,sf:M.sf,build:M.buildUnit,base:M.baseUnit,feePct:Math.round(M.gcFeePct*1000)/10,fpW:fp.w,fpD:fp.d},
+    units:M.units,land:M.land||0,asking:mv('asking-price')||0,lotFactor:M.lotFactor,lf:M.lf,
+    taps:{total:M.tapTotal,waterU:M.tapWaterU,sewerU:M.tapSewerU,septic:M.septicLot},
+    soft:{survey:M.survey,appraisal:M.appraisal,insurance:M.insurance},
+    upgrades:Array.from(selectedUpgrades).map(id=>UPGRADES.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,name:x.name,cost:x.cost})),
+    fin:{ltc:d.fin.ltc,rate:d.fin.rate,points:d.fin.points,docFee:d.fin.docFee,tax:d.fin.annualTax,salePct:d.fin.salePct,
+      profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct},
+    terms:{w:d.terms.w,b:d.terms.b,best:d.terms.best},arv:{w:d.psf.w,b:d.psf.b,best:d.psf.best},
+    results:{maxLand:none(d.maxLand),scenarios:d.scenarios.map(s=>({k:s.key,arvPSF:s.arvPSF,arv:s.arv,hold:s.holdPerUnit,
+      sale:s.saleCost,totalAllIn:s.totalAllIn,profit:s.profit,total:s.total}))},
+    gis:{pid:g.pid||'',nc_pin:g.nc_pin||'',area_sf:g.area_sf||0,zoning:g.zoning||'',watershed:g.watershed||'',
+      swim:g.swim?!!g.swim.i:null,historic:g.historic&&g.historic.i?(g.historic.n||'Yes'):'',bua:g.bua||''},
+    comps:M.comps.map(c=>({addr:c.addr,url:c.url,sqft:c.sqft,sold:c.sold,adj:c.adj,date:c.date,dist:c.dist,mom:c.mom,notes:c.notes})),
+    notes:moneyIssues().map(i=>i.msg).concat(M.compNotes||[])};
+}
+function b64url(str){
+  const b=new TextEncoder().encode(str);let s='';
+  for(let i=0;i<b.length;i+=0x8000)s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function sendToDealSheet(){
+  const issues=moneyIssues();
+  const block=!addrStreet()?'Enter the street address first: the deal sheet is named by it.'
+    :!(($('plan-sel')||{}).value)?'Pick a plan first: the sheet prices the build from it.'
+    :!(mv('arv-b')>0)?'Enter the Base ARV $/sf first.'
+    :issues.length?'Fix the flagged inputs first. '+issues.map(i=>i.msg).join(' '):'';
+  if(block){showToast(block,'warn');return;}
+  window.open(DEAL_SHEET_PATH+'#uw='+b64url(JSON.stringify(sheetHandoffPayload())),'_blank','noopener');
+  _sheetHandoff={ts:Date.now(),street:addrWords(addrStreet()).join(' ')};
+  renderSheetHandoff();scheduleAutosave();
+}
+function addrStreet(){return (($('addr-street')||{}).value||'').trim();}
+// While the address on screen is the one sent, say the sheet is now its home. Display only.
+function renderSheetHandoff(){
+  const box=$('sheet-handoff'),btn=$('btn-deal-sheet');if(!box)return;
+  const h=_sheetHandoff,on=!!(h&&h.street&&h.street===addrWords(addrStreet()).join(' '));
+  box.style.display=on?'':'none';
+  if(btn)btn.innerHTML=on?'&#128196; Open its deal sheet':'&#128196; Send to deal sheet';
+  if(!on)return;
+  box.textContent='';
+  const b=document.createElement('b');b.textContent='Sent to its deal sheet '+new Date(h.ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+'. ';
+  box.appendChild(b);
+  box.appendChild(document.createTextNode('Once the sheet is created it is this deal\u2019s home: make every change there. The analyzer doesn\u2019t update it, and sending again only opens it.'));
+}
 function collectModelInputs(d){
   const rawW=mv('arv-w'), rawBest=mv('arv-best');
   const upgUnit=Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);
@@ -5841,6 +5910,7 @@ function updateDealPulse(){
       cEl.textContent='CoC '+b.coc.toFixed(1)+'%';
     }else{pEl.textContent='\u2014';pEl.className='dp-val';cEl.textContent='set ARV';}
     updateHero(d,b,F);
+    renderSheetHandoff();
   }catch(_){/* pulse must never break the app */}
 }
 // v8 hero tiles + collapsed-section summaries. Display only: every figure is read from
@@ -5922,7 +5992,8 @@ function serializeDeal(){
     upgrades:Array.from(selectedUpgrades),
     comps:COMPS.map(c=>Object.assign({},c)),
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
-    gisMismatch:_gisMismatch};   // v8.16: a reopened parcel that isn't this address stays flagged across saves
+    gisMismatch:_gisMismatch,   // v8.16: a reopened parcel that isn't this address stays flagged across saves
+    sheetHandoff:_sheetHandoff};   // v8.21: sent to its deal sheet
 }
 function restoreDeal(d){
   // Check the file before step 0 resets the page: every field entry is an object, at least one is this page's, and
@@ -5939,6 +6010,8 @@ function restoreDeal(d){
   try{
     _dealGen++;   // drop any county lookup still in flight: its answer belongs to the page being replaced
     _clearedSite=null;_gisLot=null;_gisMismatch=null;   // v8.16: the last deal's site tie and cleared site go with it
+    {const h=d.sheetHandoff;   // v8.21: whether this deal was sent to its deal sheet
+     _sheetHandoff=h&&typeof h==='object'&&typeof h.street==='string'&&isFinite(h.ts)?{ts:+h.ts,street:h.street}:null;}
     const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else if(f.v!=null)e.value=f.v;}};
     // 0) start from a fresh page's defaults. The blanket restore below only writes fields the file has, so a
     //    field added after the deal was saved would otherwise keep whatever the previous deal left on screen.
@@ -6104,8 +6177,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.20', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.21', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.21',date:'Oct 2026',name:'Send to deal sheet',items:[
+   'The Underwrite has a Send to deal sheet button. It opens the team\u2019s New Deal page with this deal on it, and one click there makes the locked Google Sheet in Underwritten (named by address, formulas locked as with the address form) with the deal\u2019s inputs filled in: plan, units, land, asking price, lot factor and its items, taps, appraisal, insurance, points, rate, the three terms, retail $/sf, corner lot, county and zone, the upgrades ticked on the Upgrades tab, and the comps.',
+   'From then on the sheet is the deal\u2019s home: make every change there. Sending the same address again only opens its sheet; nothing in it is overwritten. The Underwrite says so above the buttons while this address is on screen.',
+   'The sheet runs its own locked formulas, so its numbers can differ from the analyzer\u2019s (it adds 14% to upgrades, finances 60% of land and 100% of build, prices survey and sale costs its own way, and its Worst and Best are its Base $/sf \u2212 $10 and + $10). An Analyzer Snapshot tab in the sheet records this first underwrite and lists each difference and why.',
+   'The deal travels in the link itself (after the #), from your browser straight to Google; no server sees it.']},
  {v:'8.20',date:'Sep 2026',name:'Street View on its own page',items:[
    'The Street Check card now opens Street View on a page of its own, in a new tab: the street in front of the lot, facing it, with arrows to walk the block. It used to show inside the card. Google\u2019s Maps terms don\u2019t allow Street View on the same screen as another map, and Site Intelligence draws the county parcel.',
    'The card also keeps a Google Maps link. The rest of the Street Check (the street against its neighbourhood) is unchanged.',
