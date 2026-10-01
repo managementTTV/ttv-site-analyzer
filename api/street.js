@@ -75,9 +75,14 @@ const CHECKS = [
     enough:(s,n)=>s.homes>=5 && n.homes>=10, stronger:(g,s)=>s.new_builds>=2 && g>=10},
 ];
 
-async function ajPost(url, params){
+// fetchSignal (every helper below passes it on): optional, a function giving each request its own AbortSignal. api/mcp.js
+// passes one carrying a per-request timeout and its tool deadline, so a stalled layer fails on its own (and its catch
+// degrades just that layer) and nothing runs past the tool's budget. /api/street passes none: no signal, as before.
+async function ajPost(url, params, fetchSignal){
   const body = new URLSearchParams(params).toString();
-  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+  const init = {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body};
+  if(fetchSignal) init.signal = fetchSignal();
+  const r = await fetch(url, init);
   if(!r.ok) throw new Error('HTTP '+r.status+' '+url);
   const j = await r.json();
   if(j && j.error) throw new Error('ArcGIS '+(j.error.code||'')+': '+(j.error.message||''));
@@ -96,17 +101,17 @@ function bearing(a, b){ const r=d=>d*Math.PI/180, y=Math.sin(r(b.lng-a.lng))*Mat
   return (Math.atan2(y,x)*180/Math.PI+360)%360; }
 
 // Every row matching a where / spatial filter, paged.
-async function allRows(layer, params, outFields){
+async function allRows(layer, params, outFields, fetchSignal){
   const rows = [];
   for(let p=0; p<MAX_PAGES; p++){
     const j = await ajPost(`${layer}/query`, Object.assign({outFields, returnGeometry:'false',
-      resultOffset:String(p*PAGE), resultRecordCount:String(PAGE), f:'json'}, params));
+      resultOffset:String(p*PAGE), resultRecordCount:String(PAGE), f:'json'}, params), fetchSignal);
     (j.features||[]).forEach(f=>rows.push(f.attributes));
     if(!j.exceededTransferLimit && (j.features||[]).length < PAGE) return {rows, truncated:false};
   }
   return {rows, truncated:true};
 }
-const camaRows = params => allRows(CAMA_LAYER, Object.assign({orderByFields:'objectid_1'}, params), CAMA_FIELDS);
+const camaRows = (params, fetchSignal) => allRows(CAMA_LAYER, Object.assign({orderByFields:'objectid_1'}, params), CAMA_FIELDS, fetchSignal);
 const within = (lat, lng, ft) => ({geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint', inSR:'4326',
   spatialRel:'esriSpatialRelIntersects', distance:String(ft), units:'esriSRUnit_Foot'});
 
@@ -130,12 +135,12 @@ function isHomeSale(r, since){
 // Parcels whose newest market-valid sale in the window was sold as vacant: a builder's lot purchase in the year the house
 // was built passes the year-built test, and at lot price it would drag the street's $/sf down (api/comps.js drops these
 // too; the county stores the flag as 'Yes' / 'No').
-async function lotSalePids(pids, since){
+async function lotSalePids(pids, since, fetchSignal){
   const lots = new Set(), iso = new Date(since).toISOString().slice(0,10);
   for(let i=0; i<pids.length; i+=PID_CHUNK){
     const chunk = pids.slice(i, i+PID_CHUNK);
     const {rows} = await allRows(SALES_LAYER, {where:`parcelid IN (${chunk.map(p=>`'${sq(p)}'`).join(',')}) AND saledate >= DATE '${iso}'`,
-      orderByFields:'objectid'}, 'parcelid,saledate,salesvalidity,soldasvacantflag');
+      orderByFields:'objectid'}, 'parcelid,saledate,salesvalidity,soldasvacantflag', fetchSignal);
     const newest = new Map();
     rows.forEach(a=>{ if(!MARKET_VALIDITY.includes((a.salesvalidity||'').trim().toUpperCase())) return;
       const prev = newest.get(a.parcelid); if(!prev || (a.saledate||0) > (prev.saledate||0)) newest.set(a.parcelid, a); });
@@ -212,10 +217,10 @@ function nearestOnLine(ref, layers){
 // for N and S Davidson); the centreline keeps it ("N DAVIDSON ST").
 // A layer that doesn't answer comes back empty with `failed` set, so the caller can say so: an outage isn't "no
 // centreline here".
-function centrelines(street, lat, lng){
+function centrelines(street, lat, lng, fetchSignal){
   return Promise.all(STREET_LAYERS.map(l=>ajPost(`${CITY}/${l}/query`, Object.assign({
     where:`WHOLESTNAME='${sq(street)}' OR WHOLESTNAME LIKE '% ${sq(street)}'`, outFields:'WHOLESTNAME',
-    returnGeometry:'true', outSR:'4326', f:'json'}, within(lat, lng, CAMERA_MAX_FT))).catch(e=>({features:[], failed:e.message}))));
+    returnGeometry:'true', outSR:'4326', f:'json'}, within(lat, lng, CAMERA_MAX_FT)), fetchSignal).catch(e=>({features:[], failed:e.message}))));
 }
 // The first centreline layer that didn't answer, as an errors entry (v8.22), or null
 function centrelineError(layers){ const f = (layers||[]).find(j=>j && j.failed);
@@ -258,20 +263,20 @@ export default async function handler(req, res){
 // what it gets back: keep.rows, this street's CAMA rows after the direction filter and before the same-site rule (the
 // subject included; null when there's no street), and keep.subject, the subject's own row. Neither goes into the
 // answer, so /api/street is unchanged. The rows carry the CAMA owner fields the same-site rule reads: a caller must
-// never pass them on.
-export async function streetCheck(pid, ft, view, keep){
+// never pass them on. fetchSignal is ajPost()'s (api/mcp.js only).
+export async function streetCheck(pid, ft, view, keep, fetchSignal){
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
   try{
     // 1) the subject: street name, neighbourhood code and a point
-    const sj = await ajPost(`${CAMA_LAYER}/query`, {where:`pid='${sq(pid)}'`, outFields:CAMA_FIELDS, returnGeometry:'false', f:'json'});
+    const sj = await ajPost(`${CAMA_LAYER}/query`, {where:`pid='${sq(pid)}'`, outFields:CAMA_FIELDS, returnGeometry:'false', f:'json'}, fetchSignal);
     const a = (sj.features||[])[0] && sj.features[0].attributes;
     if(!a){ out.errors.push('No assessor record for PID '+pid+'.'); return out; }
     if(keep) keep.subject = a;
     let lat = num(a.xcoord), lng = num(a.ycoord);   // camadata stores latitude in xcoord, longitude in ycoord
     if(lat==null || lng==null){
       try{
-        const pj = await ajPost(`${PARCEL_LAYER}/query`, {where:`pid='${sq(pid)}'`, outFields:'pid', returnGeometry:'true', outSR:'4326', f:'json'});
+        const pj = await ajPost(`${PARCEL_LAYER}/query`, {where:`pid='${sq(pid)}'`, outFields:'pid', returnGeometry:'true', outSR:'4326', f:'json'}, fetchSignal);
         const r = (pj.features||[])[0] && pj.features[0].geometry && pj.features[0].geometry.rings && pj.features[0].geometry.rings[0];
         if(r && r.length){ lng = r.reduce((t,p)=>t+p[0],0)/r.length; lat = r.reduce((t,p)=>t+p[1],0)/r.length; }
       }catch(e){ out.errors.push('subject_parcel: '+e.message); }
@@ -283,7 +288,7 @@ export async function streetCheck(pid, ft, view, keep){
     if(!street) out.notes.push('The assessor record has no street name for this lot, so there is no street to compare.');
     if(view){
       let cam = null, lineErr = null;
-      if(street){ try{ const lines = await centrelines(street, lat, lng); cam = nearestOnLine({lat, lng}, lines); lineErr = centrelineError(lines); }
+      if(street){ try{ const lines = await centrelines(street, lat, lng, fetchSignal); cam = nearestOnLine({lat, lng}, lines); lineErr = centrelineError(lines); }
         catch(e){ lineErr = 'centreline: '+e.message; } }
       if(lineErr) out.errors.push(lineErr);
       out.subject.street_label = directedName(cam, street) || street || null;
@@ -296,10 +301,10 @@ export async function streetCheck(pid, ft, view, keep){
     //    has a code (else the parcels right around it, to borrow one)
     const useCode = nb.code && !COMMERCIAL_AREA.test(nb.name||'');
     const [stR, lineR, nbR, nearR] = await Promise.allSettled([
-      street ? camaRows(Object.assign({where:`streetname='${sq(street)}'`}, within(lat, lng, ft))) : Promise.resolve(null),
-      street ? centrelines(street, lat, lng) : Promise.resolve(null),
-      useCode ? camaRows({where:`neighborhood='${sq(nb.code)}'`}) : Promise.resolve(null),
-      nb.code ? Promise.resolve(null) : camaRows(Object.assign({where:'1=1'}, within(lat, lng, NEAR_FT))),
+      street ? camaRows(Object.assign({where:`streetname='${sq(street)}'`}, within(lat, lng, ft)), fetchSignal) : Promise.resolve(null),
+      street ? centrelines(street, lat, lng, fetchSignal) : Promise.resolve(null),
+      useCode ? camaRows({where:`neighborhood='${sq(nb.code)}'`}, fetchSignal) : Promise.resolve(null),
+      nb.code ? Promise.resolve(null) : camaRows(Object.assign({where:'1=1'}, within(lat, lng, NEAR_FT)), fetchSignal),
     ]);
     if(stR.status==='rejected') out.errors.push('street: '+stR.reason.message);
     if(nbR.status==='rejected') out.errors.push('neighborhood: '+nbR.reason.message);
@@ -322,7 +327,7 @@ export async function streetCheck(pid, ft, view, keep){
         const dir = dm.split(/\s+/)[0];
         const {rows} = await allRows(`${CITY}/${ADDRESS_LAYER}`, Object.assign({
           where:`nme_street='${sq(nm)}' AND (cde_street_dir_prfx IS NULL OR cde_street_dir_prfx<>'${sq(dir)}')`,
-          orderByFields:'OBJECTID'}, within(lat, lng, ft)), 'TAX_PID,GIS_PID');
+          orderByFields:'OBJECTID'}, within(lat, lng, ft)), 'TAX_PID,GIS_PID', fetchSignal);
         const other = new Set(); rows.forEach(r=>{ if(r.TAX_PID) other.add(r.TAX_PID); if(r.GIS_PID) other.add(r.GIS_PID); });
         const before = stRows.length; stRows = stRows.filter(r=>!other.has(r.pid));
         if(stRows.length < before) out.notes.push(`${before-stRows.length} parcel${before-stRows.length===1?'':'s'} on the other half of ${street} (not ${cam.name}) left out.`);
@@ -351,7 +356,7 @@ export async function streetCheck(pid, ft, view, keep){
       const best = Object.entries(count).sort((x,y)=>y[1].n-x[1].n)[0];
       if(best){ nb.code=best[0]; nb.name=best[1].name||null; nb.inferred=true;
         out.notes.push(`The lot has no assessor neighbourhood yet (a new lot), so it takes ${nb.name||nb.code}, the most common one within ${NEAR_FT} ft.`);
-        try{ areaRows = await camaRows({where:`neighborhood='${sq(nb.code)}'`}); }catch(e){ out.errors.push('neighborhood: '+e.message); }
+        try{ areaRows = await camaRows({where:`neighborhood='${sq(nb.code)}'`}, fetchSignal); }catch(e){ out.errors.push('neighborhood: '+e.message); }
       }
     }
     if(areaRows){
@@ -364,7 +369,7 @@ export async function streetCheck(pid, ft, view, keep){
     else if(!nb.code) out.notes.push('No assessor neighbourhood for this lot or its neighbours, so the street is compared with everything within half a mile.');
     if(!area && stRows){
       try{
-        const ar = await camaRows(Object.assign({where:'1=1'}, within(lat, lng, AREA_FT)));
+        const ar = await camaRows(Object.assign({where:'1=1'}, within(lat, lng, AREA_FT)), fetchSignal);
         area = {label:'Everything within half a mile', kind:'radius', rows:ar.rows.filter(r=>r.pid!==pid)};
         if(ar.truncated) out.notes.push(`More than ${(PAGE*MAX_PAGES).toLocaleString()} parcels within half a mile; the first ${(PAGE*MAX_PAGES).toLocaleString()} were used.`);
       }catch(e){ out.errors.push('area: '+e.message); }
@@ -374,7 +379,7 @@ export async function streetCheck(pid, ft, view, keep){
     const since = Date.now() - SALE_MONTHS*30.44*86400000;
     let lots = new Set();
     const salePids = [...new Set([...(stRows||[]), ...(area?area.rows:[])].filter(r=>isHomeSale(r, since)).map(r=>r.pid))];
-    try{ lots = await lotSalePids(salePids, since); }
+    try{ lots = await lotSalePids(salePids, since, fetchSignal); }
     catch(e){ out.errors.push('sales: '+e.message+' (lot purchases may be counted as home sales)'); }
     if(stRows) out.street = Object.assign({label:`${label} within ${ft.toLocaleString()} ft`}, profile(stRows, since, lots));
     if(area) out.neighborhood = Object.assign({label:area.label, kind:area.kind}, profile(area.rows, since, lots));

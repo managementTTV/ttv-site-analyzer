@@ -42,8 +42,10 @@ const BUA_RULE = {
   'Central Catawba': 'Over 5,000 sf BUA triggers the stormwater ordinance; keep under 24% of lot area (verify).',
 };
 
-async function aj(url){
-  const r = await fetch(url);
+// fetchSignal: optional, as in api/street.js ajPost(): api/mcp.js gives each request a timeout and its tool deadline
+// through geocodeAddress() / parcelAtPoint(). This file's own handler passes none, so its requests are as before.
+async function aj(url, fetchSignal){
+  const r = fetchSignal ? await fetch(url, {signal:fetchSignal()}) : await fetch(url);
   if(!r.ok) throw new Error('HTTP '+r.status+' '+url);
   const j = await r.json();
   if(j && j.error) throw new Error('ArcGIS '+(j.error.code||'')+': '+(j.error.message||'')+((j.error.details&&j.error.details.length)?(' — '+j.error.details.join('; ')):''));
@@ -328,21 +330,21 @@ function chooseAddressPoint(typed, feats, near){
   return out;
 }
 // every address point for a where clause, a page at a time (a tower can have 450 at one number)
-async function addressPoints(where, geometry){
+async function addressPoints(where, geometry, fetchSignal){
   const feats=[];
   for(let page=0;page<3;page++){
     const j=await aj(`${BASE}/${LAYER.address}/query?where=${encodeURIComponent(where)}&outFields=${ADDR_FIELDS}&returnGeometry=${geometry}`
-      +(geometry?`&outSR=${SR}`:'')+`&orderByFields=OBJECTID&resultOffset=${page*2000}&resultRecordCount=2000&f=json`);
+      +(geometry?`&outSR=${SR}`:'')+`&orderByFields=OBJECTID&resultOffset=${page*2000}&resultRecordCount=2000&f=json`, fetchSignal);
     feats.push(...(j.features||[]));
     if(!j.exceededTransferLimit) break;
   }
   return feats;
 }
 // the numbers nearest the typed one on the typed street, one row per address (units collapsed), both directions
-async function nearestNumbers(nameWhere, typed){
+async function nearestNumbers(nameWhere, typed, fetchSignal){
   const q=(cmp,dir)=>aj(`${BASE}/${LAYER.address}/query?where=${encodeURIComponent(`${nameWhere} AND txt_street_number ${cmp} ${typed.num}`)}`
     +'&outFields=txt_street_number,cde_street_dir_prfx,nme_street,repl_txt_roadway_abbrev,cde_roadway_type,cde_street_dir_suff,nme_city,nme_po_city,cde_zip1'
-    +`&returnDistinctValues=true&orderByFields=${encodeURIComponent('txt_street_number '+dir)}&returnGeometry=false&resultRecordCount=60&f=json`);
+    +`&returnDistinctValues=true&orderByFields=${encodeURIComponent('txt_street_number '+dir)}&returnGeometry=false&resultRecordCount=60&f=json`, fetchSignal);
   const rs=await Promise.allSettled([q('<','DESC'),q('>','ASC')]);
   return rs.flatMap(r=>r.status==='fulfilled'?(r.value.features||[]):[]).map(f=>pointParts(f.attributes||{}))
     .filter(P=>{ const c=compareStreet(typed.toks,P); return c&&c.level!=='name'; })
@@ -350,8 +352,9 @@ async function nearestNumbers(nameWhere, typed){
 }
 // The geocode of step 1 below, shared with api/mcp.js (the TTV Street Data connector's find_street), so an address
 // there finds exactly the parcel /api/gis?address= loads: chooseAddressPoint()'s answer for the typed address (a
-// refused match has no .feature). Throws when the address layer doesn't answer. raw.address gets the debug detail.
-export async function geocodeAddress(address, raw, debug){
+// refused match has no .feature). Throws when the address layer doesn't answer. raw.address gets the debug detail;
+// fetchSignal is aj()'s (api/mcp.js only).
+export async function geocodeAddress(address, raw, debug, fetchSignal){
   const typed = parseTypedAddress(address);
   const names = typed.num!=null ? streetNameVariants(typed.toks) : [];
   const inList = names.map(n=>"'"+n.replace(/'/g,"''")+"'").join(',');
@@ -359,7 +362,7 @@ export async function geocodeAddress(address, raw, debug){
   const nameWhere = inList ? `(nme_street IN (${inList})${anchor?` OR nme_street LIKE '%${anchor}%'`:''})` : '';
   let feats=[], near=[];
   if(nameWhere){
-    feats = await addressPoints(`txt_street_number = ${typed.num} AND ${nameWhere}`, true);
+    feats = await addressPoints(`txt_street_number = ${typed.num} AND ${nameWhere}`, true, fetchSignal);
     if(raw) raw.address = debug?{where:nameWhere,count:feats.length}:undefined;
     // nothing on that street at that number: the nearest numbers on it, for the message
     if(!feats.some(f=>{ const c=compareStreet(typed.toks,pointParts(f.attributes||{})); return c&&c.level!=='name'; })){
@@ -367,15 +370,15 @@ export async function geocodeAddress(address, raw, debug){
       // not the LIKE, which on a common word ("Oak") would fill the ordered rows with other streets
       const seen=[...new Set(feats.map(f=>pointParts(f.attributes||{})).filter(P=>compareStreet(typed.toks,P)).map(P=>P.name))];
       const nearWhere=`nme_street IN (${[inList].concat(seen.map(n=>"'"+n.replace(/'/g,"''")+"'")).join(',')})`;
-      try{ near = await nearestNumbers(nearWhere, typed); }catch(_){ /* suggestions only */ }
+      try{ near = await nearestNumbers(nearWhere, typed, fetchSignal); }catch(_){ /* suggestions only */ }
     }
   }
   return chooseAddressPoint(typed, feats, near);
 }
 // The parcel under a geocoded address point (state plane feet), with its geometry: step 2 below, and find_street's PID.
-export function parcelAtPoint(pt){
+export function parcelAtPoint(pt, fetchSignal){
   const geom = encodeURIComponent(JSON.stringify({x:pt.x,y:pt.y,spatialReference:{wkid:SR}}));
-  return aj(`${BASE}/${LAYER.parcels}/query?geometry=${geom}&geometryType=esriGeometryPoint&inSR=${SR}&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true&outSR=${SR}&f=json`);
+  return aj(`${BASE}/${LAYER.parcels}/query?geometry=${geom}&geometryType=esriGeometryPoint&inSR=${SR}&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true&outSR=${SR}&f=json`, fetchSignal);
 }
 export function findAttr(a, rx){ if(!a) return null; for(const [k,v] of Object.entries(a)){ if(rx.test(k)&&v!=null&&v!=='') return {field:k,value:v}; } return null; }
 async function spatialAt(layerUrl, pt, outFields='*'){

@@ -45,8 +45,9 @@ const MAX_HOUSES = 80;
 const MAX_CROPS = 6;             // ~70 KB of base64 per crop keeps a call near 0.5 MB (Vercel's limit is 4.5 MB)
 const HALF_FT = 110, CROP_PX = 440, FT_PER_PX = 0.5;   // 220 ft square at the service's native 0.5 ft
 const JPEG_QUALITY = 90;         // the service is JPEG at source; 90 keeps detail close to the tested PNG crops
-const FETCH_MS = 12000;          // per upstream request
+const FETCH_MS = 10000;          // per upstream request, the street check's and the geocode's included (see toolControl)
 const TOOL_MS = 25000;           // per tool call, well under Vercel's 30 s
+const LATE_MARGIN_MS = 1500;     // find_street's code-case and flight lookups stop this long before the tool's deadline
 const REQUEST_MS = 28000;        // per HTTP request (a batch shares it)
 const MAX_BODY = 1 << 20;
 const PID_RX = /^[0-9A-Z]{8}$/;
@@ -85,7 +86,7 @@ const strList = {type:'array', items:str};
 const TOOLS = [
   {
     name:'find_street', title:'Find a street',
-    description:'Look up the subject lot\'s own stretch of street in Mecklenburg County from the county\'s public records. Pass an address (e.g. "2723 Dellinger Dr") or a pid (an 8-character parcel id such as "04118535"); one of the two is required, and a pid wins when both are given. An address must match the county\'s address points (house number and street, direction and type included); a ZIP or city helps choose. Returns the subject, every parcel on the same street within 1,000 ft each way (at most 80, sorted by house number, subject flagged; for a street with N and S halves, only the subject\'s half), each with kind (home / vacant / commercial / other), year built, heated sf, assessor grade, land use, last market sale and City code-enforcement cases opened in the last 24 months (type, opened, closed, status). Also the analyzer\'s county street check for the lot (profile: verdict, checks against its assessor neighbourhood, notes), the NC OneMap flight date for aerial_crops, and link-outs for a person: streetview_url (TTV\'s Street View page) and maps_url (Google Maps). Never pass those links to a model.',
+    description:'Look up the subject lot\'s own stretch of street in Mecklenburg County from the county\'s public records. Pass an address (e.g. "2723 Dellinger Dr") or a pid (an 8-character parcel id such as "04118535"); one of the two is required, and a pid wins when both are given. An address must match the county\'s address points (house number and street, direction and type included); a ZIP or city helps choose. Returns the subject, every parcel on the same street within 1,000 ft each way (at most 80, sorted by house number, subject flagged; for a street with N and S halves, only the subject\'s half), each with kind (home: a house, town house, condo, duplex or triplex; vacant: an unbuilt house lot; commercial; other: apartments, common areas, parks, rights of way and the like), year built, heated sf, assessor grade, land use, last market sale and City code-enforcement cases opened in the last 24 months (type, opened, closed, status). Also the analyzer\'s county street check for the lot (profile: verdict, checks against its assessor neighbourhood, notes), the NC OneMap flight date for aerial_crops, and link-outs for a person: streetview_url (TTV\'s Street View page) and maps_url (Google Maps). Never pass those links to a model.',
     inputSchema:{type:'object', properties:{
       address:{type:'string', description:'Street address in Mecklenburg County, e.g. "2723 Dellinger Dr" or "1500 N Davidson St, Charlotte, NC 28206".'},
       pid:{type:'string', description:'8-character Mecklenburg parcel id (PID), e.g. "04118535" or "08308C99".'},
@@ -133,16 +134,24 @@ const TOOLS = [
 const sq = s => String(s).replace(/'/g, "''");
 const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 const round1 = v => Math.round(v*10)/10;
-async function arcPost(url, params){
-  const r = await fetch(url, {method:'POST', body:new URLSearchParams(params).toString(), signal:AbortSignal.timeout(FETCH_MS),
+// Each request's signal: its own FETCH_MS timeout and, when a tool passes fetchSignal, the tool's deadline too.
+const signalFor = fetchSignal => fetchSignal ? fetchSignal() : AbortSignal.timeout(FETCH_MS);
+function anySignal(signals){
+  if(typeof AbortSignal.any==='function') return AbortSignal.any(signals);
+  const c = new AbortController();
+  for(const s of signals){ if(s.aborted){ c.abort(s.reason); break; } s.addEventListener('abort', ()=>c.abort(s.reason), {once:true}); }
+  return c.signal;
+}
+async function arcPost(url, params, fetchSignal){
+  const r = await fetch(url, {method:'POST', body:new URLSearchParams(params).toString(), signal:signalFor(fetchSignal),
     headers:{'Content-Type':'application/x-www-form-urlencoded', 'User-Agent':UA}});
   if(!r.ok) throw new Error('HTTP '+r.status+' from '+new URL(url).host);
   const j = await r.json();
   if(j && j.error) throw new Error('ArcGIS '+(j.error.code||'')+': '+(j.error.message||''));
   return j;
 }
-async function arcGet(url, params){
-  const r = await fetch(url+'?'+new URLSearchParams(params).toString(), {signal:AbortSignal.timeout(FETCH_MS), headers:{'User-Agent':UA}});
+async function arcGet(url, params, fetchSignal){
+  const r = await fetch(url+'?'+new URLSearchParams(params).toString(), {signal:signalFor(fetchSignal), headers:{'User-Agent':UA}});
   if(!r.ok) throw new Error('HTTP '+r.status+' from '+new URL(url).host);
   const j = await r.json();
   if(j && j.error) throw new Error('ArcGIS '+(j.error.code||'')+': '+(j.error.message||''));
@@ -160,11 +169,30 @@ function localDate(ms){
 function monthsAgoISO(n){ const d = new Date(); d.setUTCMonth(d.getUTCMonth()-n); return d.toISOString().slice(0,10); }
 
 // ── find_street ────────────────────────────────────────────────────────────────────────────────────────────────────
-// kind: street.js's own tests, plus one for the walk: a residential parcel with no building on the assessor record (no
-// heated area, no building value) is a lot to look at, though CAMA may still flag it improved ("IMP", e.g. after a
-// teardown). Only the label changes; the street check's counts are street.js's.
-const bareResLot = r => !(num(r.heatedarea)>0) && !(num(r.totalbldgval)>0)
-  && (/^R/i.test((r.lusecode||'').trim()) || /RESIDENTIAL|TOWN ?HOUSE|CONDO/i.test(r.landuse_description||''));
+// kind picks what the Street Walk grades (home and vacant), so it means a house and a house lot. It starts from
+// street.js's tests and adds the walk's own (only the label changes; the street check's counts stay street.js's):
+//   - a common area (an HOA strip, a town-house or condo common area, a commercial one) is no one's house or lot: never
+//     home or vacant, whatever its code;
+//   - home: street.js's isHome (heated area on an R code, or on no code with a house description), or a residential
+//     building the county codes otherwise: a duplex / triplex (A562, A500), a single-family house on an exempt or
+//     industrial code (9614, 1000, I600), a rural or use-value homesite, a town house, condo or house on an
+//     affordable-housing code (AF09, AF04, AF01). Apartment buildings ("MULTI FAMILY", "… GARDEN", "… HIGH RISE")
+//     stay other;
+//   - commercial: street.js's isNonRes, checked before vacant, so a vacant commercial or industrial lot is commercial;
+//   - vacant: no building on the record (CAMA's VAC, or no heated area and no building value, which an "IMP" teardown
+//     can show) on a house lot: an R code or a house land use, never a condo parcel, a park, a greenway, a right of
+//     way, rail, a utility or a floodway (those are other).
+const COMMON_AREA = /COMMON/i;
+const HOUSE_USE = /SINGLE FAMILY|TOWN ?HOUSE|DUPLEX|TRIPLEX|MOBILE HOME|HOMESITE|RESIDENTIAL AFFORDABLE/i;
+const CONDO_USE = /^CONDO/i;     // "CONDOMINIUM …", "CONDO AFFORDABLE HOUSING"; not "OFFICE CONDOMINIUM"
+function walkKind(r){
+  const d = (r.landuse_description||'').trim(), code = (r.lusecode||'').trim(), built = num(r.heatedarea)>0;
+  if(COMMON_AREA.test(d)) return isNonRes(r) ? 'commercial' : 'other';
+  if(isHome(r) || (built && (HOUSE_USE.test(d) || CONDO_USE.test(d)))) return 'home';
+  if(isNonRes(r)) return 'commercial';
+  const unbuilt = isVacant(r) || (!built && !(num(r.totalbldgval)>0));
+  return unbuilt && !CONDO_USE.test(d) && (/^R/i.test(code) || HOUSE_USE.test(d)) ? 'vacant' : 'other';
+}
 // One house from its CAMA row: only these fields leave the server (never the owner, mailing city or ZIP).
 function houseFrom(r, streetLabel, subjectPid){
   const v = (r.validsale||'').trim().toUpperCase(), price = num(r.saleprice), n = parseInt(r.streetnumber, 10);
@@ -172,7 +200,7 @@ function houseFrom(r, streetLabel, subjectPid){
   return {
     pid:r.pid, address:(r.streetnumber||'').trim() && streetLabel ? `${(r.streetnumber||'').trim()} ${streetLabel}` : null,
     number:isFinite(n) ? n : null, subject:r.pid===subjectPid,
-    kind: isHome(r) ? 'home' : (isVacant(r) || bareResLot(r)) ? 'vacant' : isNonRes(r) ? 'commercial' : 'other',
+    kind: walkKind(r),
     year_built: yb>1700 ? yb : null, heated_sf: sf>0 ? Math.round(sf) : null,
     grade:(r.grade||'').trim()||null, land_use:(r.landuse_description||'').trim()||null,
     // the last sale on the assessor record when it's a market sale (blank = arm's length, Z = builder sale)
@@ -183,25 +211,25 @@ function houseFrom(r, streetLabel, subjectPid){
 
 // Case ids (from `ids`) whose citation matches one of `pats`, matched on the city's server: nothing of the
 // description comes back, only object ids.
-async function idsCiting(ids, pats){
+async function idsCiting(ids, pats, fetchSignal){
   const hit = new Set();
   for(let i=0; i<ids.length; i+=ID_CHUNK){
     const chunk = ids.slice(i, i+ID_CHUNK);
     const like = pats.map(p=>`DetailedDescription LIKE '%${sq(p)}%'`).join(' OR ');
-    const j = await arcPost(`${CE_LAYER}/query`, {where:`OBJECTID IN (${chunk.join(',')}) AND (${like})`, returnIdsOnly:'true', f:'json'});
+    const j = await arcPost(`${CE_LAYER}/query`, {where:`OBJECTID IN (${chunk.join(',')}) AND (${like})`, returnIdsOnly:'true', f:'json'}, fetchSignal);
     (j.objectIds||[]).forEach(id=>hit.add(id));
   }
   return hit;
 }
 // Code-enforcement cases opened in the last CASE_MONTHS on these parcels: {byPid: Map(pid → [case]), notes, errors}
-async function codeCases(pids){
+async function codeCases(pids, fetchSignal){
   const since = monthsAgoISO(CASE_MONTHS), rows = [], notes = [], errors = [];
   for(let i=0; i<pids.length; i+=CE_CHUNK){
     const inList = pids.slice(i, i+CE_CHUNK).map(p=>`'${sq(p)}'`).join(',');
     for(let p=0; ; p++){
       const j = await arcPost(`${CE_LAYER}/query`, {where:`ParcelId IN (${inList}) AND DateCreated >= DATE '${since}'`,
         outFields:CE_FIELDS, returnGeometry:'false', orderByFields:'OBJECTID', resultOffset:String(p*CE_PAGE),
-        resultRecordCount:String(CE_PAGE), f:'json'});
+        resultRecordCount:String(CE_PAGE), f:'json'}, fetchSignal);
       (j.features||[]).forEach(f=>rows.push(f.attributes||{}));
       if(!j.exceededTransferLimit && (j.features||[]).length < CE_PAGE) break;
       if(p+1 >= CE_MAX_PAGES){ notes.push(`More than ${(CE_PAGE*CE_MAX_PAGES).toLocaleString()} code cases on these parcels; the first ${(CE_PAGE*CE_MAX_PAGES).toLocaleString()} are listed.`); break; }
@@ -209,7 +237,7 @@ async function codeCases(pids){
   }
   const label = new Map(), ids = rows.map(r=>r.OBJECTID).filter(Number.isInteger);
   if(ids.length){
-    const rs = await Promise.allSettled(VIOLATIONS.map(([, pats])=>idsCiting(ids, pats)));
+    const rs = await Promise.allSettled(VIOLATIONS.map(([, pats])=>idsCiting(ids, pats, fetchSignal)));
     let failed = 0;
     rs.forEach((r, k)=>{ if(r.status!=='fulfilled'){ failed++; return; } r.value.forEach(id=>{ if(!label.has(id)) label.set(id, VIOLATIONS[k][0]); }); });
     if(failed) errors.push(`code case types: ${failed} of ${VIOLATIONS.length} violation checks didn't answer (${msg(rs.find(r=>r.status==='rejected').reason)}), so some cases show the city's broad case type (e.g. Nuisance) instead of the violation cited.`);
@@ -225,16 +253,16 @@ async function codeCases(pids){
 }
 
 // The NC OneMap flight under a point: the visible catalog tile's name carries its date ("OF6i0_37_000_10454602_20230218_0304R0").
-async function flightAt(geometry){
+async function flightAt(geometry, fetchSignal){
   const j = await arcGet(`${NC_IMAGERY}/identify`, {geometry:JSON.stringify(geometry), geometryType:'esriGeometryPoint',
-    returnGeometry:'false', returnCatalogItems:'true', f:'json'});
+    returnGeometry:'false', returnCatalogItems:'true', f:'json'}, fetchSignal);
   const feats = (j.catalogItems && j.catalogItems.features) || [], vis = j.catalogItemVisibilities || [];
   const dated = feats.map((f, i)=>({m:String((f.attributes||{}).name||'').match(/_(20\d\d)(\d\d)(\d\d)_/), v:vis[i]})).filter(x=>x.m);
   const pick = dated.find(x=>x.v>0) || dated[0];
   return pick ? `${pick.m[1]}-${pick.m[2]}-${pick.m[3]}` : null;
 }
 
-async function findStreet(args){
+async function findStreet(args, ctl){
   const notes = [], errors = [];
   if(args.pid!=null && typeof args.pid!=='string') return toolError('pid must be a string: an 8-character Mecklenburg parcel id such as "04118535".');
   if(args.address!=null && typeof args.address!=='string') return toolError('address must be a string, e.g. "2723 Dellinger Dr".');
@@ -247,14 +275,14 @@ async function findStreet(args){
   if(!pid){
     // the same geocode as /api/gis?address=, so the connector finds the parcel the analyzer loads
     let m;
-    try{ m = await geocodeAddress(address); }
+    try{ m = await geocodeAddress(address, undefined, false, ctl.fetchSignal); }
     catch(e){ return toolError(`The county address lookup didn't answer (${msg(e)}). Try again in a minute, or pass the parcel id.`); }
     // gis.js words its messages for the analyzer's auto-fill button
     const said = s => String(s||'').replace(/,? then run the auto-fill again/g, ', then try again').replace(/Auto-fill covers Mecklenburg only/g, 'This covers Mecklenburg only');
     if(!m.feature) return toolError(said(m.message) || `No county address point matched "${address}".`);
     if(m.status==='close') notes.push(said(m.message));
     let pj;
-    try{ pj = await parcelAtPoint(m.feature.geometry); }
+    try{ pj = await parcelAtPoint(m.feature.geometry, ctl.fetchSignal); }
     catch(e){ return toolError(`County GIS matched ${m.matched}, but the parcel layer didn't answer (${msg(e)}). Try again in a minute.`); }
     const f = (pj.features||[])[0], v = f && findAttr(f.attributes, /^pid$/i);
     if(!v) return toolError(`County GIS matched ${m.matched}, but there's no parcel under that address point. Pass the parcel id instead.`);
@@ -264,7 +292,7 @@ async function findStreet(args){
 
   // the analyzer's street check for the lot, and the same street rows it counted
   const keep = {};
-  const sc = await streetCheck(pid, STREET_FT, false, keep);
+  const sc = await streetCheck(pid, STREET_FT, false, keep, ctl.fetchSignal);
   if(!sc.subject){
     const why = sc.errors.join('; ');
     if(/^No assessor record/.test(why)) return toolError(`No county assessor record for PID ${pid}. Check the parcel id (a newly created lot can take a few weeks to reach the county's records).`);
@@ -278,7 +306,12 @@ async function findStreet(args){
     if(sc.subject.street) return toolError(`The county didn't answer for the parcels on ${label} (${sc.errors.join('; ') || 'no answer'}). Try again in a minute.`);
     rows = [];   // no street name on the record: the subject alone (street.js's notes say so)
   }
-  if(!rows.some(r=>r.pid===pid) && keep.subject) rows = [keep.subject, ...rows];
+  // the subject is normally among the street's rows; listed anyway when it isn't, and said, so an empty or mis-filtered
+  // street can't hide behind it
+  if(!rows.some(r=>r.pid===pid) && keep.subject){
+    rows = [keep.subject, ...rows];
+    if(sc.subject.street) notes.push(`The subject wasn't among the parcels the street check found on ${label}; it's listed anyway.`);
+  }
   // one house per parcel (a condo's unit rows share one PID); at most MAX_HOUSES, nearest the subject first
   const seen = new Set(); let list = rows.filter(r=>r.pid && !seen.has(r.pid) && seen.add(r.pid));
   if(list.length > MAX_HOUSES){
@@ -292,9 +325,12 @@ async function findStreet(args){
   const houses = list.map(r=>houseFrom(r, label, pid))
     .sort((a,b)=>(a.number??Infinity)-(b.number??Infinity) || (a.pid<b.pid?-1:a.pid>b.pid?1:0));
 
-  // code cases (every house, by ParcelId) and the flight date, in parallel; either one down costs only itself
+  // code cases (every house, by ParcelId) and the flight date, in parallel; either one down costs only itself. They get
+  // only what's left of the tool's budget, so a slow city server costs the cases, not the houses already built.
   const {lat, lng} = sc.subject;
-  const [ceR, flR] = await Promise.allSettled([codeCases(houses.map(h=>h.pid)), flightAt({x:lng, y:lat, spatialReference:{wkid:4326}})]);
+  const stop = AbortSignal.timeout(Math.max(LATE_MARGIN_MS, ctl.deadline - Date.now() - LATE_MARGIN_MS));
+  const late = () => anySignal([stop, ctl.fetchSignal()]);
+  const [ceR, flR] = await Promise.allSettled([codeCases(houses.map(h=>h.pid), late), flightAt({x:lng, y:lat, spatialReference:{wkid:4326}}, late)]);
   if(ceR.status==='fulfilled'){
     houses.forEach(h=>{ h.code_cases = ceR.value.byPid.get(h.pid) || []; });
     notes.push(...ceR.value.notes); errors.push(...ceR.value.errors);
@@ -331,10 +367,10 @@ function jpegSize(b){
   }
   return null;
 }
-async function exportJpeg(bbox){
+async function exportJpeg(bbox, fetchSignal){
   const r = await fetch(`${NC_IMAGERY}/exportImage?`+new URLSearchParams({bbox:bbox.join(','), bboxSR:'2264', imageSR:'2264',
     size:`${CROP_PX},${CROP_PX}`, format:'jpg', compressionQuality:String(JPEG_QUALITY), f:'image'}).toString(),
-    {signal:AbortSignal.timeout(FETCH_MS), headers:{'User-Agent':UA}});
+    {signal:signalFor(fetchSignal), headers:{'User-Agent':UA}});
   if(!r.ok) throw new Error('HTTP '+r.status+' from NC OneMap');
   const b = Buffer.from(await r.arrayBuffer());
   if(b.length < 3 || b[0]!==0xFF || b[1]!==0xD8){
@@ -344,9 +380,9 @@ async function exportJpeg(bbox){
   return b;
 }
 // Parcel rings (state plane feet) for each PID: the first feature per PID, as build.py's parcel_geom() takes.
-async function parcelRings(pids){
+async function parcelRings(pids, fetchSignal){
   const j = await arcPost(`${PARCEL_LAYER}/query`, {where:`pid IN (${pids.map(p=>`'${sq(p)}'`).join(',')})`, outFields:'pid',
-    returnGeometry:'true', outSR:'2264', orderByFields:'objectid', f:'json'});
+    returnGeometry:'true', outSR:'2264', orderByFields:'objectid', f:'json'}, fetchSignal);
   const m = new Map();
   (j.features||[]).forEach(f=>{ const p = ((f.attributes||{}).pid||'').trim().toUpperCase(), g = f.geometry;
     if(p && !m.has(p) && g && g.rings && g.rings.length && g.rings[0].length) m.set(p, g.rings); });
@@ -354,11 +390,11 @@ async function parcelRings(pids){
 }
 // One crop, exactly as build.py crop(): a 220 ft box centred on the mean of the first ring's vertices (closing vertex
 // included, as the county returns it), bbox to 0.1 ft. Pixels: (x-minx)*sx, (maxy-y)*sy against the bbox requested.
-async function cropOne(pid, rings){
+async function cropOne(pid, rings, fetchSignal){
   if(!rings) return {pid, ok:false, error:'no parcel geometry'};
   const r0 = rings[0], cx = r0.reduce((t,p)=>t+p[0],0)/r0.length, cy = r0.reduce((t,p)=>t+p[1],0)/r0.length;
   const bbox = [cx-HALF_FT, cy-HALF_FT, cx+HALF_FT, cy+HALF_FT].map(v=>+v.toFixed(1));
-  const [imgR, flR] = await Promise.allSettled([exportJpeg(bbox), flightAt({x:cx, y:cy, spatialReference:{wkid:2264}})]);
+  const [imgR, flR] = await Promise.allSettled([exportJpeg(bbox, fetchSignal), flightAt({x:cx, y:cy, spatialReference:{wkid:2264}}, fetchSignal)]);
   if(imgR.status==='rejected') return {pid, ok:false, error:'imagery: '+msg(imgR.reason)};
   const size = jpegSize(imgR.value) || {width:CROP_PX, height:CROP_PX};
   const sx = size.width/(bbox[2]-bbox[0]), sy = size.height/(bbox[3]-bbox[1]);
@@ -368,7 +404,7 @@ async function cropOne(pid, rings){
     _jpeg: imgR.value};
 }
 
-async function aerialCrops(args){
+async function aerialCrops(args, ctl){
   const raw = args.pids;
   if(!Array.isArray(raw) || !raw.length) return toolError(`Pass pids: a list of 1 to ${MAX_CROPS} parcel ids, e.g. ["04118535","04118536"].`);
   if(raw.length > MAX_CROPS) return toolError(`At most ${MAX_CROPS} parcels per call (each crop is about 70 KB). Split the list into calls of ${MAX_CROPS}.`);
@@ -377,10 +413,10 @@ async function aerialCrops(args){
   const valid = order.filter(p=>PID_RX.test(p));
   let rings = new Map();
   if(valid.length){
-    try{ rings = await parcelRings(valid); }
+    try{ rings = await parcelRings(valid, ctl.fetchSignal); }
     catch(e){ return toolError(`The county parcel layer didn't answer (${msg(e)}), so no crop could be cut. Try again in a minute.`); }
   }
-  const done = await Promise.all(order.map(p=>PID_RX.test(p) ? cropOne(p, rings.get(p))
+  const done = await Promise.all(order.map(p=>PID_RX.test(p) ? cropOne(p, rings.get(p), ctl.fetchSignal)
     : Promise.resolve({pid:p.slice(0,24), ok:false, error:'not an 8-character Mecklenburg parcel id'})));
   const images = [];
   const crops = done.map(c=>{ if(!c.ok) return c; const {_jpeg, ...rest} = c; rest.image_index = images.length;
@@ -405,18 +441,29 @@ function withDeadline(p, ms, what){
   let t; const timer = new Promise(res=>{ t = setTimeout(()=>res(toolError(`${what} ran out of time (${Math.round(ms/1000)} s): the county, city or state servers are slow. Try again in a minute.`)), ms); });
   return Promise.race([p, timer]).finally(()=>clearTimeout(t));
 }
+// One tool call's budget: its deadline, and fetchSignal, which gives every upstream request it makes (street.js's and
+// gis.js's included) a FETCH_MS timeout plus the call's own abort. callTool aborts when the call ends, on time or not,
+// so no county, city or state request outlives its tool call.
+function toolControl(ms){
+  const ac = new AbortController();
+  return {ac, deadline:Date.now()+ms, fetchSignal:() => anySignal([ac.signal, AbortSignal.timeout(FETCH_MS)])};
+}
 async function callTool(params, ctx){
   const name = params && params.name, args = params && params.arguments;
   if(args!=null && (typeof args!=='object' || Array.isArray(args))) return toolError('arguments must be an object.');
   const left = REQUEST_MS - (Date.now()-ctx.t0);
   if(left < 3000) return toolError('This batch ran out of time. Send the call on its own.');
   const ms = Math.min(TOOL_MS, left-1000);
-  try{
-    if(name==='find_street') return await withDeadline(findStreet(args||{}), ms, 'find_street');
+  if(name!=='find_street'){
     if(ctx.imageSent) return toolError('Send one aerial_crops call per request (each answer carries up to 0.5 MB of images).');
     ctx.imageSent = true;
-    return await withDeadline(aerialCrops(args||{}), ms, 'aerial_crops');
+  }
+  const ctl = toolControl(ms);
+  try{
+    if(name==='find_street') return await withDeadline(findStreet(args||{}, ctl), ms, 'find_street');
+    return await withDeadline(aerialCrops(args||{}, ctl), ms, 'aerial_crops');
   }catch(e){ return toolError(`${name} failed: ${msg(e)}`); }
+  finally{ ctl.ac.abort(); }
 }
 // One JSON-RPC message → its response, or null for a notification (or a response the client sent us).
 async function answer(m, ctx){

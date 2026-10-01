@@ -455,18 +455,35 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   the owner's mailing address, so they stay out too. Flag any owner, mailing, grantor or deed field in the output.
 - **"This street" is street.js's, and the geocode is gis.js's.** Flag a second geocoder or a second street definition.
   - `find_street` calls `streetCheck()` with `keep` and lists `keep.rows`: the same CAMA street name within 1,000 ft,
-    with the other half (N vs S) dropped via the Accela address points. That's taken before the same-site rule, so the
-    subject's own other lots are listed.
+    with the other half (N vs S) dropped via the Accela address points (the direction letter, fixed in v8.22; see the
+    street check). That's taken before the same-site rule, so the subject's own other lots are listed.
+  - The subject is normally among `keep.rows`. When it isn't, it's listed anyway with a note saying so, so an empty or
+    mis-filtered street can't hide behind the subject. The connector test checks 1500 N Davidson St lists 40+ houses
+    with no such note.
   - One row per PID (a condo's unit rows share one), at most 80 (the nearest the subject), sorted by house number.
   - An address goes through `geocodeAddress()` and `parcelAtPoint()`, so it finds the parcel `/api/gis` loads. A refused
     match is a tool error carrying the county's message; a close one loads with that message in `notes`.
-  - `kind` uses street.js's `isHome` / `isVacant` / `isNonRes`. For the walk only, a residential parcel with no building
-    on record (no heated area or building value, though CAMA may still say "IMP") also counts as vacant. The street
-    check's counts are unchanged.
+  - `kind` (`walkKind()`) picks what the Street Walk grades (home and vacant), so it means a house and a house lot. It
+    starts from street.js's `isHome` / `isVacant` / `isNonRes` and only changes the label; the street check's counts
+    are unchanged.
+    - A common area (land use with COMMON: an HOA strip, a town-house, condo or commercial common area) is never home
+      or vacant.
+    - home: `isHome`, or heated area with a house land use the county codes outside R: duplex / triplex (A562, A500),
+      single-family on an exempt or industrial code, a rural or use-value homesite, an affordable-housing town house,
+      condo or house (AF09, AF04, AF01). Apartments (MULTI FAMILY, APARTMENT, HIGH RISE) stay other.
+    - commercial: `isNonRes`, tested before vacant, so a vacant commercial or industrial lot is commercial.
+    - vacant: no building on record (CAMA `VAC`, or no heated area and no building value, which an "IMP" teardown can
+      show) on a house lot: an R code or a house land use, never a condo parcel. Parks, greenways, rights of way, rail,
+      utilities, floodways, churches and the like are other.
+    - Flag a rule that sends a common area, a park or a right of way to the AI read, or leaves a house out of it.
 - **Refactor guard.** `/api/street` and `/api/gis` must stay byte-identical: status, headers and body, with both
   handlers called directly against `git show origin/main:api/…`. The 2026-10-01 connector test did this for PIDs
   04118535, 08308C99 and 06107186 (plus `mode=view` and a bad PID), and for 2723 Dellinger Dr (with `debug=1` too),
   1500 Davidson St and "2100 Sharon Rd, 28210". Flag a connector need that changes either endpoint's output.
+  - v8.22's direction fix is the one deliberate change: on a N / S street (08308C99, 08110205) the test compares with
+    origin/main plus only that one-line fix, and the rest with origin/main itself.
+  - The `fetchSignal` arguments of `streetCheck()`, `geocodeAddress()` and `parcelAtPoint()` are for the connector.
+    The endpoints pass none, so their requests carry no signal, exactly as before.
 - **Crops (`aerial_crops`).** Each crop works like the tested set's `build.py` `crop()`:
   - The parcel ring comes from TaxParcelBoundaries (`outSR=2264`), and the 220 × 220 ft box is centred on the mean of
     its first ring's vertices.
@@ -483,8 +500,15 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     204. Responses are `Content-Type: application/json` with `Cache-Control: no-store`.
   - A tool failure (bad input, a layer down) is an `isError` result saying what to do. An unknown method is -32601, an
     unknown tool -32602 and bad JSON -32700.
-  - Every upstream fetch has a 12 s timeout and each tool a 25 s budget.
-  - Flag server-side state, an SSE stream, or a tool that can run past its budget.
+  - Each tool call has a 25 s budget (`toolControl()`). Every upstream request it makes carries a signal: a 10 s
+    timeout plus the call's own abort. That includes the street check's and the geocode's requests, through the
+    `fetchSignal` argument. So a stalled layer fails on its own and degrades only itself (an `errors` entry), and
+    `callTool` aborts whatever is still running when the call ends, on time or not.
+  - `find_street`'s code-case and flight lookups get only what's left of the budget, less 1.5 s. A slow City server
+    then costs the cases (an `errors` entry), not the houses already built. Section 6 of the connector test stalls one
+    layer at a time (the centrelines, sales, code enforcement, all of gis.charlottenc.gov, the address lookup) and
+    checks each.
+  - Flag server-side state, an SSE stream, a fetch without the call's signal, or a tool that can run past its budget.
 - **Versioning.** The connector sits outside the analyzer. An `api/mcp.js`-only change doesn't bump `APP_VERSION` or
   the badge, because no analyzer screen changes; a change to street.js or gis.js output still does. Bump
   `SERVER_INFO.version` when a tool's input or output shape changes, since the Street Walk artifact is built against it.
