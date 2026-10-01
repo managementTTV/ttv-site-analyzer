@@ -303,7 +303,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   holding the same data the board renders — not a secret). `PERMITS_FILE_ID` env var
   overrides it; don't flag the literal.
 
-### Comps (`api/comps.js`, v7.14)
+### Comps (`api/comps.js`, v7.14; team rule v8.23)
 - **Mecklenburg-only**, same rule as the GIS proxy. It joins `TaxParcelSales` to
   `TaxParcel_camadata` on PID because the sales layer carries no building attributes at all.
 - **Sale-validity filter is the heart of it.** Keep blank (arm's length) and **Z (builder sale)**;
@@ -327,20 +327,42 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   corners reach `radius × √2`; rows are filtered on the computed great-circle distance before any
   tier is built, and the count dropped is reported in `notes`. Flag a change that drops the filter
   and lets a 0.7 mi sale drive an ARV labelled "within 0.5 mi".
-- **Comp selection is a CASCADE, neighbourhood first (v7.16).** In order: same assessor
+- **The team rule comes first (v8.23, Brian 2026-10-01).** Comps are filtered to the way the team comps:
+  sales from the last `TEAM_MONTHS` (12), within the radius (the page sends 0.5 mi), that don't cross a major
+  road, of the planned product (`product`), at the planned finish (`finish`). Then the cascade below runs inside
+  that set. When fewer than `MIN_POOL` (3) sales meet the rule, `STEPS` relaxes one rule at a time in a fixed
+  order: older sales (up to `WIDE_MONTHS`, 24) → across a major road → both → any finish → any product. The
+  response says which (`rule.step`, `rule.relaxed`, `rule.label`). Flag a change that silently mixes products or
+  finishes, crosses a major road before same-side sales run out, or drops `rule` from the response.
+  - **Major roads** = the City thoroughfare layer (Accela MapServer/5), `TfareType` in `MAJOR_ROAD_TYPES`
+    (existing freeways, major thoroughfares, C2EX parkways). Minor thoroughfares and PROP* (unbuilt) rows aren't
+    barriers. A comp is `across` when the straight segment from the subject to it properly crosses one. The road
+    query is non-fatal: without it (or without a subject location) `rule.roads_checked` is false and a note says so.
+  - **Product** = the assessor `bldgtype` (`PRODUCT_TYPES`). A duet comps against TOWNHOUSE (its sides sell as
+    attached homes, not as a duplex package). The page sends the selected plan's `t` unless the analyst picks one
+    in `#comps-product`; no plan or a custom footprint = `any`.
+  - **Finish** = the assessor construction `grade`. `standard` (the Slate build) = Minimum–Good; `upgraded` adds
+    Very Good; Very Good / Excellent / Custom are `luxury`. On 1,012 nearby 2020+ sales the grade medians were
+    Average $211/sf, Good $266, Very Good $313, Excellent $430, and Slate-owned homes are graded Average. The page
+    sends `#comps-finish` (default `standard`).
+  - Fewer than `MIN_POOL` new builds even with every rule relaxed = **no suggested ARV** (`rule.label` says to pick
+    comps by hand). v8.20 priced off 1–2 sales at LOW; three of the four deals it did that for missed by 20–43%.
+- **Inside the rule set, selection is a CASCADE, neighbourhood first (v7.16).** In order: same assessor
   neighbourhood + size band → same neighbourhood → size band (`SIZE_BAND`, ±20%) → widened band
-  (`SIZE_BAND_WIDE`) → the whole pocket. Each tier needs `MIN_IN_BAND` comps to fire. This is
-  evidence-based, from the 2026-09-22 backtest: flat median 10.3% median miss, size-matched 7.7%,
-  this cascade 6.3%. The neighbourhood code is the county's own market-area boundary and is the
-  single strongest signal (~4.6% on its own tier). Same-STREET matching was tested and was NOT
-  better, so it is deliberately absent — don't add it back without new evidence.
+  (`SIZE_BAND_WIDE`) → the whole set. Each tier needs `MIN_IN_BAND` comps to fire. The neighbourhood code is the
+  county's own market-area boundary. Same-STREET matching was tested and was NOT better, so it is deliberately
+  absent — don't add it back without new evidence.
 - Flag a change that medians the whole pool when a neighbourhood or subject size is known.
-- **The `confidence` gate is the headline, not decoration.** `high` = a neighbourhood-based tier,
-  OR a size tier with `CONF_MIN_COMPS` (10) in-band comps and spread <= `CONF_MAX_SPREAD` (1.4×).
-  Backtested: high covers ~75% of deals at 5.0% median miss; low is ~9% of deals at 20.3%. The
-  badge is what tells the analyst whether to apply the number or pick comps by hand, so keep the
-  levels tied to measured tiers. Do not loosen these constants without re-running the backtest
-  (method and data in `research/05_comps-backtest.md`).
+- **The `confidence` badge (v8.23):** the cascade tier sets it (neighbourhood tiers = high, size band = medium,
+  widened band or whole set = low) and any relaxed rule takes it down one level. Of the schemes tried on the
+  2026-10-01 backtest (`research/11`, 74 priced deals) this separated best on the ±10% band: high 76%, medium 75%,
+  low 59%. That's a modest split on a small sample, and weaker than v7.16's badge was (which got its LOW from the
+  1–2 comp deals that now get no ARV), so treat it as a sort order, not an error promise. Re-run the backtest
+  before changing the levels.
+- **Backtest of the team rule (2026-10-01, this code vs v8.20 on 80 of Pat's sheets):** within ±10% of her number
+  68% → 72%, within ±15% 76% → 84%, misses over 10% 25 → 21, bias +2.1% → −0.1%; within ±5% 54% → 47%, median miss
+  4.8% → 5.3%. Most of the old hot-pocket overestimates (Katonah, Carolyn, Briar Creek, Commonwealth, Kingsbury)
+  were luxury or cross-thoroughfare sales and are gone. The rule alone has 3+ comps on about 6 deals in 10.
 - **Two tiers, both reported:** built `minYear`+ (default 2020) for context, `solidYear`+ (default
   2025) as solid comps. **Selection runs over the full new-build pool; recency is reported, not
   enforced** (`summary.matching.solid_in_set` / `solid_share`, plus a flag when none of the
@@ -349,11 +371,14 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   running the ladder over solid-only first backtests at **25.4% within 5% / 10.0% median error**
   versus **44.8% / 6.3%** for the full pool, and loses 37-17 head to head on the deals where the
   two differ. Restricting to 2025+ starves the neighbourhood tier. A same-pocket 2023 sale beats
-  a half-mile-away 2025 one. Don't reinstate a hard recency preference without new evidence.
+  a half-mile-away 2025 one. Don't reinstate a hard recency preference without new evidence. (The
+  12-month team window is a sale-date rule, not a year-built rule; it is separate from this.)
 - **`xcoord` holds latitude and `ycoord` holds longitude** in the CAMA layer. The field names are
   backwards in the source data; don't 'fix' the distance maths.
 - Comps land in the same `COMPS` model the manual table uses, so the blended $/sf, the PDF and the
-  Excel export keep working unchanged. Flag a parallel comps model.
+  Excel export keep working unchanged. Flag a parallel comps model. Since v8.23 the page adds the comps behind
+  the suggested ARV (`used: true`, nearest 12), so the table's median is the rule's; with no ARV, the window's
+  new builds. Server text (road and neighbourhood names) goes into the comps box escaped.
 
 ### Street check (`api/street.js`, v8.18)
 - **What it is:** the lot's own stretch of street (same CAMA `streetname`, `STREET_FT` = 1,000 ft; CAMA drops the
