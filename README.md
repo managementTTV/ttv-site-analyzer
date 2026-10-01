@@ -34,12 +34,43 @@ as management@), which makes the deal's locked Google Sheet in Underwritten with
 deployments). Without it the button opens a "not set up" page. Keep the link out of the repo: it's public. See
 AGENTS.md "Deal-sheet hand-off".
 
+## Claude connector: TTV Street Data (`api/mcp.js`)
+
+A read-only MCP server that lets Claude (claude.ai, on the team's Claude subscription) read the county's street data
+for the Street Walk artifact, or in any chat. It has two tools:
+
+- `find_street`: an address or parcel id gives the houses on the lot's own stretch of street, with assessor facts,
+  City code-enforcement cases from the last 24 months, and the analyzer's street check.
+- `aerial_crops`: up to 6 parcel ids give NC OneMap aerial photo crops, with each parcel's outline.
+
+It serves public Mecklenburg County, City of Charlotte and NC OneMap data only: no Google data, no owner names and no
+inspector details. It needs no login, key or env var. The rules are in AGENTS.md ("Street Data connector").
+
+**Add it for the whole organisation** (an org Owner or Admin, once):
+
+1. In claude.ai, open Organization settings → Connectors → Add → Custom → Web.
+2. Name it `TTV Street Data` (the Street Walk artifact looks for this name), with the URL
+   `https://ttv-site-analyzer.vercel.app/api/mcp`. Leave the OAuth fields empty: it's authless.
+3. Save. Each member then turns it on once in claude.ai → Settings → Connectors (and in a chat's tools menu when they
+   want it there).
+
+To check it's up:
+
+```
+curl -s https://ttv-site-analyzer.vercel.app/api/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+A preview deployment serves its branch's copy at `<preview URL>/api/mcp`, for testing before merge. The org connector
+always points at production.
+
 ## Structure
 
 ```
 index.html      # the entire app (UI + logic + plan data)
 streetview.html # the lot's Street View on its own page (Maps Embed only, no other maps)
-api/            # Vercel functions: gis.js, comps.js, street.js (Mecklenburg county data), permits.js, deal-sheet.js
+api/            # Vercel functions: gis.js, comps.js, street.js (Mecklenburg county data), permits.js, deal-sheet.js,
+                #   mcp.js (the TTV Street Data connector for Claude)
 plans/          # plan images (one per Slate plan) — see plans/README.md
 README.md
 ```
