@@ -5223,11 +5223,11 @@ function planCostSplit(){
 // ── DEAL-SHEET HAND-OFF (v8.21) ──
 // "Send to deal sheet" opens api/deal-sheet#uw=<deal>, which redirects to the team's New Deal web app (Apps Script,
 // runs as management@ so the copy keeps the template's formula locks). Browsers carry the #fragment across the
-// redirect and never send it to a server, so the deal goes from this tab to Google's page, which reads it there and
-// fills the new sheet's inputs (createDealFromAnalyzer in the "UW Template - Formula Lock & Color Code" project). After
+// redirect without sending it in either request, so Vercel never sees the deal; Google's page reads it in the browser
+// and passes it to the script that fills the new sheet's inputs (createDealFromAnalyzer in the "UW Template - Formula Lock & Color Code" project). After
 // that the sheet is the deal's home; sending the same address again only opens it. HANDOFF_VERSION there must match `v`.
 const DEAL_SHEET_PATH='api/deal-sheet';
-let _sheetHandoff=null;   // {ts, street}: this deal was sent; street = addrWords() of the address it was sent for
+let _sheetHandoff=null;   // {ts, street, city}: this deal was sent; street = addrWords() / city = upper-case, as sent
 // The payload, read through the exporters' own readers (getReportData, collectModelInputs) so the sheet starts from the
 // numbers on screen. Per-site figures (land, lot factor, survey, appraisal, insurance) go as site totals; the sheet
 // divides them by Units for its per-unit model.
@@ -5268,15 +5268,21 @@ function sendToDealSheet(){
     :!(mv('arv-b')>0)?'Enter the Base ARV $/sf first.'
     :issues.length?'Fix the flagged inputs first. '+issues.map(i=>i.msg).join(' '):'';
   if(block){showToast(block,'warn');return;}
-  window.open(DEAL_SHEET_PATH+'#uw='+b64url(JSON.stringify(sheetHandoffPayload())),'_blank','noopener');
-  _sheetHandoff={ts:Date.now(),street:addrWords(addrStreet()).join(' ')};
+  // no 'noopener' feature: with it window.open always returns null, and a blocked tab must not be recorded as sent
+  const w=window.open(DEAL_SHEET_PATH+'#uw='+b64url(JSON.stringify(sheetHandoffPayload())),'_blank');
+  if(!w){showToast('The browser blocked the new tab. Allow pop-ups for this site and click Send to deal sheet again.','warn');return;}
+  try{w.opener=null;}catch(_){ }
+  _sheetHandoff={ts:Date.now(),street:addrWords(addrStreet()).join(' '),city:addrCity()};
   renderSheetHandoff();scheduleAutosave();
 }
 function addrStreet(){return (($('addr-street')||{}).value||'').trim();}
+function addrCity(){return (($('addr-city')||{}).value||'').trim().toUpperCase();}
+// the deal on screen is the one sent: same street, and the same city when both have one (the sheet match's rule)
+function isSentDeal(h){return !!(h&&h.street&&h.street===addrWords(addrStreet()).join(' ')&&(!h.city||!addrCity()||h.city===addrCity()));}
 // While the address on screen is the one sent, say the sheet is now its home. Display only.
 function renderSheetHandoff(){
   const box=$('sheet-handoff'),btn=$('btn-deal-sheet');if(!box)return;
-  const h=_sheetHandoff,on=!!(h&&h.street&&h.street===addrWords(addrStreet()).join(' '));
+  const h=_sheetHandoff,on=isSentDeal(h);
   box.style.display=on?'':'none';
   if(btn)btn.innerHTML=on?'&#128196; Open its deal sheet':'&#128196; Send to deal sheet';
   if(!on)return;
@@ -6011,7 +6017,8 @@ function restoreDeal(d){
     _dealGen++;   // drop any county lookup still in flight: its answer belongs to the page being replaced
     _clearedSite=null;_gisLot=null;_gisMismatch=null;   // v8.16: the last deal's site tie and cleared site go with it
     {const h=d.sheetHandoff;   // v8.21: whether this deal was sent to its deal sheet
-     _sheetHandoff=h&&typeof h==='object'&&typeof h.street==='string'&&isFinite(h.ts)?{ts:+h.ts,street:h.street}:null;}
+     _sheetHandoff=h&&typeof h==='object'&&typeof h.street==='string'&&Number.isFinite(+h.ts)&&+h.ts>0
+       ?{ts:+h.ts,street:h.street,city:typeof h.city==='string'?h.city:''}:null;}
     const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else if(f.v!=null)e.value=f.v;}};
     // 0) start from a fresh page's defaults. The blanket restore below only writes fields the file has, so a
     //    field added after the deal was saved would otherwise keep whatever the previous deal left on screen.
@@ -6183,7 +6190,7 @@ const RELEASE_NOTES=[
    'The Underwrite has a Send to deal sheet button. It opens the team\u2019s New Deal page with this deal on it, and one click there makes the locked Google Sheet in Underwritten (named by address, formulas locked as with the address form) with the deal\u2019s inputs filled in: plan, units, land, asking price, lot factor and its items, taps, appraisal, insurance, points, rate, the three terms, retail $/sf, corner lot, county and zone, the upgrades ticked on the Upgrades tab, and the comps.',
    'From then on the sheet is the deal\u2019s home: make every change there. Sending the same address again only opens its sheet; nothing in it is overwritten. The Underwrite says so above the buttons while this address is on screen.',
    'The sheet runs its own locked formulas, so its numbers can differ from the analyzer\u2019s (it adds 14% to upgrades, finances 60% of land and 100% of build, prices survey and sale costs its own way, and its Worst and Best are its Base $/sf \u2212 $10 and + $10). An Analyzer Snapshot tab in the sheet records this first underwrite and lists each difference and why.',
-   'The deal travels in the link itself (after the #), from your browser straight to Google; no server sees it.']},
+   'The deal travels in the link itself (after the #), so the analyzer\u2019s server never sees it; Google\u2019s New Deal page reads it in your browser and passes it to the script that fills the sheet. If Google asks you to sign in first, the page says the deal didn\u2019t come through: click Send to deal sheet again.']},
  {v:'8.20',date:'Sep 2026',name:'Street View on its own page',items:[
    'The Street Check card now opens Street View on a page of its own, in a new tab: the street in front of the lot, facing it, with arrows to walk the block. It used to show inside the card. Google\u2019s Maps terms don\u2019t allow Street View on the same screen as another map, and Site Intelligence draws the county parcel.',
    'The card also keeps a Google Maps link. The rest of the Street Check (the street against its neighbourhood) is unchanged.',

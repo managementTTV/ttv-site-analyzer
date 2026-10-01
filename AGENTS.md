@@ -561,25 +561,28 @@ most deals take.
 ### Deal-sheet hand-off (v8.21)
 After the first underwrite, a deal moves to its **locked Google Sheet** and every later change happens there (Brian,
 2026-10-01). The Underwrite's **Send to deal sheet** (`sendToDealSheet()`) opens `api/deal-sheet#uw=<base64url JSON>`.
-`api/deal-sheet.js` answers 302 to `NEW_DEAL_URL`, the team's **New Deal** web app (Apps Script project "UW Template -
+`api/deal-sheet.js` answers 302 to `NEW_DEAL_URL?from=analyzer`, the team's **New Deal** web app (Apps Script project "UW Template -
 Formula Lock & Color Code", owned by management@, executes as management@ so the copy keeps the template's formula
-locks; access: anyone signed in with a Google account). The browser carries the `#fragment` across the redirect and
-never sends it to a server; the New Deal page reads it with `google.script.url.getLocation()` and its
-`createDealFromAnalyzer()` copies the V1.1 template into Underwritten, fills the green input cells, ticks the matching
+locks; access: anyone signed in with a Google account). The browser carries the `#fragment` across the redirect without
+sending it in either request (Vercel never sees the deal); the New Deal page reads it with
+`google.script.url.getLocation()` and passes it to `createDealFromAnalyzer()`, which copies the V1.1 template into Underwritten, fills the green input cells, ticks the matching
 Upgrades rows, writes the comps, and adds a locked **Analyzer Snapshot** tab (site facts, the analyzer's
 worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules:
 - **`NEW_DEAL_URL` is a Vercel env var only** (Production + Preview), like the permits feed: the repo is public. Flag the
   /exec link appearing in `index.html` or any committed file. `deal-sheet.js` refuses anything that isn't a
   `script.google.com/.../exec` (or `/dev`) URL and answers 501 with a set-up note when it's missing.
 - **The payload is read through the exporters' readers** (`getReportData()`, `collectModelInputs()`, `moneyIssues()`),
-  never from DOM text, so the sheet starts from the numbers on screen. Per-site figures (land, lot factor, survey,
+  not from input fields directly, so the sheet starts from the numbers on screen. (Max land is `getReportData().maxLand`,
+  the on-screen text; the snapshot only displays it.) Per-site figures (land, lot factor, survey,
   appraisal, insurance) are sent as site totals; the Apps Script divides them by Units for the sheet's per-unit model.
   Its `v` must equal the script's `HANDOFF_VERSION`: changing a field's meaning means bumping both.
 - **The sheet is the deal's home after the hand-off.** The script matches an existing Underwritten sheet by street
-  (+ city) and then only opens it; it never writes to an existing sheet. Don't add an "update the sheet" path.
+  (+ city) and then only opens it; it never writes to an existing sheet; the address form uses the same match. A copy that fails while
+  being filled is trashed, so it can't block the retry. Don't add an "update the sheet" path.
 - **No new storage:** the "sent" record (`_sheetHandoff`, `{ts, street}`) rides in the deal itself (`serializeDeal()` /
   `restoreDeal()`, so the existing autosave key). The banner and the button label are display-only
-  (`renderSheetHandoff()`), shown while the street on screen (`addrWords()`) is the one sent.
+  (`renderSheetHandoff()`), shown while the deal on screen is the one sent (`isSentDeal()`: same `addrWords()` street,
+  same city when both have one). A blocked pop-up is not recorded as sent.
 - Sending is blocked without a street, a plan or a Base ARV, or while `moneyIssues()` has a note.
 - The sheet's locked formulas don't follow the app's math in several places: it adds 14% to upgrades, finances 60% of
   land + 100% of build, prices survey at $1,000 / $2,000 per unit and sale costs at 5% + 1%, and its Worst / Best are

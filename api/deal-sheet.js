@@ -1,8 +1,10 @@
 // api/deal-sheet.js — v8.21 "Send to deal sheet"
 // The Underwrite opens /api/deal-sheet#uw=<deal>. This answers with a redirect to the team's New Deal web app (the
 // Apps Script /exec link in NEW_DEAL_URL, a Vercel env var: like the permits feed, the link lives only on Vercel,
-// never in client code or git, since this repo is public). Browsers carry the #fragment across the redirect and
-// never send it to a server, so the deal itself doesn't reach this function, Vercel's logs or Google's.
+// never in client code or git, since this repo is public). Browsers carry the #fragment across the redirect without
+// sending it in either request, so the deal doesn't reach this function or Vercel's logs; the New Deal page reads it
+// in the browser and passes it to its Apps Script. ?from=analyzer survives Google's sign-in redirect even when the
+// fragment doesn't, so the page can say the deal didn't come through instead of showing a blank form.
 // The web app runs as management@ and makes the locked deal sheet; see AGENTS.md "Deal-sheet hand-off".
 const EXEC = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/(exec|dev)$/;
 
@@ -18,6 +20,6 @@ export default function handler(req, res){
       + 'web app’s /exec link (Production and Preview), then redeploy. Your deal is still in the analyzer.</p>');
     return;
   }
-  res.setHeader('Location', url);
+  res.setHeader('Location', url + '?from=analyzer');
   res.status(302).end();
 }
