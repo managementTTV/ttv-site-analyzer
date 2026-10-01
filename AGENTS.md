@@ -28,7 +28,8 @@ in the repo, version it with the code.
 - **Architecture:** a **single, fully client-side `index.html`** (UI + all logic + all
   plan data, ~4,900 lines) + five serverless functions in `api/`: `gis.js` (Charlotte/Meck
   GIS + county assessor proxy), `comps.js` (county new-build comps), `street.js` (the street check,
-  v8.18), `permits.js` (the permitting board's data proxy) and `mcp.js` (the "TTV Street Data" MCP connector for
+  v8.18), `permits.js` (the permitting board's data proxy), `deal-sheet.js` (v8.21, a redirect to the
+  New Deal web app; see Deal-sheet hand-off) and `mcp.js` (the "TTV Street Data" MCP connector for
   claude.ai, 2026-10-01; see Street Data connector) + `plans/` images + `assets/` logos. No framework, no build
   step, no database. Everything runs in the browser. Two small static pages sit beside it: `permits.html` (below) and
   `streetview.html` (v8.20, the lot's Street View on its own page; see Street check).
@@ -664,6 +665,41 @@ most deals take.
 - **`redrawEditor()` owns `buildableArea` in poly mode**, as the envelope's area (all pieces). `updatePolyStats()` must
   not assign it (v8.3).
 - **`polyPoints` keep 1/100 px**, not whole pixels, which moved GIS corners up to 0.15 ft.
+
+### Deal-sheet hand-off (v8.21)
+After the first underwrite, a deal moves to its **locked Google Sheet** and every later change happens there (Brian,
+2026-10-01). The Underwrite's **Send to deal sheet** (`sendToDealSheet()`) opens `api/deal-sheet#uw=<base64url JSON>`.
+`api/deal-sheet.js` answers 302 to `NEW_DEAL_URL?from=analyzer`, the team's **New Deal** web app (Apps Script project "UW Template -
+Formula Lock & Color Code", owned by management@, executes as management@ so the copy keeps the template's formula
+locks; access: anyone signed in with a Google account). The browser carries the `#fragment` across the redirect without
+sending it in either request (Vercel never sees the deal); the New Deal page reads it with
+`google.script.url.getLocation()` and passes it to `createDealFromAnalyzer()`, which copies the V1.1 template into Underwritten, fills the green input cells, ticks the matching
+Upgrades rows, writes the comps, and adds a locked **Analyzer Snapshot** tab (site facts, the analyzer's
+worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules:
+- **`NEW_DEAL_URL` is a Vercel env var only** (Production + Preview), like the permits feed: the repo is public. Flag the
+  /exec link appearing in `index.html` or any committed file. `deal-sheet.js` refuses anything that isn't a
+  `script.google.com/.../exec` (or `/dev`) URL and answers 501 with a set-up note when it's missing.
+- **The payload is read through the exporters' readers** (`getReportData()`, `collectModelInputs()`, `moneyIssues()`),
+  not from input fields directly, so the sheet starts from the numbers on screen. (Max land is `getReportData().maxLand`,
+  the on-screen text; the snapshot only displays it.) Per-site figures (land, lot factor, survey,
+  appraisal, insurance) are sent as site totals; the Apps Script divides them by Units for the sheet's per-unit model.
+  Its `v` must equal the script's `HANDOFF_VERSION`: changing a field's meaning means bumping both.
+- **The sheet is the deal's home after the hand-off.** The script matches an existing Underwritten sheet by street
+  (+ city) and then only opens it; it never writes to an existing sheet; the address form uses the same match. A copy that fails while
+  being filled is trashed, so it can't block the retry. Don't add an "update the sheet" path.
+- **No new storage:** the "sent" record (`_sheetHandoff`, `{ts, street}`) rides in the deal itself (`serializeDeal()` /
+  `restoreDeal()`, so the existing autosave key). The banner and the button label are display-only
+  (`renderSheetHandoff()`), shown while the deal on screen is the one sent (`isSentDeal()`: same `addrWords()` street,
+  same city when both have one). A blocked pop-up is not recorded as sent.
+- Sending is blocked without a street, a plan or a Base ARV, or while `moneyIssues()` has a note.
+- The sheet's locked formulas don't follow the app's math in several places: it adds 14% to upgrades, finances 60% of
+  land + 100% of build, prices survey at $1,000 / $2,000 per unit and sale costs at 5% + 1%, and its Worst / Best are
+  Base ∓ $10/sf. The hand-off doesn't force the sheet to match; it records both in the snapshot. Changing the
+  template's formulas is a separate decision for the partners.
+- The Apps Script source is not in this repo; a reference copy lives in Brian's project folder
+  (`New Dev UW'er 5000/Code.gs.v3-analyzer-handoff-*.gs`). The Apps Script side is changed by pasting the whole
+  Code.gs and publishing a **new version of the existing deployment** (Deploy › Manage deployments › edit), which
+  keeps the /exec link.
 
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
