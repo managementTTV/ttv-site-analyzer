@@ -26,9 +26,10 @@ in the repo, version it with the code.
   `markAllManual()` select `.page input[id]`). Hero tiles and section summaries are display-only,
   filled from `getReportData()` in `updateHero()`.
 - **Architecture:** a **single, fully client-side `index.html`** (UI + all logic + all
-  plan data, ~4,900 lines) + four serverless functions in `api/`: `gis.js` (Charlotte/Meck
+  plan data, ~4,900 lines) + five serverless functions in `api/`: `gis.js` (Charlotte/Meck
   GIS + county assessor proxy), `comps.js` (county new-build comps), `street.js` (the street check,
-  v8.18) and `permits.js` (the permitting board's data proxy) + `plans/` images + `assets/` logos. No framework, no build
+  v8.18), `permits.js` (the permitting board's data proxy) and `mcp.js` (the "TTV Street Data" MCP connector for
+  claude.ai, 2026-10-01; see Street Data connector) + `plans/` images + `assets/` logos. No framework, no build
   step, no database. Everything runs in the browser. Two small static pages sit beside it: `permits.html` (below) and
   `streetview.html` (v8.20, the lot's Street View on its own page; see Street check).
 - **Deploy model — why review matters:** Vercel serves the static files; **every push to
@@ -406,6 +407,79 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Stale answers.** `checkStreet()` takes `gisAddressSignature()` and `_dealGen` before the fetch and drops an answer
   if either moved or `_lastGis.pid` changed. The card hides when the address moves (`invalidateGisIfAddressMoved()`),
   on a refused match and in `restoreDeal()` step 0; a restore re-runs it for the saved parcel.
+- **One street check, two callers (2026-10-01).** The handler only validates and sends; the work is `streetCheck()`,
+  which `api/mcp.js` also calls. `/api/street` output must stay byte-identical when either side changes (see Street
+  Data connector). `keep.rows` / `keep.subject` carry CAMA owner fields for the same-site rule: never send them.
+
+### Street Data connector (`api/mcp.js`, MCP, 2026-10-01)
+- **What it is:** "TTV Street Data", a read-only remote MCP server for claude.ai. An org admin adds it once as a custom
+  connector (README). The "Street Walk" artifact (a claude.ai page shared with the org) and any Claude chat in the org
+  call it on the team's own Claude subscription: no Anthropic API key, no per-use billing. Two tools:
+  - `find_street`: an address or PID gives the subject's own stretch of street, house by house (assessor facts, City
+    code-enforcement cases opened in the last 24 months), plus the street check's answer.
+  - `aerial_crops`: 1–6 PIDs give NC OneMap orthophoto crops, with each parcel's outline in pixels.
+  It feeds no analyzer screen, save file, PDF or Excel.
+- **Read-only, public data, no secrets.** It's authless, like the other endpoints, and reads only Mecklenburg County,
+  City of Charlotte and NC OneMap public services. Flag a write, an auth token, a key, an env var or another data
+  source.
+- **No Google, by any route** (the street check's rule, above).
+  - Nothing from Google passes through the connector or reaches a model: no Street View, Static Maps, Maps JS, Places or
+    Google geocodes.
+  - `streetview_url` (`streetview.html`) and `maps_url` (a Maps URLs link) are links this file builds for a person. The
+    tool descriptions and the server instructions say never to fetch them or read them with a model.
+  - The AI's eyes are NC OneMap orthoimagery (licence: free and unrestricted) and county records.
+  - Flag a Google host in any fetch, a Google response passed on, or an embed or capture of one.
+- **Code enforcement: type, opened, closed and status only.**
+  - `CE_FIELDS` is the whole request (explicit `outFields`, never `*`). Never request Inspector, EmailAddress,
+    InspectorPhone, FullAddress, CaseOrigin or DetailedDescription.
+  - CaseType is coarse: eight in ten cases are "Nuisance". The violation a case cites ("10-167 (b) - Junked Motor
+    Vehicles", "14-216 (a)(25) - Parking on the Lawn") sits only in DetailedDescription, which also holds the reporter's
+    own words. So `VIOLATIONS` matches each citation line (section number and title) in a `where` clause on the city's
+    server and gets object ids back (`returnIdsOnly`).
+  - The type returned is always one of `VIOLATIONS`' fixed labels or the CaseType, never text from the record.
+  - Flag a fetch of DetailedDescription, a type taken from record text, or a label pattern without its section number,
+    which would start matching free text.
+  - Status is `CaseStatus` (Open / Closed / New). The `Conclusion` (e.g. "Case Dismissed - No Violations") isn't
+    returned.
+- **No owner names.** `houseFrom()` copies only the fields it names from each CAMA row. The CAMA `city` / `zipcode` are
+  the owner's mailing address, so they stay out too. Flag any owner, mailing, grantor or deed field in the output.
+- **"This street" is street.js's, and the geocode is gis.js's.** Flag a second geocoder or a second street definition.
+  - `find_street` calls `streetCheck()` with `keep` and lists `keep.rows`: the same CAMA street name within 1,000 ft,
+    with the other half (N vs S) dropped via the Accela address points. That's taken before the same-site rule, so the
+    subject's own other lots are listed.
+  - One row per PID (a condo's unit rows share one), at most 80 (the nearest the subject), sorted by house number.
+  - An address goes through `geocodeAddress()` and `parcelAtPoint()`, so it finds the parcel `/api/gis` loads. A refused
+    match is a tool error carrying the county's message; a close one loads with that message in `notes`.
+  - `kind` uses street.js's `isHome` / `isVacant` / `isNonRes`. For the walk only, a residential parcel with no building
+    on record (no heated area or building value, though CAMA may still say "IMP") also counts as vacant. The street
+    check's counts are unchanged.
+- **Refactor guard.** `/api/street` and `/api/gis` must stay byte-identical: status, headers and body, with both
+  handlers called directly against `git show origin/main:api/…`. The 2026-10-01 connector test did this for PIDs
+  04118535, 08308C99 and 06107186 (plus `mode=view` and a bad PID), and for 2723 Dellinger Dr (with `debug=1` too),
+  1500 Davidson St and "2100 Sharon Rd, 28210". Flag a connector need that changes either endpoint's output.
+- **Crops (`aerial_crops`).** Each crop works like the tested set's `build.py` `crop()`:
+  - The parcel ring comes from TaxParcelBoundaries (`outSR=2264`), and the 220 × 220 ft box is centred on the mean of
+    its first ring's vertices.
+  - The image is NC OneMap `exportImage` at 440 × 440 px, JPEG at quality 90 (the source is JPEG; 90 stays close to the
+    tested PNGs).
+  - The image carries no outline. `rings_px` holds the rings in image pixels (`(x-minx)*sx, (maxy-y)*sy` against the
+    bbox requested), and the artifact draws them in red.
+  - Each crop's `flight` is the date in the name of the visible catalog tile under its centre (`identify`), so a
+    re-flight changes the artifact's cache key. Flag a hard-coded flight date.
+  - 1–6 PIDs per call, one `aerial_crops` per HTTP request. An answer is about 0.25–0.45 MB; Vercel's limit is 4.5 MB.
+- **Transport.**
+  - MCP Streamable HTTP, stateless, JSON responses only: no SSE stream, no session id.
+  - POST takes one JSON-RPC message or a batch. Notifications get 202, GET gets 405 with `Allow: POST`, OPTIONS gets
+    204. Responses are `Content-Type: application/json` with `Cache-Control: no-store`.
+  - A tool failure (bad input, a layer down) is an `isError` result saying what to do. An unknown method is -32601, an
+    unknown tool -32602 and bad JSON -32700.
+  - Every upstream fetch has a 12 s timeout and each tool a 25 s budget.
+  - Flag server-side state, an SSE stream, or a tool that can run past its budget.
+- **Versioning.** The connector sits outside the analyzer. An `api/mcp.js`-only change doesn't bump `APP_VERSION` or
+  the badge, because no analyzer screen changes; a change to street.js or gis.js output still does. Bump
+  `SERVER_INFO.version` when a tool's input or output shape changes, since the Street Walk artifact is built against it.
+- **Fair housing**, as in the street check: buildings, lots and land use only. Flag occupant, ownership-type or
+  demographic data.
 
 ### Lot-factor auto-fill (v7.13)
 - **A cached GIS result must not outlive its address.** `window._lastGis` carries the PID the comps

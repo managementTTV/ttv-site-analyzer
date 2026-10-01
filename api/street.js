@@ -37,7 +37,7 @@ const ADDRESS_LAYER = 1, STREET_LAYERS = [2, 3];
 const CAMA_FIELDS = 'pid,streetname,streetnumber,neighborhood,neighbordesc,lusecode,landuse_description,vacorimprov,'
   + 'grade,yearbuilt,heatedarea,totalbldgval,saleprice,saledate,validsale,xcoord,ycoord,ownrlstnme,ownrfrstnme';
 
-const STREET_FT = 1000;          // how far along the street, each way, counts as "this street" (about two blocks)
+export const STREET_FT = 1000;   // how far along the street, each way, counts as "this street" (about two blocks)
 const NEAR_FT = 300;             // parcels this close stand in for a new lot that has no neighbourhood code yet
 const CAMERA_MAX_FT = 400;       // a centreline further than this from the lot isn't its street
 const SALE_MONTHS = 60;          // one street has only a few sales a year; the same window applies to both sides
@@ -51,7 +51,7 @@ const COMMERCIAL_AREA = /SUBMARKET/i;
 const PAGE = 2000, MAX_PAGES = 4;  // CAMA maxRecordCount is 2000; the largest neighbourhoods are ~3,300 parcels
 const PID_CHUNK = 250;             // parcel ids per sales-layer query (POST, so no URL limit)
 // Sale-validity codes counted as market sales: blank = arm's length, Z = builder sale (same as api/comps.js).
-const MARKET_VALIDITY = ['', 'Z'];
+export const MARKET_VALIDITY = ['', 'Z'];
 const GRADE_RANK = { MINIMUM:1, FAIR:2, AVERAGE:3, GOOD:4, 'VERY GOOD':5, EXCELLENT:6, CUSTOM:6 };
 // Commercial, industrial and office land uses, plus utility and rail parcels: the traffic, noise and truck
 // neighbours that make a street harder to sell. Churches, schools, parks, multi-family and affordable housing are not
@@ -110,14 +110,15 @@ const camaRows = params => allRows(CAMA_LAYER, Object.assign({orderByFields:'obj
 const within = (lat, lng, ft) => ({geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint', inSR:'4326',
   spatialRel:'esriSpatialRelIntersects', distance:String(ft), units:'esriSRUnit_Foot'});
 
-function isVacant(r){ return /^VAC/i.test((r.vacorimprov||'').trim()) && !(num(r.heatedarea)>0); }
+// isVacant / isNonRes / isHome are exported for api/mcp.js, which labels each house on the street the same way.
+export function isVacant(r){ return /^VAC/i.test((r.vacorimprov||'').trim()) && !(num(r.heatedarea)>0); }
 // Some homes carry a commercial code ("C700 MULTI FAMILY", "O400 MULTI FAMILY"): the description decides, so housing of
 // any kind never counts as a commercial neighbour. A commercial, office or warehouse condominium is still commercial.
 const HOUSING_DESC = /RESIDENTIAL|MULTI ?FAMIL|APARTMENT|AFFORDABLE|CONDO|TOWN ?HOUSE|DUPLEX|TRIPLEX|MOBILE HOME|HOME FOR THE AGED/i;
 const BUSINESS_DESC = /COMMERCIAL|OFFICE|WAREHOUSE|MEDICAL|RETAIL|INDUSTRIAL|HOTEL/i;
-function isNonRes(r){ const c=(r.lusecode||'').trim(), d=r.landuse_description||'';
+export function isNonRes(r){ const c=(r.lusecode||'').trim(), d=r.landuse_description||'';
   return (NONRES_USE.test(c) || NONRES_CODES.includes(c)) && (BUSINESS_DESC.test(d) || !HOUSING_DESC.test(d)); }
-function isHome(r){ const c=(r.lusecode||'').trim(), d=(r.landuse_description||'');
+export function isHome(r){ const c=(r.lusecode||'').trim(), d=(r.landuse_description||'');
   return num(r.heatedarea)>0 && (/^R/i.test(c) || (!c && /RESIDENTIAL|TOWN ?HOUSE|CONDO/i.test(d))); }
 // The CAMA row carries each parcel's last sale. A home sale counts when it's market-valid (blank or Z), in the window,
 // and not before the house was built (that sold the lot or the old house; same rule as api/comps.js).
@@ -240,18 +241,28 @@ export default async function handler(req, res){
   if(!view) res.setHeader('Access-Control-Allow-Origin','*');
   const pid = (q.pid||'').trim().toUpperCase();   // county PIDs are upper case ("08308C99"); the CAMA match is exact
   const ft = Math.min(Math.max(parseInt(q.ft)||STREET_FT, 300), 2640);
+  if(!/^[0-9A-Z]{8}$/i.test(pid)){ res.setHeader('Cache-Control','no-store'); res.status(400).json({error:'pass ?pid= (an 8-character Mecklenburg parcel id)'}); return; }
+  const out = await streetCheck(pid, ft, view);
+  // a partial answer (a county layer down) isn't cached, so a re-check can get the whole one
+  res.setHeader('Cache-Control', out.errors.length ? 'no-store' : 's-maxage=3600, stale-while-revalidate');
+  res.status(200).json(out);
+}
+
+// The street check for one parcel: the /api/street answer, for an upper-case 8-character PID. api/mcp.js (the TTV
+// Street Data connector's find_street) calls it too, with a `keep` object, and lists the street house by house from
+// what it gets back: keep.rows, this street's CAMA rows after the direction filter and before the same-site rule (the
+// subject included; null when there's no street), and keep.subject, the subject's own row. Neither goes into the
+// answer, so /api/street is unchanged. The rows carry the CAMA owner fields the same-site rule reads: a caller must
+// never pass them on.
+export async function streetCheck(pid, ft, view, keep){
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
-  // a partial answer (a county layer down) isn't cached, so a re-check can get the whole one
-  const send = () => { res.setHeader('Cache-Control', out.errors.length ? 'no-store' : 's-maxage=3600, stale-while-revalidate');
-    res.status(200).json(out); };
-  if(!/^[0-9A-Z]{8}$/i.test(pid)){ res.setHeader('Cache-Control','no-store'); res.status(400).json({error:'pass ?pid= (an 8-character Mecklenburg parcel id)'}); return; }
-
   try{
     // 1) the subject: street name, neighbourhood code and a point
     const sj = await ajPost(`${CAMA_LAYER}/query`, {where:`pid='${sq(pid)}'`, outFields:CAMA_FIELDS, returnGeometry:'false', f:'json'});
     const a = (sj.features||[])[0] && sj.features[0].attributes;
-    if(!a){ out.errors.push('No assessor record for PID '+pid+'.'); return send(); }
+    if(!a){ out.errors.push('No assessor record for PID '+pid+'.'); return out; }
+    if(keep) keep.subject = a;
     let lat = num(a.xcoord), lng = num(a.ycoord);   // camadata stores latitude in xcoord, longitude in ycoord
     if(lat==null || lng==null){
       try{
@@ -263,7 +274,7 @@ export default async function handler(req, res){
     const street = (a.streetname||'').trim().toUpperCase();
     const nb = {code:(a.neighborhood||'').trim()||null, name:(a.neighbordesc||'').trim()||null, inferred:false};
     out.subject = {pid, street:street||null, number:(a.streetnumber||'').trim()||null, lat, lng, neighborhood:nb};
-    if(lat==null || lng==null){ out.errors.push('No location for PID '+pid+'.'); return send(); }
+    if(lat==null || lng==null){ out.errors.push('No location for PID '+pid+'.'); return out; }
     if(!street) out.notes.push('The assessor record has no street name for this lot, so there is no street to compare.');
     if(view){
       let cam = null;
@@ -271,7 +282,7 @@ export default async function handler(req, res){
       out.subject.street_label = directedName(cam, street) || street || null;
       out.streetview = streetviewFor(lat, lng, cam, true);
       if(street && !out.streetview.camera) out.notes.push(NO_CENTRELINE);
-      return send();
+      return out;
     }
 
     // 2) independent, non-fatal, in parallel: this street, the street centreline, and the neighbourhood when the lot
@@ -304,6 +315,7 @@ export default async function handler(req, res){
         if(stRows.length < before) out.notes.push(`${before-stRows.length} parcel${before-stRows.length===1?'':'s'} on the other half of ${street} (not ${cam.name}) left out.`);
       }catch(e){ out.errors.push('direction: '+e.message); }
     }
+    if(keep) keep.rows = stRows;
     out.subject.street_label = label || null;
     // The rest of the same site: other vacant lots with the subject's owner on the street (a three-lot sub-division
     // shouldn't count its own lots against the street). Only unbuilt lots, so a builder's finished homes still count.
@@ -362,9 +374,8 @@ export default async function handler(req, res){
     // 6) Street View camera: the nearest point on the lot's own street centreline, facing the lot (no key: see mode=view)
     out.streetview = streetviewFor(lat, lng, cam, false);
     if(street && !out.streetview.camera) out.notes.push(NO_CENTRELINE);
-    send();
   }catch(e){
     out.errors.push('fatal: '+e.message);
-    send();
   }
+  return out;
 }
