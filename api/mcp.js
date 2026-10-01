@@ -46,7 +46,7 @@ const MAX_CROPS = 6;             // ~70 KB of base64 per crop keeps a call near 
 const HALF_FT = 110, CROP_PX = 440, FT_PER_PX = 0.5;   // 220 ft square at the service's native 0.5 ft
 const JPEG_QUALITY = 90;         // the service is JPEG at source; 90 keeps detail close to the tested PNG crops
 const FETCH_MS = 10000;          // per upstream request, the street check's and the geocode's included (see toolControl)
-const TOOL_MS = 25000;           // per tool call, well under Vercel's 30 s
+const TOOL_MS = 25000;           // per tool call, under the 30 s maxDuration vercel.json sets for this function
 const LATE_MARGIN_MS = 1500;     // find_street's code-case and flight lookups stop this long before the tool's deadline
 const REQUEST_MS = 28000;        // per HTTP request (a batch shares it)
 const MAX_BODY = 1 << 20;
