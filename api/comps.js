@@ -38,10 +38,10 @@
 //     nearby 2020+ sales: Average $211/sf, Good $266, Very Good $313, Excellent $430 (median).
 //     Slate-owned homes the county has graded are Average. "Slate standard" = Minimum to Good.
 // Backtest 2026-10-01 (research/11), this code against v8.20 on 80 of Pat's sheets: within ±10% of her
-// number 68% -> 72%, within ±15% 76% -> 84%, misses over 10% 25 -> 21, bias +2.1% -> -0.1%; within ±5%
-// 54% -> 47% and median miss 4.8% -> 5.3%. It fixes most of the old hot-pocket overestimates (Katonah
+// number 68% -> 73%, within ±15% 76% -> 85%, misses over 10% 25 -> 20, bias +2.1% -> +0.4%; within ±5%
+// 54% -> 46% and median miss 4.8% -> 5.4%. It fixes most of the old hot-pocket overestimates (Katonah
 // +26% -> -6%, Carolyn +29% -> -5%, Briar Creek +32% -> -3%), which were luxury and cross-thoroughfare
-// sales. The rule alone has 3+ comps on about 6 deals in 10, because deed records are thinner than the MLS.
+// sales. The rule alone prices about half the deals, because deed records are thinner than the MLS.
 // Fewer than MIN_POOL new builds even with every rule relaxed = no suggested ARV. v8.20 gave a LOW one off
 // 1-2 sales; three of the four deals it priced that way in the backtest missed by 20-43%.
 //
@@ -88,9 +88,10 @@ const PRODUCT_TYPES = {
 const PRODUCT_LABEL = {sfh:'single-family', th:'townhome', duet:'attached (duet / townhome)', mf:'plex / townhome', any:'any product'};
 const PRODUCT_OF_TYPE = {'SINGLE FAMILY RESIDENTIAL':'sfh', 'TOWNHOUSE':'th', 'DUPLEX-TRIPLEX-QUADRAPLEX':'plex'};
 // Finish, from the assessor's construction grade. 'standard' is the Slate build; 'upgraded' adds Very Good for a
-// plan with upgrades; 'any' turns the finish rule off.
-const STANDARD_GRADES = ['MINIMUM','FAIR','AVERAGE','GOOD'], LUXURY_GRADES = ['VERY GOOD','EXCELLENT','CUSTOM'];
-const FINISH_GRADES = {standard:STANDARD_GRADES, upgraded:[...STANDARD_GRADES,'VERY GOOD']};
+// plan with upgrades; 'any' turns the finish rule off. Each row's `finish` says which class its grade is in
+// (Excellent and Custom are 'luxury').
+const STANDARD_GRADES = ['MINIMUM','FAIR','AVERAGE','GOOD'], UPGRADED_GRADES = ['VERY GOOD'], LUXURY_GRADES = ['EXCELLENT','CUSTOM'];
+const FINISH_GRADES = {standard:STANDARD_GRADES, upgraded:[...STANDARD_GRADES,...UPGRADED_GRADES]};
 const FINISH_LABEL = {standard:'Slate-standard finish (county grade Average or Good)',
   upgraded:'standard or upgraded finish (county grade up to Very Good)', any:'any finish'};
 // Steps out of the team rule, in order; each relaxes one more rule, and a relaxed rule costs a confidence level.
@@ -132,23 +133,27 @@ function milesBetween(lat1,lng1,lat2,lng2){
   return 2*R*Math.asin(Math.sqrt(a));
 }
 function isoDate(ms){ return (typeof ms==='number' && ms>0 && ms<4e12) ? new Date(ms).toISOString().slice(0,10) : null; }
-// Does the straight line from the lot to a comp cross a major road? Points are {lat,lng}; each road is
-// {name, paths:[[[lng,lat],...]]}. Everything is put on a local flat grid in feet around the lot first (fine at
-// half a mile), and only a proper crossing counts: a comp whose line just touches a road's end doesn't.
-function roadCrossed(subj, comp, roads){
-  const k = 364000, cos = Math.cos(subj.lat*Math.PI/180);   // ~ft per degree of latitude
-  const xy = (lng,lat) => [(lng-subj.lng)*cos*k, (lat-subj.lat)*k];
-  const a = [0,0], b = xy(comp.lng, comp.lat);
+// Major-road crossings. Everything goes on a local flat grid in feet around the lot (fine at half a mile): the
+// road segments once per request (roadGrid), then each comp's straight line from the lot (roadCrossed). Only a
+// proper crossing counts: a line that just touches a road's end doesn't. Roads are {name, paths:[[[lng,lat],...]]}.
+const FT_PER_DEG = 364000;   // ~ft per degree of latitude
+function roadGrid(subj, roads){
+  const cos = Math.cos(subj.lat*Math.PI/180);
+  const xy = (lng,lat) => [(lng-subj.lng)*cos*FT_PER_DEG, (lat-subj.lat)*FT_PER_DEG];
+  const segs = [];
+  for(const road of roads) for(const path of road.paths) for(let i=0;i<path.length-1;i++){
+    const p = xy(path[i][0],path[i][1]), q = xy(path[i+1][0],path[i+1][1]);
+    segs.push({name:road.name, p, q, x0:Math.min(p[0],q[0]), x1:Math.max(p[0],q[0]), y0:Math.min(p[1],q[1]), y1:Math.max(p[1],q[1])});
+  }
+  return {xy, segs};
+}
+function roadCrossed(grid, comp){
+  const a = [0,0], b = grid.xy(comp.lng, comp.lat);
   const side = (p,q,r) => (q[0]-p[0])*(r[1]-p[1]) - (q[1]-p[1])*(r[0]-p[0]);
-  const lo = [Math.min(a[0],b[0]), Math.min(a[1],b[1])], hi = [Math.max(a[0],b[0]), Math.max(a[1],b[1])];
-  for(const road of roads){
-    for(const path of road.paths){
-      for(let i=0;i<path.length-1;i++){
-        const p = xy(path[i][0],path[i][1]), q = xy(path[i+1][0],path[i+1][1]);
-        if(Math.max(p[0],q[0])<lo[0] || Math.min(p[0],q[0])>hi[0] || Math.max(p[1],q[1])<lo[1] || Math.min(p[1],q[1])>hi[1]) continue;
-        if(side(p,q,a)*side(p,q,b) < 0 && side(a,b,p)*side(a,b,q) < 0) return road.name;
-      }
-    }
+  const x0 = Math.min(0,b[0]), x1 = Math.max(0,b[0]), y0 = Math.min(0,b[1]), y1 = Math.max(0,b[1]);
+  for(const g of grid.segs){
+    if(g.x1<x0 || g.x0>x1 || g.y1<y0 || g.y0>y1) continue;
+    if(side(g.p,g.q,a)*side(g.p,g.q,b) < 0 && side(a,b,g.p)*side(a,b,g.q) < 0) return g.name;
   }
   return null;
 }
@@ -282,8 +287,8 @@ export default async function handler(req, res){
 
     // 5) build the comp rows
     const roads = await roadsP;
-    const sideCheck = !!(roads && subjLat!=null && subjLng!=null);
-    if(roads && !sideCheck) out.notes.push('The lot has no assessor location, so the major-road check was skipped.');
+    const grid = (roads && subjLat!=null && subjLng!=null) ? roadGrid({lat:subjLat,lng:subjLng}, roads) : null;
+    if(!grid) out.notes.push(`Major roads not checked (${roads?'the lot has no assessor location':'the City road layer didn’t answer'}): sales on both sides count as this side.`);
     const rows = []; let dropped = 0, predates = 0;
     market.forEach(a=>{
       const c = cama.get(a.parcelid); if(!c) return;
@@ -316,13 +321,14 @@ export default async function handler(req, res){
         beds:c.bedrooms||null, baths:((c.fullbath||0)+0.5*(c.halfbath||0))||null,
         grade:c.grade||null, type:c.bldgtype||c.landuse_description||null,
         product: PRODUCT_OF_TYPE[btype] || null,
-        finish: STANDARD_GRADES.includes(grade) ? 'standard' : LUXURY_GRADES.includes(grade) ? 'luxury' : null,
+        finish: STANDARD_GRADES.includes(grade) ? 'standard' : UPGRADED_GRADES.includes(grade) ? 'upgraded'
+              : LUXURY_GRADES.includes(grade) ? 'luxury' : null,
         size_vs_plan_pct: (sf && subjectSf) ? Math.round((sf-subjectSf)/subjectSf*100) : null,
         lot_acres:c.gisacres!=null ? +Number(c.gisacres).toFixed(3) : null,
         neighborhood:c.neighbordesc||null,
         distance_mi:dist,
         // the major road between the lot and this comp, or null (same side, or not checked: see rule.roads_checked)
-        across: (sideCheck && lat!=null && lng!=null) ? roadCrossed({lat:subjLat,lng:subjLng}, {lat,lng}, roads) : null,
+        across: (grid && lat!=null && lng!=null) ? roadCrossed(grid, {lat,lng}) : null,
         tier: (yb && yb>=solidYear) ? 'solid' : (yb && yb>=minYear) ? 'context' : 'older'
       });
     });
@@ -349,7 +355,7 @@ export default async function handler(req, res){
     } : {count:0};
     out.summary = {solid:stat(solid), new_build:stat(context), older:stat(older),
       total_rows:rows.length, builder_sales:rows.filter(r=>r.builder_sale).length,
-      window_months:months, older_rows:rows.length-recent.length};
+      window_months:months};
 
     // 7) the team rule, then the steps out of it (STEPS), then inside the chosen set the neighbourhood / size
     //    cascade. Every new build (minYear+) in the radius is a candidate; the rules narrow it.
@@ -376,28 +382,40 @@ export default async function handler(req, res){
        label:`within ±${Math.round(SIZE_BAND_WIDE*100)}% of ${sf0} sf (widened: too few close in size)`},
       {set, need:MIN_POOL, tier:'pocket', label:'every sale in the set (none close enough in size)'}
     ];
-    const roadsChecked = sideCheck;
+    // rows that meet the whole team rule, for the page to show when there's no ARV (no plan sf)
+    candidates.forEach(r=>{ r.meets_rule = meets(r, STEPS[0]); });
     out.rule = {months, wide_months:wideMonths, radius, product, product_label:PRODUCT_LABEL[product],
-      finish, finish_label:FINISH_LABEL[finish], roads_checked:roadsChecked,
-      meeting:candidates.filter(r=>meets(r, STEPS[0])).length, step:null, relaxed:null, label:null};
-    if(!roadsChecked) out.notes.push('Major roads not checked: comps on both sides count as the same side.');
+      finish, finish_label:FINISH_LABEL[finish], roads_checked:!!grid,
+      meeting:candidates.filter(r=>r.meets_rule).length, step:null, relaxed:null, label:null};
     const across = candidates.filter(r=>r.across);
     if(across.length){
       const names = [...new Set(across.map(r=>r.across))];
       out.notes.push(`${across.length} new-build sale${across.length===1?'':'s'} sit across ${names.slice(0,3).join(', ')}${names.length>3?' and others':''}: used only if this side is too thin`);
     }
-    let basis = null, step = null, tier = null, spread = null;
+    // The first step with MIN_POOL sales wins, unless all it can do is a widened size band or the whole set: then
+    // the time and road steps (never finish or product) are tried for a neighbourhood or size-band match first,
+    // since a same-side sale from 14 months ago at the plan's size is better evidence than this year's 1,100 sf
+    // unit against a 2,700 sf plan. A tight match found that way still loses a confidence level for the relaxed rule.
+    const LOOSE = ['size-wide','pocket'];
+    let basis = null, step = null, tier = null, spread = null, poolUsed = null;
     if(subjectSf){
       const tried = new Set();
-      for(let i=0;i<STEPS.length && !basis;i++){
+      let first = null;
+      for(let i=0;i<STEPS.length;i++){
         const s = STEPS[i], key = relaxedOf(s).join();
         if(tried.has(key)) continue;   // relaxes only a rule that is off anyway (product or finish 'any')
         tried.add(key);
+        if(first && (!s.finish || !s.product)) break;   // don't trade finish or product for a size match
         const pool = candidates.filter(r=>meets(r, s));
         if(pool.length < MIN_POOL) continue;
         const pick = ladderFor(pool).find(l=>l.set.length>=l.need);
-        if(pick){ basis = {set:pick.set, label:pick.label}; tier = pick.tier; step = i; }
+        if(!pick) continue;
+        const found = {set:pick.set, label:pick.label, tier:pick.tier, step:i, pool};
+        if(!LOOSE.includes(pick.tier)){ first = found; break; }   // tight: take it (replaces an earlier loose one)
+        if(!first) first = found;                                  // loose: keep the first, keep looking
       }
+      // a tight match from a later step replaces a loose one from an earlier step; otherwise the first one found
+      if(first){ basis = {set:first.set, label:first.label}; tier = first.tier; step = first.step; poolUsed = first.pool; }
     }
     if(basis){
       const s = STEPS[step], relaxed = relaxedOf(s);
@@ -412,9 +430,9 @@ export default async function handler(req, res){
         ? `Too few sales meet the team rule (${ruleText}), so this widens to ${relaxed.map(k=>RELAX_TEXT[k]).join(', ')}.`
         : `Team rule: ${ruleText}.`});
       // Confidence: the match inside the set sets the level (same assessor neighbourhood = high, size band = medium,
-      // a widened band or the whole set = low), and any relaxed rule takes it down one. Of the schemes tried on the
-      // 2026-10-01 backtest (74 priced deals) this one separated best on the ±10% band: high 76%, medium 75%,
-      // low 59%. Small sample: it sorts the deals, it doesn't promise an error.
+      // a widened band or the whole set = low), and any relaxed rule takes it down one. On the 2026-10-01 backtest
+      // (74 priced deals) it barely separates on the ±10% band: high 76%, medium 72%, low 71%. It says how good the
+      // match is, not how far off the number will be.
       const base = tier.startsWith('neighborhood') ? 2 : tier==='size' ? 1 : 0;
       const level = ['low','medium','high'][Math.max(0, base - (relaxed.length ? 1 : 0))];
       const solidInSet = basis.set.filter(r=>solidIds.has(r.pid)).length;
@@ -458,7 +476,10 @@ export default async function handler(req, res){
     }
 
     // 8) flags the SOP wants surfaced loudly rather than buried
-    if(solid.length<=1) out.flags.push(`Only ${solid.length} solid comp${solid.length===1?'':'s'} (built ${solidYear}+) in the last ${months} months: thin evidence, say so on the sheet.`);
+    // solid comps in the pool the ARV came from (it can reach past 12 months), else in the window
+    const solidN = poolUsed ? poolUsed.filter(r=>r.tier==='solid').length : solid.length;
+    const solidWhere = poolUsed && STEPS[step].older ? `in the last ${wideMonths} months` : `in the last ${months} months`;
+    if(solidN<=1) out.flags.push(`Only ${solidN} solid comp${solidN===1?'':'s'} (built ${solidYear}+) ${solidWhere}${poolUsed?' among the sales the ARV could use':''}: thin evidence, say so on the sheet.`);
     if(context.length && Math.max(...context.map(r=>r.sale_price))>1000000) out.flags.push('Luxury-tier comp above $1M nearby: outside the normal buy box, flag before underwriting further.');
     if(basis && spread > 1.6) out.flags.push('Comp $/sf spread is wide (>60% high-to-low): the set is not uniform, pick the comps by hand.');
     if(out.arv && out.arv.capped) out.flags.push('ARV capped at the highest sold comp.');

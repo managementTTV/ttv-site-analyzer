@@ -342,9 +342,13 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     attached homes, not as a duplex package). The page sends the selected plan's `t` unless the analyst picks one
     in `#comps-product`; no plan or a custom footprint = `any`.
   - **Finish** = the assessor construction `grade`. `standard` (the Slate build) = Minimum–Good; `upgraded` adds
-    Very Good; Very Good / Excellent / Custom are `luxury`. On 1,012 nearby 2020+ sales the grade medians were
+    Very Good. Each row's `finish` is `standard`, `upgraded` (Very Good) or `luxury` (Excellent / Custom). On 1,012 nearby 2020+ sales the grade medians were
     Average $211/sf, Good $266, Very Good $313, Excellent $430, and Slate-owned homes are graded Average. The page
     sends `#comps-finish` (default `standard`).
+  - **A loose match doesn't end the search.** When the first step with `MIN_POOL` sales can only reach the widened
+    band or the whole set, the time and road steps (never finish or product) are tried for a neighbourhood or
+    size-band match first; one found that way still loses a confidence level. Flag a change that relaxes finish or
+    product just to get a size match.
   - Fewer than `MIN_POOL` new builds even with every rule relaxed = **no suggested ARV** (`rule.label` says to pick
     comps by hand). v8.20 priced off 1–2 sales at LOW; three of the four deals it did that for missed by 20–43%.
 - **Inside the rule set, selection is a CASCADE, neighbourhood first (v7.16).** In order: same assessor
@@ -354,15 +358,15 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   absent — don't add it back without new evidence.
 - Flag a change that medians the whole pool when a neighbourhood or subject size is known.
 - **The `confidence` badge (v8.23):** the cascade tier sets it (neighbourhood tiers = high, size band = medium,
-  widened band or whole set = low) and any relaxed rule takes it down one level. Of the schemes tried on the
-  2026-10-01 backtest (`research/11`, 74 priced deals) this separated best on the ±10% band: high 76%, medium 75%,
-  low 59%. That's a modest split on a small sample, and weaker than v7.16's badge was (which got its LOW from the
-  1–2 comp deals that now get no ARV), so treat it as a sort order, not an error promise. Re-run the backtest
-  before changing the levels.
+  widened band or whole set = low) and any relaxed rule takes it down one level. On the 2026-10-01 backtest
+  (`research/11`, 74 priced deals) it barely separates on the ±10% band: high 76%, medium 72%, low 71%. v7.16's
+  badge separated far better, because its LOW was the 1–2 comp deals that now get no ARV. So the badge describes
+  the match (how close to the team rule and the lot's own neighbourhood), not an expected error. Don't present it
+  as a backtested error band; re-run the backtest before changing the levels.
 - **Backtest of the team rule (2026-10-01, this code vs v8.20 on 80 of Pat's sheets):** within ±10% of her number
-  68% → 72%, within ±15% 76% → 84%, misses over 10% 25 → 21, bias +2.1% → −0.1%; within ±5% 54% → 47%, median miss
-  4.8% → 5.3%. Most of the old hot-pocket overestimates (Katonah, Carolyn, Briar Creek, Commonwealth, Kingsbury)
-  were luxury or cross-thoroughfare sales and are gone. The rule alone has 3+ comps on about 6 deals in 10.
+  68% → 73%, within ±15% 76% → 85%, misses over 10% 25 → 20, bias +2.1% → +0.4%; within ±5% 54% → 46%, median miss
+  4.8% → 5.4%. Most of the old hot-pocket overestimates (Katonah, Carolyn, Briar Creek, Commonwealth, Kingsbury)
+  were luxury or cross-thoroughfare sales and are gone. The rule alone prices about half the deals.
 - **Two tiers, both reported:** built `minYear`+ (default 2020) for context, `solidYear`+ (default
   2025) as solid comps. **Selection runs over the full new-build pool; recency is reported, not
   enforced** (`summary.matching.solid_in_set` / `solid_share`, plus a flag when none of the
@@ -376,9 +380,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **`xcoord` holds latitude and `ycoord` holds longitude** in the CAMA layer. The field names are
   backwards in the source data; don't 'fix' the distance maths.
 - Comps land in the same `COMPS` model the manual table uses, so the blended $/sf, the PDF and the
-  Excel export keep working unchanged. Flag a parallel comps model. Since v8.23 the page adds the comps behind
-  the suggested ARV (`used: true`, nearest 12), so the table's median is the rule's; with no ARV, the window's
-  new builds. Server text (road and neighbourhood names) goes into the comps box escaped.
+  Excel export keep working unchanged. Flag a parallel comps model. Since v8.23 the page adds every comp behind
+  the suggested ARV (`used: true`), so the table's median is the rule's; with no ARV, the sales that meet the whole
+  rule (`meets_rule`), nearest 12. Server text (road and neighbourhood names) goes into the comps box escaped.
 
 ### Street check (`api/street.js`, v8.18)
 - **What it is:** the lot's own stretch of street (same CAMA `streetname`, `STREET_FT` = 1,000 ft; CAMA drops the

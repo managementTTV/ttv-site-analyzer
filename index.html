@@ -1869,18 +1869,19 @@ async function pullCountyComps(){
     const d=await r.json();
     if(gen!==_dealGen)return;   // another deal was opened meanwhile: these comps are the old one's
     if(d.error){ say('Comps lookup failed: '+esc(d.error),'var(--red)'); return; }
-    // The comps behind the suggested ARV go in the table, so its median is the rule's. With no ARV (no plan sf),
-    // the last 12 months' new builds instead.
+    // Every comp behind the suggested ARV goes in the table, so its median is the rule's. With no ARV (no plan sf),
+    // the sales that meet the whole team rule, nearest 12, or failing those the window's new builds.
     const used=(d.comps||[]).filter(c=>c.used);
-    const rows=used.length?used:(d.comps||[]).filter(c=>(c.tier==='solid'||c.tier==='context')&&c.in_window!==false);
+    const meet=(d.comps||[]).filter(c=>c.meets_rule);
+    const rows=used.length?used:meet.length?meet:(d.comps||[]).filter(c=>(c.tier==='solid'||c.tier==='context')&&c.in_window!==false);
     if(!rows.length){
       say(esc((d.rule&&d.rule.label)||'No new-build sales found within 0.5 mi in the last 24 months.')
         +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):''),'var(--amber)');
       return;
     }
-    // Nearest first, then keep it to a readable dozen.
+    // Nearest first; outside the ARV set, keep it to a readable dozen.
     rows.sort((a,b)=>(a.distance_mi??99)-(b.distance_mi??99));
-    const take=rows.slice(0,12);
+    const take=used.length?rows:rows.slice(0,12);
     const PROD={sfh:'single-family',th:'townhouse',plex:'plex'};
     take.forEach(c=>{
       COMPS.push({addr:(c.address||c.pid)+(c.builder_sale?' (builder sale)':''),
@@ -1890,7 +1891,7 @@ async function pullCountyComps(){
         dist:c.distance_mi!=null?(c.distance_mi+' mi'):'',
         mom:'',
         notes:[c.year_built?('built '+c.year_built):'',c.beds?(c.beds+'bd'):'',PROD[c.product]||'',
-          c.grade?(c.grade+(c.finish==='luxury'?' (luxury)':'')):'',
+          c.grade?(c.grade+(c.finish==='luxury'?' (luxury)':c.finish==='upgraded'?' (above Slate standard)':'')):'',
           c.size_vs_plan_pct!=null?((c.size_vs_plan_pct>0?'+':'')+c.size_vs_plan_pct+'% sf vs plan'):'',
           c.across?('across '+c.across):'',c.in_window===false?'older than 12 mo':'',
           c.tier==='solid'?'solid':'context'].filter(Boolean).join(' \u00b7 '),
@@ -6208,10 +6209,10 @@ const RELEASE_NOTES=[
  {v:'8.23',date:'Oct 2026',name:'County comps follow the team rule',items:[
    'Pull new-build comps now comps the way the team does: sales from the last 12 months, within half a mile, on this side of the major roads, of the same product you plan to build, at the same finish. A townhome plan comps townhouses, a single-family plan comps detached homes, and a duet comps attached homes.',
    'Major roads are the City\u2019s freeways and major thoroughfares (Independence, Central Ave, N Tryon, Beatties Ford, WT Harris and the like). A sale across one is used only when this side has too few, and the box names the road.',
-   'Finish comes from the county\u2019s construction grade: Slate standard is Average or Good. Very Good and up count as luxury and are left out unless you pick \u201cupgraded\u201d or \u201cany\u201d next to the button. Near our lots, Good sells around $266/sf and Very Good around $313/sf.',
+   'Finish comes from the county\u2019s construction grade: Slate standard is Average or Good. Very Good and up sit above that and are left out unless you pick \u201cupgraded\u201d (adds Very Good) or \u201cany\u201d next to the button; Excellent and Custom are tagged luxury. Near our lots, Good sells around $266/sf and Very Good around $313/sf.',
    'When fewer than 3 sales meet the rule, the search widens one rule at a time (older sales up to 24 months, then across a major road, then any finish, then any product), says which, and lowers the confidence. With fewer than 3 new builds even then, there\u2019s no suggested ARV: pick the comps by hand.',
-   'The table now gets the comps behind the suggested ARV, so its median is the rule\u2019s, and each row\u2019s notes give the product, the grade, the size against the plan, and any road it\u2019s across.',
-   'Tested on 80 of Pat\u2019s underwrites: within 10% of her number on 72% of deals (was 68%) and within 15% on 84% (was 76%), and the old habit of pricing about 2% high is gone. The big misses in Plaza Midwood and Seversville, where luxury infill sold nearby, mostly went away.']},
+   'The table now gets every comp behind the suggested ARV, so its median is the rule\u2019s, and each row\u2019s notes give the product, the grade, the size against the plan, and any road it\u2019s across.',
+   'Tested on 80 of Pat\u2019s underwrites: within 10% of her number on 73% of deals (was 68%) and within 15% on 85% (was 76%), and the old habit of pricing about 2% high is gone. The big misses in Plaza Midwood and Seversville, where luxury infill sold nearby, mostly went away.']},
  {v:'8.22',date:'Oct 2026',name:'Street check: N / S streets fixed',items:[
    'On a street with N and S (or E and W) halves, the Street Check counted only a handful of the lot\u2019s own neighbours: the filter meant to leave out the other half left out the lot\u2019s half too. 1500 N Davidson St now compares 52 parcels and 38 homes on its stretch (was 5 parcels and no homes, so it read \u201ctoo few to compare\u201d); 3116 N Davidson St, 80 parcels and 38 homes (was 7 and none). Streets without a direction, like Dellinger Dr, are unchanged.',
    'When the City\u2019s street centreline service doesn\u2019t answer, the card now says so in red. Before, it quietly counted both halves of the street and said the street might be private.']},
