@@ -731,7 +731,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.20 &middot; Sep 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.22 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -6104,8 +6104,11 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.20', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.22', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.22',date:'Oct 2026',name:'Street check: N / S streets fixed',items:[
+   'On a street with N and S (or E and W) halves, the Street Check counted only a handful of the lot\u2019s own neighbours: the filter meant to leave out the other half left out the lot\u2019s half too. 1500 N Davidson St now compares 52 parcels and 38 homes on its stretch (was 5 parcels and no homes, so it read \u201ctoo few to compare\u201d); 3116 N Davidson St, 80 parcels and 38 homes (was 7 and none). Streets without a direction, like Dellinger Dr, are unchanged.',
+   'When the City\u2019s street centreline service doesn\u2019t answer, the card now says so in red. Before, it quietly counted both halves of the street and said the street might be private.']},
  {v:'8.20',date:'Sep 2026',name:'Street View on its own page',items:[
    'The Street Check card now opens Street View on a page of its own, in a new tab: the street in front of the lot, facing it, with arrows to walk the block. It used to show inside the card. Google\u2019s Maps terms don\u2019t allow Street View on the same screen as another map, and Site Intelligence draws the county parcel.',
    'The card also keeps a Google Maps link. The rest of the Street Check (the street against its neighbourhood) is unchanged.',

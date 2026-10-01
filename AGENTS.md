@@ -407,6 +407,16 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Stale answers.** `checkStreet()` takes `gisAddressSignature()` and `_dealGen` before the fetch and drops an answer
   if either moved or `_lastGis.pid` changed. The card hides when the address moves (`invalidateGisIfAddressMoved()`),
   on a refused match and in `restoreDeal()` step 0; a restore re-runs it for the saved parcel.
+- **The other half of the street (v8.22).** CAMA files N and S Davidson St both under "DAVIDSON ST", so when the lot's
+  own centreline has a direction ("N DAVIDSON ST"), the street rows drop every parcel with an Accela address point on
+  that street name within the stretch whose `cde_street_dir_prfx` is not that letter (or is blank). The comparison is
+  with the direction letter (`dm.split(/\s+/)[0]`). Before v8.22 it used `dm[1]`, the name's second character (a
+  space), which dropped the lot's own half as well: 1500 N Davidson St (08110205) read 5 parcels and no homes ("too
+  few"), now 52 parcels and 38 homes ("watch", building value $/sf); 3116 N Davidson St (08308C99) read 7 parcels,
+  now 80 parcels and 38 homes. Flag a direction comparison with anything but the letter.
+  - A centreline layer that doesn't answer is an errors entry (`centrelineError()`; the halves can't be told apart, so
+    the answer goes out `no-store`), not "no centreline here", and the `NO_CENTRELINE` note ("a private street?") is
+    only for a street the layers answered for. Flag a `.catch` that turns an outage into an empty answer.
 - **One street check, two callers (2026-10-01).** The handler only validates and sends; the work is `streetCheck()`,
   which `api/mcp.js` also calls. `/api/street` output must stay byte-identical when either side changes (see Street
   Data connector). `keep.rows` / `keep.subject` carry CAMA owner fields for the same-site rule: never send them.

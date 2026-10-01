@@ -210,11 +210,16 @@ function nearestOnLine(ref, layers){
 
 // The lot's own street centreline near it (City and State maintained layers). CAMA drops the direction ("DAVIDSON ST"
 // for N and S Davidson); the centreline keeps it ("N DAVIDSON ST").
+// A layer that doesn't answer comes back empty with `failed` set, so the caller can say so: an outage isn't "no
+// centreline here".
 function centrelines(street, lat, lng){
   return Promise.all(STREET_LAYERS.map(l=>ajPost(`${CITY}/${l}/query`, Object.assign({
     where:`WHOLESTNAME='${sq(street)}' OR WHOLESTNAME LIKE '% ${sq(street)}'`, outFields:'WHOLESTNAME',
-    returnGeometry:'true', outSR:'4326', f:'json'}, within(lat, lng, CAMERA_MAX_FT))).catch(()=>({features:[]}))));
+    returnGeometry:'true', outSR:'4326', f:'json'}, within(lat, lng, CAMERA_MAX_FT))).catch(e=>({features:[], failed:e.message}))));
 }
+// The first centreline layer that didn't answer, as an errors entry (v8.22), or null
+function centrelineError(layers){ const f = (layers||[]).find(j=>j && j.failed);
+  return f ? `centreline: ${f.failed} (so the street's N / S half and the Street View facing couldn't be checked)` : null; }
 // The centreline's name when it's this street with a direction ("N DAVIDSON ST" for CAMA's "DAVIDSON ST"), else null
 function directedName(cam, street){ const m = cam && cam.name && cam.name.match(/^(N|S|E|W)\s+(.+)$/); return m && m[2]===street ? cam.name : null; }
 // Where a Street View camera should stand (the nearest point on that centreline) and which way it faces (the lot).
@@ -277,11 +282,13 @@ export async function streetCheck(pid, ft, view, keep){
     if(lat==null || lng==null){ out.errors.push('No location for PID '+pid+'.'); return out; }
     if(!street) out.notes.push('The assessor record has no street name for this lot, so there is no street to compare.');
     if(view){
-      let cam = null;
-      if(street){ try{ cam = nearestOnLine({lat, lng}, await centrelines(street, lat, lng)); }catch(e){ out.errors.push('centreline: '+e.message); } }
+      let cam = null, lineErr = null;
+      if(street){ try{ const lines = await centrelines(street, lat, lng); cam = nearestOnLine({lat, lng}, lines); lineErr = centrelineError(lines); }
+        catch(e){ lineErr = 'centreline: '+e.message; } }
+      if(lineErr) out.errors.push(lineErr);
       out.subject.street_label = directedName(cam, street) || street || null;
       out.streetview = streetviewFor(lat, lng, cam, true);
-      if(street && !out.streetview.camera) out.notes.push(NO_CENTRELINE);
+      if(street && !out.streetview.camera && !lineErr) out.notes.push(NO_CENTRELINE);
       return out;
     }
 
@@ -298,6 +305,9 @@ export async function streetCheck(pid, ft, view, keep){
     if(nbR.status==='rejected') out.errors.push('neighborhood: '+nbR.reason.message);
     if(nearR.status==='rejected') out.errors.push('nearby: '+nearR.reason.message);
     const cam = lineR.status==='fulfilled' ? nearestOnLine({lat, lng}, lineR.value) : null;
+    // a centreline layer down: no direction filter, so both halves of a N / S street are counted (v8.22: said, not silent)
+    const lineErr = lineR.status==='fulfilled' ? centrelineError(lineR.value) : 'centreline: '+lineR.reason.message;
+    if(lineErr) out.errors.push(lineErr);
 
     // 3) the street. With a direction on the centreline ("N DAVIDSON ST"), parcels addressed on the other half
     //    ("S DAVIDSON ST", or no direction) are dropped, since CAMA files both under "DAVIDSON ST".
@@ -307,8 +317,11 @@ export async function streetCheck(pid, ft, view, keep){
       label = dm;
       try{
         const nm = street.split(/\s+/).slice(0,-1).join(' ') || street;   // "DAVIDSON ST" -> DAVIDSON (type dropped)
+        // the direction letter ("N DAVIDSON ST" -> N). Before v8.22 this compared with dm[1], the name's second
+        // character (a space), which dropped the lot's own half too.
+        const dir = dm.split(/\s+/)[0];
         const {rows} = await allRows(`${CITY}/${ADDRESS_LAYER}`, Object.assign({
-          where:`nme_street='${sq(nm)}' AND (cde_street_dir_prfx IS NULL OR cde_street_dir_prfx<>'${dm[1]}')`,
+          where:`nme_street='${sq(nm)}' AND (cde_street_dir_prfx IS NULL OR cde_street_dir_prfx<>'${sq(dir)}')`,
           orderByFields:'OBJECTID'}, within(lat, lng, ft)), 'TAX_PID,GIS_PID');
         const other = new Set(); rows.forEach(r=>{ if(r.TAX_PID) other.add(r.TAX_PID); if(r.GIS_PID) other.add(r.GIS_PID); });
         const before = stRows.length; stRows = stRows.filter(r=>!other.has(r.pid));
@@ -373,7 +386,7 @@ export async function streetCheck(pid, ft, view, keep){
 
     // 6) Street View camera: the nearest point on the lot's own street centreline, facing the lot (no key: see mode=view)
     out.streetview = streetviewFor(lat, lng, cam, false);
-    if(street && !out.streetview.camera) out.notes.push(NO_CENTRELINE);
+    if(street && !out.streetview.camera && !lineErr) out.notes.push(NO_CENTRELINE);
   }catch(e){
     out.errors.push('fatal: '+e.message);
   }
