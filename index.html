@@ -732,7 +732,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.22 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.23 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1395,7 +1395,11 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div style="overflow-x:auto"><table class="comps-table" id="comps-table"></table></div>
     <div id="comps-warn" class="warn" style="display:none" role="status"></div>
     <div id="county-comps-msg" style="display:none;margin-top:10px;border:1px solid rgba(94,128,149,0.35);border-radius:8px;padding:10px 12px;background:rgba(94,128,149,0.08);font-size:12.5px"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:12px;font-size:12px;color:var(--text-mid)" title="The team rule: sales from the last 12 months, within 0.5 mi, on this side of the major roads, of the same product and finish. The search widens one rule at a time only when too few sales meet it, at lower confidence.">
+      <label>County comps: comp against <select id="comps-product"><option value="auto">the plan&rsquo;s product</option><option value="sfh">single-family</option><option value="th">townhomes</option><option value="duet">duets (attached)</option><option value="any">any product</option></select></label>
+      <label>Finish <select id="comps-finish"><option value="standard">Slate standard (county grade Average&ndash;Good)</option><option value="upgraded">upgraded (adds Very Good)</option><option value="any">any, incl. luxury</option></select></label>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
       <button class="btn btn-ghost" id="county-comps-btn" onclick="pullCountyComps()" title="Recent new-construction sales from Mecklenburg County records">&#128225; Pull new-build comps (Meck)</button>
       <button class="btn btn-ghost" onclick="addComp()">+ Add comp</button>
       <button class="btn btn-ghost" onclick="applyCompsArv('median')">Apply median &rarr; Base ARV</button>
@@ -1851,24 +1855,34 @@ async function pullCountyComps(){
   const county=($('county-sel')||{}).value||'';
   if(county&&!/mecklenburg/i.test(county)){ say('County records are wired for <b>Mecklenburg</b> only. For '+county+', pull comps manually or from DealMachine.','var(--amber)'); return; }
   const sf=sfPerUnit>0?sfPerUnit:'';
+  // v8.23: the team rule. Comp the product the plan builds (or what the analyst picked) at its finish.
+  const plan=currentPlanObj(), pick=($('comps-product')||{}).value||'auto';
+  const product=pick!=='auto'?pick:(plan&&['sfh','th','duet','mf'].includes(plan.t)?plan.t:'any');
+  const finish=($('comps-finish')||{}).value||'standard';
   if(btn){btn.disabled=true;btn.textContent='Pulling\u2026';}
   say('Searching county sales records\u2026');
   const gen=_dealGen;
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   try{
-    const url='/api/comps?pid='+encodeURIComponent(pid)+'&radius=0.5&months=24'+(sf?('&sf='+sf):'');
+    const url='/api/comps?pid='+encodeURIComponent(pid)+'&radius=0.5&months=12&product='+product+'&finish='+finish+(sf?('&sf='+sf):'');
     const r=await fetch(url);
     const d=await r.json();
     if(gen!==_dealGen)return;   // another deal was opened meanwhile: these comps are the old one's
-    if(d.error){ say('Comps lookup failed: '+d.error,'var(--red)'); return; }
-    const rows=(d.comps||[]).filter(c=>c.tier==='solid'||c.tier==='context');
+    if(d.error){ say('Comps lookup failed: '+esc(d.error),'var(--red)'); return; }
+    // Every comp behind the suggested ARV goes in the table, so its median is the rule's. With no ARV (no plan sf),
+    // the sales that meet the whole team rule, nearest 12, or failing those the window's new builds.
+    const used=(d.comps||[]).filter(c=>c.used);
+    const meet=(d.comps||[]).filter(c=>c.meets_rule);
+    const rows=used.length?used:meet.length?meet:(d.comps||[]).filter(c=>(c.tier==='solid'||c.tier==='context')&&c.in_window!==false);
     if(!rows.length){
-      say('No new-build sales found within 0.5 mi in the last 24 months.'
-        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.join(' \u00b7 ')+'</div>'):''),'var(--amber)');
+      say(esc((d.rule&&d.rule.label)||'No new-build sales found within 0.5 mi in the last 24 months.')
+        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):''),'var(--amber)');
       return;
     }
-    // Newest first within the nearest set, then keep it to a readable dozen.
+    // Nearest first; outside the ARV set, keep it to a readable dozen.
     rows.sort((a,b)=>(a.distance_mi??99)-(b.distance_mi??99));
-    const take=rows.slice(0,12);
+    const take=used.length?rows:rows.slice(0,12);
+    const PROD={sfh:'single-family',th:'townhouse',plex:'plex'};
     take.forEach(c=>{
       COMPS.push({addr:(c.address||c.pid)+(c.builder_sale?' (builder sale)':''),
         sqft:c.heated_sf?String(Math.round(c.heated_sf)):'',
@@ -1876,32 +1890,38 @@ async function pullCountyComps(){
         adj:'', date:c.sale_date||'',
         dist:c.distance_mi!=null?(c.distance_mi+' mi'):'',
         mom:'',
-        notes:[c.year_built?('built '+c.year_built):'',c.beds?(c.beds+'bd'):'',c.grade||'',c.tier==='solid'?'solid':'context'].filter(Boolean).join(' \u00b7 '),
+        notes:[c.year_built?('built '+c.year_built):'',c.beds?(c.beds+'bd'):'',PROD[c.product]||'',
+          c.grade?(c.grade+(c.finish==='luxury'?' (luxury)':c.finish==='upgraded'?' (above Slate standard)':'')):'',
+          c.size_vs_plan_pct!=null?((c.size_vs_plan_pct>0?'+':'')+c.size_vs_plan_pct+'% sf vs plan'):'',
+          c.across?('across '+c.across):'',c.in_window===false?'older than 12 mo':'',
+          c.tier==='solid'?'solid':'context'].filter(Boolean).join(' \u00b7 '),
         url:''});
     });
     renderComps(); if(typeof renderShortlist==='function')renderShortlist();
     const S=d.summary&&d.summary.solid, N=d.summary&&d.summary.new_build;
     const money=n=>'$'+Math.round(n).toLocaleString();
-    let h='<b>'+take.length+' new-build comps added</b> from Mecklenburg County records \u00b7 '
-      +(d.notes&&d.notes[0]?d.notes[0]:'');
+    let h='<b>'+take.length+(used.length?' comps behind the suggested ARV added':' new-build comps added')+'</b> from Mecklenburg County records \u00b7 '
+      +esc(d.notes&&d.notes[0]?d.notes[0]:'');
+    if(d.rule&&d.rule.label)h+='<div style="margin-top:4px">'+esc(d.rule.label)+'</div>';
     // v8.14: say which sales the server left out (lot sales; sales dated before the assessor's year built)
     {const lo=(d.notes||[]).filter(n=>/lot sales|before the assessor/.test(n));
-     if(lo.length)h+='<div style="margin-top:4px;color:var(--text-dim);font-size:11px">Left out: '+lo.map(n=>String(n).replace(/[<>&]/g,'').replace(/\s+(were\s+)?left out$/,'')).join(' \u00b7 ')+'</div>';}
-    if(N&&N.count)h+='<div style="margin-top:4px">Built '+(d.params.minYear)+'+: <b>'+N.count+'</b> comps, median <b>$'+N.median_psf+'/sf</b> (range $'+N.min_psf+'\u2013$'+N.max_psf+') \u00b7 highest sold '+money(N.highest_sold)+'</div>';
-    if(S&&S.count)h+='<div>Solid (built '+(d.params.solidYear)+'+): <b>'+S.count+'</b> comps, median <b>$'+S.median_psf+'/sf</b></div>';
-    if(d.summary&&d.summary.size_matched&&d.summary.size_matched.in_band!=null)
-      h+='<div style="margin-top:4px">Size-matched to the plan: <b>'+d.summary.size_matched.in_band+'</b> comps within \u00b120% of '+Math.round(d.params.subjectSf||0).toLocaleString()+' sf'+(d.summary.size_matched.spread?(' \u00b7 $/sf spread '+d.summary.size_matched.spread+'\u00d7'):'')+'</div>';
+     if(lo.length)h+='<div style="margin-top:4px;color:var(--text-dim);font-size:11px">Left out: '+lo.map(n=>esc(String(n).replace(/\s+(were\s+)?left out$/,''))).join(' \u00b7 ')+'</div>';}
+    {const ac=(d.notes||[]).filter(n=>/ sit across /.test(n));
+     if(ac.length)h+='<div style="margin-top:2px;color:var(--text-dim);font-size:11px">'+ac.map(esc).join(' \u00b7 ')+'</div>';}
+    const win=(d.params&&d.params.months)||12;
+    if(N&&N.count)h+='<div style="margin-top:4px">Built '+(d.params.minYear)+'+, last '+win+' months: <b>'+N.count+'</b> sales of any product, median <b>$'+N.median_psf+'/sf</b> (range $'+N.min_psf+'\u2013$'+N.max_psf+') \u00b7 highest sold '+money(N.highest_sold)+'</div>';
+    if(S&&S.count)h+='<div>Solid (built '+(d.params.solidYear)+'+): <b>'+S.count+'</b> sales, median <b>$'+S.median_psf+'/sf</b></div>';
     if(d.confidence){
       const col=d.confidence.level==='high'?'var(--green)':d.confidence.level==='medium'?'var(--amber)':'var(--red)';
       h+='<div style="margin-top:6px;padding:6px 8px;border-left:3px solid '+col+';background:rgba(16,37,56,0.03)">'
         +'<b style="color:'+col+'">Confidence: '+d.confidence.level.toUpperCase()+'</b>'
-        +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+d.confidence.reason+'</div></div>';
+        +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+esc(d.confidence.reason)+'</div></div>';
     }
     if(d.arv)h+='<div style="margin-top:6px">Suggested ARV for '+Math.round(d.arv.subject_sf).toLocaleString()+' sf: <b>'+money(d.arv.arv)+'</b> = <b>$'+d.arv.retail_psf+'/sf</b>'
       +' <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="applyCountyArv('+d.arv.retail_psf+')">Apply \u2192 Base ARV</button>'
-      +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+(d.arv.basis||'')+'</div>'
-      +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+d.arv.note+'</div></div>';
-    (d.flags||[]).forEach(f=>{h+='<div style="color:var(--amber);margin-top:4px">\u26a0 '+f+'</div>';});
+      +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+esc(d.arv.basis||'')+'</div>'
+      +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+esc(d.arv.note)+'</div></div>';
+    (d.flags||[]).filter(f=>!(d.rule&&f===d.rule.label)).forEach(f=>{h+='<div style="color:var(--amber);margin-top:4px">\u26a0 '+esc(f)+'</div>';});
     h+='<div style="color:var(--text-dim);font-size:11px;margin-top:6px">County deed records only \u2014 no MLS status, concessions or photos. Recording lags closing by 1\u20133 weeks. Check each row before you lean on it.</div>';
     say(h);
   }catch(e){ if(gen===_dealGen)say('Comps lookup failed: '+e.message,'var(--red)'); }
@@ -6184,8 +6204,15 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.22', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.23', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.23',date:'Oct 2026',name:'County comps follow the team rule',items:[
+   'Pull new-build comps now comps the way the team does: sales from the last 12 months, within half a mile, on this side of the major roads, of the same product you plan to build, at the same finish. A townhome plan comps townhouses, a single-family plan comps detached homes, and a duet comps attached homes.',
+   'Major roads are the City\u2019s freeways and major thoroughfares (Independence, Central Ave, N Tryon, Beatties Ford, WT Harris and the like). A sale across one is used only when this side has too few, and the box names the road.',
+   'Finish comes from the county\u2019s construction grade: Slate standard is Average or Good. Very Good and up sit above that and are left out unless you pick \u201cupgraded\u201d (adds Very Good) or \u201cany\u201d next to the button; Excellent and Custom are tagged luxury. Near our lots, Good sells around $266/sf and Very Good around $313/sf.',
+   'When fewer than 3 sales meet the rule, the search widens one rule at a time (older sales up to 24 months, then across a major road, then any finish, then any product), says which, and lowers the confidence. With fewer than 3 new builds even then, there\u2019s no suggested ARV: pick the comps by hand.',
+   'The table now gets every comp behind the suggested ARV, so its median is the rule\u2019s, and each row\u2019s notes give the product, the grade, the size against the plan, and any road it\u2019s across.',
+   'Tested on 80 of Pat\u2019s underwrites: within 10% of her number on 73% of deals (was 68%) and within 15% on 85% (was 76%), and the old habit of pricing about 2% high is gone. The big misses in Plaza Midwood and Seversville, where luxury infill sold nearby, mostly went away.']},
  {v:'8.22',date:'Oct 2026',name:'Street check: N / S streets fixed',items:[
    'On a street with N and S (or E and W) halves, the Street Check counted only a handful of the lot\u2019s own neighbours: the filter meant to leave out the other half left out the lot\u2019s half too. 1500 N Davidson St now compares 52 parcels and 38 homes on its stretch (was 5 parcels and no homes, so it read \u201ctoo few to compare\u201d); 3116 N Davidson St, 80 parcels and 38 homes (was 7 and none). Streets without a direction, like Dellinger Dr, are unchanged.',
    'When the City\u2019s street centreline service doesn\u2019t answer, the card now says so in red. Before, it quietly counted both halves of the street and said the street might be private.']},
