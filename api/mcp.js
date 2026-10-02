@@ -35,7 +35,11 @@ const PARCEL_LAYER = `${MECK}/TaxParcelBoundaries/MapServer/0`;
 const CE_LAYER = 'https://gis.charlottenc.gov/arcgis/rest/services/HNS/CodeEnforcementCasesAll/MapServer/0';
 // the only code-enforcement columns ever requested (confirmed from the layer's ?f=json, 2026-10-01)
 const CE_FIELDS = 'OBJECTID,ParcelId,CaseType,DateCreated,DateClosed,CaseStatus';
-const NC_IMAGERY = 'https://services.gis.nc.gov/secure/rest/services/Imagery/Orthoimagery_Latest/ImageServer';
+// NC OneMap serves the same image service from two hosts. services.nconemap.gov is the program's own; services.gis.nc.gov
+// went unreachable on 2026-10-02 while it answered, so it's the fallback. A host that fails (timeout, network, 5xx) is
+// skipped for the rest of the request.
+const NC_IMAGERY_HOSTS = ['https://services.nconemap.gov', 'https://services.gis.nc.gov'];
+const NC_IMAGERY_PATH = '/secure/rest/services/Imagery/Orthoimagery_Latest/ImageServer';
 
 const CASE_MONTHS = 24;          // code cases opened in the last 24 months
 const CE_CHUNK = 80;             // parcel ids per code-enforcement query (POST)
@@ -158,6 +162,25 @@ async function arcGet(url, params, fetchSignal){
   return j;
 }
 const msg = e => (e && e.name==='TimeoutError') ? 'timed out' : String((e && e.message) || e);
+// Run fn against each NC OneMap host in turn until one answers. A host that times out, can't be reached or answers
+// 5xx is marked down for the rest of this tool call (keyed on the call's fetchSignal factory), so six crops don't each
+// wait it out. An ArcGIS error, a non-image answer or the tool's own deadline is a real outcome and isn't retried.
+const imageryDown = new WeakMap();
+async function viaImageryHost(fn, fetchSignal){
+  let down = fetchSignal ? imageryDown.get(fetchSignal) : null;
+  if(!down){ down = new Set(); if(fetchSignal) imageryDown.set(fetchSignal, down); }
+  let last = null;
+  for(const host of NC_IMAGERY_HOSTS){
+    if(down.has(host)) continue;
+    try{ return await fn(host+NC_IMAGERY_PATH); }
+    catch(e){
+      const m = msg(e), hostFailed = m==='timed out' || /HTTP 5\d\d|fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|socket|network/i.test(m);
+      if(!hostFailed) throw e;
+      down.add(host); last = e;
+    }
+  }
+  throw last || new Error('no NC OneMap host answered');
+}
 // The city stores DateCreated in UTC and DateClosed / the CAMA sale dates as local midnight, so a date is the
 // calendar day in Charlotte.
 const DAY = new Intl.DateTimeFormat('en-CA', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit'});
@@ -254,8 +277,8 @@ async function codeCases(pids, fetchSignal){
 
 // The NC OneMap flight under a point: the visible catalog tile's name carries its date ("OF6i0_37_000_10454602_20230218_0304R0").
 async function flightAt(geometry, fetchSignal){
-  const j = await arcGet(`${NC_IMAGERY}/identify`, {geometry:JSON.stringify(geometry), geometryType:'esriGeometryPoint',
-    returnGeometry:'false', returnCatalogItems:'true', f:'json'}, fetchSignal);
+  const j = await viaImageryHost(base=>arcGet(`${base}/identify`, {geometry:JSON.stringify(geometry), geometryType:'esriGeometryPoint',
+    returnGeometry:'false', returnCatalogItems:'true', f:'json'}, fetchSignal), fetchSignal);
   const feats = (j.catalogItems && j.catalogItems.features) || [], vis = j.catalogItemVisibilities || [];
   const dated = feats.map((f, i)=>({m:String((f.attributes||{}).name||'').match(/_(20\d\d)(\d\d)(\d\d)_/), v:vis[i]})).filter(x=>x.m);
   const pick = dated.find(x=>x.v>0) || dated[0];
@@ -367,8 +390,9 @@ function jpegSize(b){
   }
   return null;
 }
-async function exportJpeg(bbox, fetchSignal){
-  const r = await fetch(`${NC_IMAGERY}/exportImage?`+new URLSearchParams({bbox:bbox.join(','), bboxSR:'2264', imageSR:'2264',
+async function exportJpeg(bbox, fetchSignal){ return viaImageryHost(base=>exportJpegFrom(base, bbox, fetchSignal), fetchSignal); }
+async function exportJpegFrom(base, bbox, fetchSignal){
+  const r = await fetch(`${base}/exportImage?`+new URLSearchParams({bbox:bbox.join(','), bboxSR:'2264', imageSR:'2264',
     size:`${CROP_PX},${CROP_PX}`, format:'jpg', compressionQuality:String(JPEG_QUALITY), f:'image'}).toString(),
     {signal:signalFor(fetchSignal), headers:{'User-Agent':UA}});
   if(!r.ok) throw new Error('HTTP '+r.status+' from NC OneMap');
