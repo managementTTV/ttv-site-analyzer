@@ -524,12 +524,16 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     bbox requested), and the artifact draws them in red.
   - `outline:true` (1.1.0, for a model reading the photos in a chat): a `png24` crop with every ring drawn along
     `rings_px` by ports of build.py's `png_read` / `draw_line` (255,40,40, 2 px, Python's half-to-even `round()`),
-    re-encoded losslessly, with `outlined:true`. The test needs it pixel for pixel build.py's own output, and
-    `outline:false` byte-identical to 1.0.0. Flag a lossy step or a drawing change that isn't build.py's.
+    re-encoded losslessly, with `outlined:true`, and a short text block naming each photo's pid right before it. The
+    test needs each photo pixel for pixel what build.py's own `png_read` + `draw_line` make on the same source along
+    `rings_px`, and `outline:false` byte-identical to 1.0.0. (build.py's own `crop()` drew against the unrounded bbox,
+    so a few percent of its outline pixels sit 1 px from these; `rings_px` matches the bbox the image was rendered
+    for.) Flag a lossy step or a drawing change that isn't build.py's.
   - Each crop's `flight` is the date in the name of the visible catalog tile under its centre (`identify`), so a
     re-flight changes the artifact's cache key. Flag a hard-coded flight date.
   - 1–6 PIDs per call (1–3 with `outline:true`), one `aerial_crops` per HTTP request. An answer is about 0.25–0.45 MB,
-    or about 1.2 MB for 3 outlined crops; Vercel's limit is 4.5 MB.
+    or about 1.3 MB for 3 outlined crops; Vercel's limit is 4.5 MB. 1.3 MB is over the 1 MiB tool-result cap some MCP
+    clients have been reported to enforce, so 3 outlined crops need checking in a claude.ai chat (2 is about 0.85 MB).
 - **Transport.**
   - MCP Streamable HTTP, stateless, JSON responses only: no SSE stream, no session id.
   - POST takes one JSON-RPC message or a batch. Notifications get 202, GET gets 405 with `Allow: POST`, OPTIONS gets

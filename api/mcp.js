@@ -8,7 +8,7 @@
 //   aerial_crops  1–6 PIDs → NC OneMap orthophoto crops, 220 ft square at 0.5 ft/px, with each parcel's outline in
 //                 image pixels (the artifact draws the red outline itself, as scratchpad/aerial/build.py did). With
 //                 outline:true (1–3 PIDs, for a model reading the photos itself, e.g. in a Claude chat) the connector
-//                 draws it: lossless PNGs with the outline in red, pixel for pixel as build.py's draw_line().
+//                 draws it: lossless PNGs with the outline in red along rings_px, as build.py's draw_line() draws.
 //
 // Rules (AGENTS.md, "Street Data connector (MCP)"):
 //   - No Google imagery or Google data, by any route. Nothing here calls a Google service; the AI's eyes are NC OneMap
@@ -54,6 +54,9 @@ const MAX_CROPS = 6;             // ~70 KB of base64 per crop keeps a call near 
 const HALF_FT = 110, CROP_PX = 440, FT_PER_PX = 0.5;   // 220 ft square at the service's native 0.5 ft
 const JPEG_QUALITY = 90;         // the service is JPEG at source; 90 keeps detail close to the tested PNG crops
 // outline:true: the crop is a lossless PNG (about 0.3 MB, 0.42 MB as base64) with the outline drawn in, so 3 per call
+// make an answer of about 1.3 MB. That is under Vercel's 4.5 MB but over 1 MiB, a tool-result cap some MCP clients
+// (Claude Desktop) have been reported to enforce. Until a 3-pid outline:true call is seen to reach Claude in a
+// claude.ai chat, treat 3 as unproven; 2 (about 0.85 MB) is the fallback, and the page's CHAT_PER_CALL must match.
 const MAX_OUTLINED = 3;
 const OUTLINE_RGB = [255, 40, 40], OUTLINE_THICK = 2;   // build.py draw_line(col=(255, 40, 40), thick=2)
 const PNG_MAX_SIDE = 4096;       // a sanity bound on a decoded crop (we ask for 440 x 440)
@@ -124,7 +127,7 @@ const TOOLS = [
   },
   {
     name:'aerial_crops', title:'Aerial photo crops',
-    description:`NC OneMap orthophoto crops (Orthoimagery_Latest: natural colour, 0.5 ft per pixel, north up, flown in winter, leaf-off) of 1 to ${MAX_CROPS} Mecklenburg parcels, by pid. Each crop is a 440 x 440 px JPEG covering 220 ft x 220 ft centred on the parcel, returned as an image block in input order, with no outline drawn. structuredContent.crops says, for each pid, whether it worked, its image_index among the image blocks, its flight date, and rings_px: the parcel\'s outline in image pixels (x right, y down), for drawing the subject parcel\'s outline before a model reads the photo. For a model reading the photos itself (e.g. in a Claude chat), pass outline:true and up to ${MAX_OUTLINED} pids: the subject parcel comes back outlined in red. Each crop is then a lossless 440 x 440 PNG with the parcel\'s outline drawn in red (rgb 255,40,40, 2 px), marked outlined:true, and the subject parcel is the lot inside the red outline. A pid with no parcel geometry or no image comes back with ok:false and the reason.`,
+    description:`NC OneMap orthophoto crops (Orthoimagery_Latest: natural colour, 0.5 ft per pixel, north up, flown in winter, leaf-off) of 1 to ${MAX_CROPS} Mecklenburg parcels, by pid. Each crop is a 440 x 440 px JPEG covering 220 ft x 220 ft centred on the parcel, returned as an image block in input order, with no outline drawn. structuredContent.crops says, for each pid, whether it worked, its image_index among the image blocks, its flight date, and rings_px: the parcel\'s outline in image pixels (x right, y down), for drawing the subject parcel\'s outline before a model reads the photo. For a model reading the photos itself (e.g. in a Claude chat), pass outline:true and up to ${MAX_OUTLINED} pids: the subject parcel comes back outlined in red. Each crop is then a lossless 440 x 440 PNG with the parcel\'s outline drawn in red (rgb 255,40,40, 2 px), marked outlined:true, and the subject parcel is the lot inside the red outline; a short text block right before each photo names its pid. A pid with no parcel geometry or no image comes back with ok:false and the reason.`,
     inputSchema:{type:'object', properties:{
       pids:{type:'array', minItems:1, maxItems:MAX_CROPS, items:{type:'string', pattern:'^[0-9A-Za-z]{8}$'},
         description:`1 to ${MAX_CROPS} 8-character Mecklenburg parcel ids (1 to ${MAX_OUTLINED} with outline:true), e.g. ["04118535","04118536"].`},
@@ -402,7 +405,7 @@ function jpegSize(b){
   return null;
 }
 // The crop from NC OneMap, through viaImageryHost's host fallback: a JPEG (format jpg at JPEG_QUALITY), or for
-// outline:true a PNG (format png24, lossless, so the outline lands on the pixels build.py's tested crops had).
+// outline:true a PNG (format png24: lossless, so the outline is drawn on exactly the pixels NC OneMap sent).
 const IMAGE_FORMATS = {
   jpeg:{params:{format:'jpg', compressionQuality:String(JPEG_QUALITY)}, magic:[0xFF, 0xD8], name:'a JPEG'},
   png:{params:{format:'png24'}, magic:[0x89, 0x50, 0x4E, 0x47], name:'a PNG'},
@@ -424,8 +427,12 @@ async function exportImageFrom(base, bbox, kind, fetchSignal){
 
 // ── outline:true: PNG in, red outline drawn, PNG out ────────────────────────────────────────────────────────────────
 // scratchpad/aerial/build.py built the tested crops (research/08, /09) with its own small PNG codec and draw_line();
-// these are ports of it, so a crop outlined here is pixel for pixel what that set was (the connector test compares
-// against build.py itself, run on the same source bytes and rings_px).
+// pngRead and drawLine are ports of its png_read and draw_line. A crop outlined here is pixel for pixel what build.py's
+// png_read + draw_line make when run on the same png24 source along rings_px (the connector test checks exactly that,
+// with build.py's own functions). It is not pixel for pixel the research set: build.py's crop() drew full-precision
+// points against the unrounded bbox (sx = w/220), while rings_px are rounded to 0.1 px against the 0.1 ft bbox the
+// image is requested for, so a few percent of the outline's pixels sit 1 px apart. Keep rings_px: that bbox is the
+// one NC OneMap rendered the image for, and it's the outline the artifact draws too.
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
 // build.py png_read(): 8-bit RGB (colour type 2) or RGBA (6), non-interlaced, every filter type; alpha dropped.
 // Returns {w, h, rgb} (rgb: w*h*3 bytes, row by row). Any other PNG throws, with a reason that says what it was.
@@ -581,16 +588,21 @@ async function aerialCrops(args, ctl){
   }
   const done = await Promise.all(order.map(p=>PID_RX.test(p) ? cropOne(p, rings.get(p), ctl.fetchSignal, outline===true)
     : Promise.resolve({pid:p.slice(0,24), ok:false, error:'not an 8-character Mecklenburg parcel id'})));
-  const images = [];
+  const images = [], imagePids = [];
   const crops = done.map(c=>{ if(!c.ok) return c; const {_image, ...rest} = c; rest.image_index = images.length;
-    images.push({type:'image', data:_image.data.toString('base64'), mimeType:_image.mimeType});
+    images.push({type:'image', data:_image.data.toString('base64'), mimeType:_image.mimeType}); imagePids.push(rest.pid);
     const crop = {pid:rest.pid, ok:true, image_index:rest.image_index, width:rest.width, height:rest.height, ft_per_px:rest.ft_per_px,
       flight:rest.flight, rings_px:rest.rings_px};
     if(rest.outlined) crop.outlined = true;
     return crop; });
   const fl = {}; crops.forEach(c=>{ if(c.ok && c.flight) fl[c.flight] = (fl[c.flight]||0)+1; });
   const result = {crops, flight:Object.entries(fl).sort((a,b)=>b[1]-a[1] || (a[0]<b[0]?1:-1)).map(e=>e[0])[0] || null};
-  const out = {content:[{type:'text', text:JSON.stringify(result)}, ...images], structuredContent:result};
+  // outline:true (a model reading the photos itself): a short text block right before each photo names its pid, so a
+  // photo can't be paired with the wrong parcel when a crop in the middle failed (image_index counts only the crops
+  // that worked). image_index still counts image blocks only; outline:false answers carry no labels, as in 1.0.0.
+  const blocks = outline===true ? images.flatMap((im, k)=>[{type:'text',
+    text:`Photo ${k+1} of ${images.length}: pid ${imagePids[k]} (image_index ${k}). The subject parcel is the lot inside the red outline.`}, im]) : images;
+  const out = {content:[{type:'text', text:JSON.stringify(result)}, ...blocks], structuredContent:result};
   if(!images.length){
     out.isError = true;
     out.content.unshift({type:'text', text:'No crop could be made: '+crops.map(c=>`${c.pid}: ${c.error}`).join('; ')+'.'});
@@ -620,7 +632,8 @@ async function callTool(params, ctx){
   if(left < 3000) return toolError('This batch ran out of time. Send the call on its own.');
   const ms = Math.min(TOOL_MS, left-1000);
   if(name!=='find_street'){
-    if(ctx.imageSent) return toolError('Send one aerial_crops call per request (each answer carries up to 0.5 MB of images).');
+    // the outline:false wording is 1.0.0's, unchanged (outline:false answers stay byte-identical)
+    if(ctx.imageSent) return toolError(`Send one aerial_crops call per request (each answer carries ${args && args.outline===true ? 'about 1.3 MB of images with outline:true' : 'up to 0.5 MB of images'}).`);
     ctx.imageSent = true;
   }
   const ctl = toolControl(ms);
