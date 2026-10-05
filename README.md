@@ -41,7 +41,8 @@ for the Street Walk artifact, or in any chat. It has two tools:
 
 - `find_street`: an address or parcel id gives the houses on the lot's own stretch of street, with assessor facts,
   City code-enforcement cases from the last 24 months, and the analyzer's street check.
-- `aerial_crops`: up to 6 parcel ids give NC OneMap aerial photo crops, with each parcel's outline.
+- `aerial_crops`: up to 6 parcel ids give NC OneMap aerial photo crops, with each parcel's outline. With
+  `outline:true` (up to 3 ids) the photos come back with the parcel outlined in red, ready for Claude to read in a chat.
 
 It serves public Mecklenburg County, City of Charlotte and NC OneMap data only: no Google data, no owner names and no
 inspector details. It needs no login, key or env var. The rules are in AGENTS.md ("Street Data connector").
