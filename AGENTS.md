@@ -741,6 +741,36 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   Code.gs and publishing a **new version of the existing deployment** (Deploy › Manage deployments › edit), which
   keeps the /exec link.
 
+### Plat Sketch hand-off (v8.24)
+Lot (Site Intelligence step 2) has **Sketch a subdivision** (`openPlatSketch()`). It hands the lot to the Plat Sketch
+page, Pat's subdivision sketcher: a claude.ai artifact at `PLAT_SKETCH_URL` (the private staging copy until go-live, then
+Pat's own artifact). The payload (v1) is read by that page's `projectFromImport()`; the shared contract is in Brian's
+project folder (`research/08_plat-sketch-handoff-plan.md`, "Shared payload"). A field change needs both sides.
+- **The clipboard is the route.** A claude.ai artifact runs in a frame that never sees the page URL's hash or query, and
+  the frame has no `clipboard-read`. So the click writes base64url JSON (`b64url()`) to the clipboard and the person
+  presses ⌘V / Ctrl+V on the sketch canvas. The write is awaited before `window.open` (a write still pending when the
+  new tab takes focus can be refused), with `copyTextLegacy()` (`execCommand('copy')`) when the clipboard API is refused,
+  as the Claude desktop app's own browser does. No copy, no tab. The `#import=` hash on the URL only helps a copy of the
+  page served directly. A blocked tab leaves a link beside the button.
+- **The lot is the County GIS ring while the editor still shows it** (`sketchLot()`): State Plane feet (wkid 2264,
+  north = +y), closing point dropped and merged by `mergeParcelRing()` exactly as `loadParcelPolygon()` does, so edge i
+  is the editor's edge i and carries its designation. It's used only while `_gisParcel.gis === window._lastGis`, the
+  address signature matches, and every editor corner is within 0.5 ft of the ring's. Otherwise (no lookup, a reopened
+  deal, a lot redrawn, dragged or rescaled) it's the editor's polygon, with the canvas's y flipped back. `source.from`
+  says which (`gis` / `editor`). Flag a GIS lot sent through the canvas, or a ring sent after the editor stopped
+  showing it.
+- **`_gisParcel` sits outside `_lastGis` on purpose.** `_lastGis` is in `getReportData().gis` and `serializeDeal()`, so
+  the ring there would change the report hash and the save file. It isn't saved: a reopened deal hands over its editor
+  polygon (kept to 1/100 px, so within a few hundredths of a sf).
+- **Street sides** are the proxy's ROW flags per merged edge (`mergeParcelRing()`'s `row`), so a corner or through lot
+  gets both; with none, the front and corner-side designations. **Setbacks per edge** are `edgeSetbackFt()` of each
+  edge's designation, what the envelope uses. **Rules:** `charlotte-n1-a`…`e` for a Mecklenburg N1-A..E row (suffix and
+  townhome rows go to the base zone), otherwise `custom`. Min lot area / width / frontage come from the zone's
+  `SETBACKS` row when it has one, front / side / rear from the setback fields. The analyzer's values win over the
+  sketch page's presets (its N1 fronts are an unconfirmed 20 ft; the UDO rows here are 27 / 17 / 10).
+- **Hand-off only.** It feeds no calculation, `getReportData()`, save file, PDF or Excel, and adds no storage. The
+  button waits for a lot polygon (poly mode, 3+ corners); `calcBuildable()` keeps its state.
+
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
   adds a release-notes / changelog entry. Flag a mismatch.

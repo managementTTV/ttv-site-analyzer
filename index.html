@@ -261,6 +261,7 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .st-chip{display:inline-block;font-size:10px;font-family:inherit;padding:1px 7px;border-radius:9px;white-space:nowrap}
 .topo-btn{font-size:11px;color:var(--teal);background:var(--teal-dim);border:1px solid rgba(94,128,149,0.25);padding:6px 12px;border-radius:var(--radius-sm);text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin:3px}
 .topo-btn:hover{background:rgba(94,128,149,0.25)}
+#sketch-btn{cursor:pointer}#sketch-btn:disabled{opacity:.45;cursor:not-allowed}
 
 /* EXIT & OFFER */
 .land-input-big{position:relative;display:flex;align-items:center}
@@ -732,7 +733,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.23 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.24 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -850,6 +851,10 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="card">
       <div class="card-title"><span class="dot"></span>Lot Dimensions</div>
       <div id="gis-link-block" style="margin-bottom:16px"></div>
+      <div style="margin:-6px 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="topo-btn" id="sketch-btn" onclick="openPlatSketch()" disabled>&#9998; Sketch a subdivision &rarr;</button>
+        <span id="sketch-status" style="font-size:12px;color:var(--text-dim)">Needs the lot as a polygon: run the County GIS auto-fill above, or draw it under Irregular Lot.</span>
+      </div>
 
       <!-- Mode Toggle -->
       <div class="lot-mode-toggle">
@@ -2619,7 +2624,8 @@ function applyGisData(d,sig){
     watershed:d.watershed&&d.watershed.pco_district||null,bua:d.watershed&&d.watershed.bua_rule||null,
     swim:d.swim_buffer?{i:!!d.swim_buffer.intersects,t:(d.swim_buffer.types||[]).slice(0,3)}:null,
     historic:d.historic?{i:!!d.historic.in_district,n:d.historic.name||null}:null,
-    cama:d.cama||null,site:d.site||null};}catch(_){ }
+    cama:d.cama||null,site:d.site||null};
+    _gisParcel=d.parcel&&d.parcel.geometry?{gis:window._lastGis,rings:d.parcel.geometry.rings,edges:d.parcel.edges||null}:null;}catch(_){ }
   renderZoneNote();   // v8.15: now that the cache holds this parcel's zoning string (and any suffix)
   renderGisResult(d);
   if(d.parcel&&d.parcel.pid)checkStreet();else hideStreetCheck();   // v8.18: not awaited, the lookup is done
@@ -3397,6 +3403,96 @@ function updateGISLink(){
     bl.innerHTML=`<div class="warn">Enter address and county above to get a pre-filled GIS link.</div>`;
 }
 
+// ═══════════════════ PAGE 2 — PLAT SKETCH HAND-OFF (v8.24) ═══════════════════
+// "Sketch a subdivision" hands the lot to the Plat Sketch page (Pat's subdivision sketcher, a claude.ai artifact) with
+// its street side, each edge's setback and the zone's lot rules: payload v1 in research/08_plat-sketch-handoff-plan.md.
+// A claude.ai artifact runs in a frame that never sees the page URL's hash, so the payload goes on the clipboard and the
+// person pastes it on the sketch canvas; the #import= hash only helps a copy of the page served directly.
+// Staging copy until go-live, when this becomes Pat's own artifact.
+const PLAT_SKETCH_URL='https://claude.ai/artifact/F6bgDXtVXy43sKCzLXQYvT';
+let _gisParcel=null;   // {gis, rings, edges}: the County GIS parcel behind window._lastGis (gis: that same object, so a
+                       // cleared, replaced or restored _lastGis leaves this one stale)
+let _sketchSaid=null;  // {text, tone, href}: what the last click said, shown beside the button while there's a lot
+// The lot in feet, north = +y (pts [[x,y]], no closing point), with the edges that face a street. The County GIS ring
+// (State Plane feet) while the editor still shows it; otherwise the editor's polygon, whose canvas runs y down.
+function sketchLot(){
+  if(lotMode!=='poly'||polyPoints.length<3)return null;
+  const n=polyPoints.length,f=getScaleFtPerPx(),des=edgeDesignations;
+  const ed=polyPoints.map(p=>[p.x*f,-p.y*f]);
+  const streetDes=()=>ed.map((_,i)=>des[i]==='front'||des[i]==='corner');
+  const g=window._lastGis,gp=_gisParcel;
+  if(gp&&g&&gp.gis===g&&g.addrSig===gisAddressSignature()&&gp.rings&&gp.rings[0]){
+    // the ring as loadParcelPolygon() takes it: closing point dropped, straight-line splits merged, so edge i is the
+    // editor's edge i (and its designation)
+    let ring=gp.rings[0].slice();
+    if(ring.length>2){const a=ring[0],b=ring[ring.length-1];if(a[0]===b[0]&&a[1]===b[1])ring=ring.slice(0,-1);}
+    const e=gp.edges,hasRow=!!(e&&Array.isArray(e.row)&&e.row.length===ring.length);
+    const m=ring.length>=3?mergeParcelRing(ring,hasRow?e.row:null):null;
+    // only while the editor still holds that lot: not redrawn, dragged or rescaled (every corner within 0.5 ft)
+    const same=m&&m.pts.length===n&&m.pts.every((p,i)=>Math.abs(p[0]-m.pts[0][0]-(ed[i][0]-ed[0][0]))<0.5&&Math.abs(p[1]-m.pts[0][1]-(ed[i][1]-ed[0][1]))<0.5);
+    if(same)return{pts:m.pts,street:hasRow&&m.row.some(Boolean)?m.row:streetDes(),from:'gis'};
+  }
+  return{pts:ed,street:streetDes(),from:'editor'};
+}
+// Payload v1. Setbacks per edge are edgeSetbackFt() of the edge's designation, as the envelope takes them; the rule
+// profile is the zone's row (charlotte-n1-a..e for N1-A..E, else custom) with the setbacks on screen.
+function platSketchPayload(){
+  const lot=sketchLot();if(!lot)return null;
+  const r3=v=>Math.round(v*1000)/1000,n=lot.pts.length;
+  const pts=lot.pts.map(p=>({x:r3(p[0]),y:r3(p[1])}));
+  const segments=pts.map((a,i)=>{const b=pts[(i+1)%n],dx=b.x-a.x,dy=b.y-a.y;
+    return{length:r3(Math.hypot(dx,dy)),angle:r3((Math.atan2(dx,dy)*180/Math.PI+360)%360)};});   // bearing, clockwise from north
+  let a2=0;pts.forEach((a,i)=>{const b=pts[(i+1)%n];a2+=a.x*b.y-b.x*a.y;});
+  const zv=($('zone-sel')||{}).value||'',county=zv.split('|')[0]||($('county-sel')||{}).value||'',zone=zv.split('|')[1]||'';
+  const base=zone.split(' \u00b7 ')[0],row=SETBACKS[zv];
+  const rules={preset:county==='Mecklenburg'&&/^N1-[A-E]$/.test(base)?'charlotte-'+base.toLowerCase():'custom'};
+  if(row)Object.assign(rules,{minLotArea:row.minSF,minLotWidth:row.minWidth,minFrontage:row.minWidth});
+  Object.assign(rules,{frontSetback:pv('sb-front'),sideSetback:pv('sb-sides'),rearSetback:pv('sb-rear')});
+  const g=window._lastGis,pid=g&&g.addrSig===gisAddressSignature()&&g.pid||'';
+  return{v:1,name:[addrStreet()||'Lot from the analyzer',pid?'PID '+pid:''].filter(Boolean).join(' \u00b7 '),
+    source:{pid,address:fullAddr(),zone,county,lotSf:Math.round(Math.abs(a2)/2),from:lot.from},
+    units:'ft-dec',
+    lot:{points:pts,segments,streetSides:lot.street.map(Boolean)},
+    setbacks:pts.map((_,i)=>edgeSetbackFt(edgeDesignations[i]||'side')),
+    rules};
+}
+function updateSketchBtn(){
+  const b=$('sketch-btn'),s=$('sketch-status');if(!b||!s)return;
+  const ok=lotMode==='poly'&&polyPoints.length>=3;
+  b.disabled=!ok;
+  if(!ok)_sketchSaid=null;
+  const m=_sketchSaid||{text:ok?'Opens the Plat Sketch page with this lot, its street side and setbacks.'
+    :'Needs the lot as a polygon: run the County GIS auto-fill above, or draw it under Irregular Lot.'};
+  s.textContent=m.text;s.style.color=m.tone==='warn'?'var(--amber)':'var(--text-dim)';
+  if(m.href){const a=document.createElement('a');a.href=m.href;a.target='_blank';a.rel='noopener';a.textContent='Open the sketch page';
+    s.appendChild(document.createTextNode(' '));s.appendChild(a);}
+}
+// The older copy route, for a browser that refuses the clipboard API (the Claude desktop app's own browser does): still
+// inside the click's user activation.
+function copyTextLegacy(t){
+  const back=document.activeElement,ta=document.createElement('textarea');
+  ta.value=t;ta.setAttribute('readonly','');ta.style.cssText='position:fixed;left:-9999px;top:0';
+  document.body.appendChild(ta);ta.select();
+  let ok=false;try{ok=document.execCommand('copy');}catch(_){ }
+  ta.remove();if(back&&back.focus)back.focus();
+  return ok;
+}
+// The clipboard write comes first and is awaited, inside the click: the sketch page can only take the lot by paste, and
+// a write still pending when the new tab takes focus can be refused ("Document is not focused").
+async function openPlatSketch(){
+  const p=platSketchPayload();if(!p){updateSketchBtn();return;}
+  const code=b64url(JSON.stringify(p)),url=PLAT_SKETCH_URL+'#import='+code;
+  let copied=false;
+  try{await navigator.clipboard.writeText(code);copied=true;}catch(_){copied=copyTextLegacy(code);}
+  if(!copied){_sketchSaid={text:'The browser didn\u2019t allow the copy to the clipboard, so the sketch page would open empty. Click Sketch a subdivision again.',tone:'warn'};updateSketchBtn();return;}
+  // no 'noopener' feature: with it window.open always returns null, and a blocked tab has to be reported
+  const w=window.open(url,'_blank');
+  if(w){try{w.opener=null;}catch(_){ }}
+  _sketchSaid=w?{text:'Copied. Press \u2318V / Ctrl+V on the sketch canvas.'}
+    :{text:'Copied, but the browser blocked the new tab. Open it here, then press \u2318V / Ctrl+V on the sketch canvas:',tone:'warn',href:url};
+  updateSketchBtn();
+}
+
 // ═══════════════════ BUILDABLE AREA ═══════════════════
 function calcBuildable(){
   const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=pv('sb-corner');
@@ -3459,7 +3555,7 @@ function calcBuildable(){
       }
     }
   }
-  calcBUA();renderFitCheck();updateSummaryBar();renderSublot();
+  calcBUA();renderFitCheck();updateSummaryBar();renderSublot();updateSketchBtn();
   // For poly mode, snapshotLotEditor handles the draw after image loads
   if(lotMode==='poly') snapshotLotEditor();
   else drawDiagram();
@@ -6204,8 +6300,12 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.23', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.24', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.24',date:'Oct 2026',name:'Sketch a subdivision',items:[
+   'Lot (Site Intelligence) has a Sketch a subdivision button. It copies this lot and opens the Plat Sketch page; press \u2318V / Ctrl+V on its canvas and the lot comes in already drawn, with no screenshot to trace or scale to calibrate.',
+   'The lot is the County GIS parcel itself (its exact corners), or the lot drawn in the editor when there\u2019s no GIS parcel or you\u2019ve changed it. The street side comes ticked, each side carries the setback the buildable envelope uses (front, side, rear or corner side), and the rule profile is the zone\u2019s: Charlotte N1-A to N1-E, or custom with this zone\u2019s minimum lot size and width.',
+   'The button waits until there is a lot polygon: run the County GIS auto-fill, or draw the lot under Irregular Lot.']},
  {v:'8.23',date:'Oct 2026',name:'County comps follow the team rule',items:[
    'Pull new-build comps now comps the way the team does: sales from the last 12 months, within half a mile, on this side of the major roads, of the same product you plan to build, at the same finish. A townhome plan comps townhouses, a single-family plan comps detached homes, and a duet comps attached homes.',
    'Major roads are the City\u2019s freeways and major thoroughfares (Independence, Central Ave, N Tryon, Beatties Ford, WT Harris and the like). A sale across one is used only when this side has too few, and the box names the road.',
