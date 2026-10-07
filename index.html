@@ -2526,18 +2526,25 @@ function designateParcelEdges(P,row,fi){
   }
   return des;
 }
-function loadParcelPolygon(rings,edgeInfo){
-  if(!rings||!rings.length)return false;
+// The County GIS ring as the lot editor takes it: closing point dropped, then the vertices that only split a straight lot
+// line merged (mergeParcelRing), with the proxy's ROW flags when it sent one per edge. loadParcelPolygon() and the Plat
+// Sketch hand-off (sketchLot) both read it, so the hand-off's edge i is always the editor's edge i.
+function editorParcelRing(rings,edgeInfo){
+  if(!rings||!rings.length||!rings[0])return null;
   let ring=rings[0].slice();
   if(ring.length>2){const a=ring[0],b=ring[ring.length-1];if(a[0]===b[0]&&a[1]===b[1])ring=ring.slice(0,-1);}
-  if(ring.length<3)return false;
+  if(ring.length<3)return null;
+  const hasRow=!!(edgeInfo&&Array.isArray(edgeInfo.row)&&edgeInfo.row.length===ring.length);
+  return{ring,hasRow,m:mergeParcelRing(ring,hasRow?edgeInfo.row:null)};
+}
+function loadParcelPolygon(rings,edgeInfo){
+  const pr=editorParcelRing(rings,edgeInfo);if(!pr)return false;
   // v7.7: the proxy classifies each edge of the ring as sent (edge i = ring[i]->ring[i+1], indices unaffected by the
   // Y-flip below). v8.19: merge the vertices that only split a straight lot line first, carrying the ROW flags and the
   // front edge along, then designate every edge (designateParcelEdges), not just one front and one rear.
-  const hasRow=!!(edgeInfo&&Array.isArray(edgeInfo.row)&&edgeInfo.row.length===ring.length);
-  const fi0=(hasRow&&typeof edgeInfo.front_index==='number'&&edgeInfo.front_index>=0&&edgeInfo.front_index<ring.length)?edgeInfo.front_index:null;
-  const n0=ring.length,m=mergeParcelRing(ring,hasRow?edgeInfo.row:null);
-  ring=m.pts;
+  const hasRow=pr.hasRow,m=pr.m,n0=pr.ring.length;
+  const fi0=(hasRow&&typeof edgeInfo.front_index==='number'&&edgeInfo.front_index>=0&&edgeInfo.front_index<n0)?edgeInfo.front_index:null;
+  let ring=m.pts;
   const xs=ring.map(p=>p[0]),ys=ring.map(p=>p[1]);
   const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
   const spanX=maxX-minX,spanY=maxY-minY;
@@ -2787,6 +2794,7 @@ let _fitHeld = false;     // v8.19: a fit grid skipped mid-drag, drawn on releas
 let polyDragOffX = 0, polyDragOffY = 0;
 let edgeDesignations = []; // 'front'|'rear'|'side'|'corner' per edge i
 let _edgeNote = null;      // v8.19: {pts,warn,text} from loadParcelPolygon, shown while polyPoints is still that lot
+let _polySeed = null;      // v8.24: {pts,xy} the placeholder shape initPolyEditor() drew, until a corner moves
 
 function getScaleFtPerPx(){
   const canvas = $('lot-editor-canvas');
@@ -2813,10 +2821,13 @@ function initPolyEditor(){
       y: Math.round(cy + ry*Math.sin(angle))
     });
   }
+  _polySeed = {pts:polyPoints, xy:JSON.stringify(polyPoints)};
   initEdgeDesignations();
   redrawEditor();
   calcBuildable();
 }
+// v8.24: the lot on screen is still initPolyEditor()'s starting shape (nobody has dragged a corner), not a drawn lot
+function polyIsPlaceholder(){ const s=_polySeed; return !!(s && s.pts===polyPoints && s.xy===JSON.stringify(polyPoints)); }
 
 function initEdgeDesignations(){
   const n = polyPoints.length;
@@ -3412,27 +3423,26 @@ function updateGISLink(){
 const PLAT_SKETCH_URL='https://claude.ai/artifact/F6bgDXtVXy43sKCzLXQYvT';
 let _gisParcel=null;   // {gis, rings, edges}: the County GIS parcel behind window._lastGis (gis: that same object, so a
                        // cleared, replaced or restored _lastGis leaves this one stale)
-let _sketchSaid=null;  // {text, tone, href}: what the last click said, shown beside the button while there's a lot
+let _sketchSaid=null;  // {text, tone, href, code}: what the last click said, shown beside the button while it still holds
+                       // (code: what was copied, so the note goes once the lot, its edges or setbacks change)
+let _sketchBusy=false; // a click is still copying: a second one would open a second tab
+const PLAT_SKETCH_MAX_CORNERS=200;   // the sketch page's import takes 3-200 sides
 // The lot in feet, north = +y (pts [[x,y]], no closing point), with the edges that face a street. The County GIS ring
 // (State Plane feet) while the editor still shows it; otherwise the editor's polygon, whose canvas runs y down.
+// Street sides: the analyzer's front and corner-side edges, plus every edge the proxy flagged as right-of-way (an alley
+// or through lot's rear), so an edge the analyst made the front is ticked even where the proxy saw no street.
 function sketchLot(){
   if(lotMode!=='poly'||polyPoints.length<3)return null;
   const n=polyPoints.length,f=getScaleFtPerPx(),des=edgeDesignations;
   const ed=polyPoints.map(p=>[p.x*f,-p.y*f]);
-  const streetDes=()=>ed.map((_,i)=>des[i]==='front'||des[i]==='corner');
+  const street=ed.map((_,i)=>des[i]==='front'||des[i]==='corner');
   const g=window._lastGis,gp=_gisParcel;
-  if(gp&&g&&gp.gis===g&&g.addrSig===gisAddressSignature()&&gp.rings&&gp.rings[0]){
-    // the ring as loadParcelPolygon() takes it: closing point dropped, straight-line splits merged, so edge i is the
-    // editor's edge i (and its designation)
-    let ring=gp.rings[0].slice();
-    if(ring.length>2){const a=ring[0],b=ring[ring.length-1];if(a[0]===b[0]&&a[1]===b[1])ring=ring.slice(0,-1);}
-    const e=gp.edges,hasRow=!!(e&&Array.isArray(e.row)&&e.row.length===ring.length);
-    const m=ring.length>=3?mergeParcelRing(ring,hasRow?e.row:null):null;
-    // only while the editor still holds that lot: not redrawn, dragged or rescaled (every corner within 0.5 ft)
-    const same=m&&m.pts.length===n&&m.pts.every((p,i)=>Math.abs(p[0]-m.pts[0][0]-(ed[i][0]-ed[0][0]))<0.5&&Math.abs(p[1]-m.pts[0][1]-(ed[i][1]-ed[0][1]))<0.5);
-    if(same)return{pts:m.pts,street:hasRow&&m.row.some(Boolean)?m.row:streetDes(),from:'gis'};
-  }
-  return{pts:ed,street:streetDes(),from:'editor'};
+  const pr=gp&&g&&gp.gis===g&&g.addrSig===gisAddressSignature()?editorParcelRing(gp.rings,gp.edges):null;
+  // only while the editor still holds that lot: not redrawn, dragged or rescaled (every corner within 0.5 ft)
+  const P=pr&&pr.m.pts;
+  if(P&&P.length===n&&P.every((p,i)=>Math.abs(p[0]-P[0][0]-(ed[i][0]-ed[0][0]))<0.5&&Math.abs(p[1]-P[0][1]-(ed[i][1]-ed[0][1]))<0.5))
+    return{pts:P,street:street.map((s,i)=>s||!!pr.m.row[i]),from:'gis'};
+  return{pts:ed,street,from:'editor'};
 }
 // Payload v1. Setbacks per edge are edgeSetbackFt() of the edge's designation, as the envelope takes them; the rule
 // profile is the zone's row (charlotte-n1-a..e for N1-A..E, else custom) with the setbacks on screen.
@@ -3441,27 +3451,31 @@ function platSketchPayload(){
   const r3=v=>Math.round(v*1000)/1000,n=lot.pts.length;
   const pts=lot.pts.map(p=>({x:r3(p[0]),y:r3(p[1])}));
   const segments=pts.map((a,i)=>{const b=pts[(i+1)%n],dx=b.x-a.x,dy=b.y-a.y;
-    return{length:r3(Math.hypot(dx,dy)),angle:r3((Math.atan2(dx,dy)*180/Math.PI+360)%360)};});   // bearing, clockwise from north
-  let a2=0;pts.forEach((a,i)=>{const b=pts[(i+1)%n];a2+=a.x*b.y-b.x*a.y;});
+    return{length:r3(Math.hypot(dx,dy)),angle:r3((Math.atan2(dx,dy)*180/Math.PI+360)%360)%360};});   // bearing, clockwise from north
   const zv=($('zone-sel')||{}).value||'',county=zv.split('|')[0]||($('county-sel')||{}).value||'',zone=zv.split('|')[1]||'';
-  const base=zone.split(' \u00b7 ')[0],row=SETBACKS[zv];
+  const base=zone.split(' · ')[0],row=SETBACKS[zv];
   const rules={preset:county==='Mecklenburg'&&/^N1-[A-E]$/.test(base)?'charlotte-'+base.toLowerCase():'custom'};
-  if(row)Object.assign(rules,{minLotArea:row.minSF,minLotWidth:row.minWidth,minFrontage:row.minWidth});
+  // a townhome row's lot standards are the parent parcel's (Table 5-1 fn 1), so the unit lots carry no minimums
+  if(row)Object.assign(rules,row.mfa?{minLotArea:0,minLotWidth:0,minFrontage:0}:{minLotArea:row.minSF,minLotWidth:row.minWidth,minFrontage:row.minWidth});
   Object.assign(rules,{frontSetback:pv('sb-front'),sideSetback:pv('sb-sides'),rearSetback:pv('sb-rear')});
   const g=window._lastGis,pid=g&&g.addrSig===gisAddressSignature()&&g.pid||'';
-  return{v:1,name:[addrStreet()||'Lot from the analyzer',pid?'PID '+pid:''].filter(Boolean).join(' \u00b7 '),
-    source:{pid,address:fullAddr(),zone,county,lotSf:Math.round(Math.abs(a2)/2),from:lot.from},
+  return{v:1,name:[addrStreet()||'Lot from the analyzer',pid?'PID '+pid:''].filter(Boolean).join(' · '),
+    source:{pid,address:fullAddr(),zone,county,lotSf:Math.round(Math.abs(polyAreaFt(pts))),from:lot.from},
     units:'ft-dec',
-    lot:{points:pts,segments,streetSides:lot.street.map(Boolean)},
+    lot:{points:pts,segments,streetSides:lot.street},
     setbacks:pts.map((_,i)=>edgeSetbackFt(edgeDesignations[i]||'side')),
     rules};
 }
+function sketchCode(){const p=platSketchPayload();return p?b64url(JSON.stringify(p)):'';}
 function updateSketchBtn(){
   const b=$('sketch-btn'),s=$('sketch-status');if(!b||!s)return;
-  const ok=lotMode==='poly'&&polyPoints.length>=3;
-  b.disabled=!ok;
-  if(!ok)_sketchSaid=null;
+  const n=lotMode==='poly'?polyPoints.length:0,seeded=n>=3&&polyIsPlaceholder(),big=n>PLAT_SKETCH_MAX_CORNERS;
+  const ok=n>=3&&!seeded&&!big;
+  b.disabled=!ok||_sketchBusy;
+  if(_sketchSaid&&(!ok||(_sketchSaid.code&&_sketchSaid.code!==sketchCode())))_sketchSaid=null;
   const m=_sketchSaid||{text:ok?'Opens the Plat Sketch page with this lot, its street side and setbacks.'
+    :seeded?'Drag the corners to the lot’s shape first, or run the County GIS auto-fill above.'
+    :big?`This lot has ${n} corners; the Plat Sketch page takes up to ${PLAT_SKETCH_MAX_CORNERS}.`
     :'Needs the lot as a polygon: run the County GIS auto-fill above, or draw it under Irregular Lot.'};
   s.textContent=m.text;s.style.color=m.tone==='warn'?'var(--amber)':'var(--text-dim)';
   if(m.href){const a=document.createElement('a');a.href=m.href;a.target='_blank';a.rel='noopener';a.textContent='Open the sketch page';
@@ -3480,16 +3494,19 @@ function copyTextLegacy(t){
 // The clipboard write comes first and is awaited, inside the click: the sketch page can only take the lot by paste, and
 // a write still pending when the new tab takes focus can be refused ("Document is not focused").
 async function openPlatSketch(){
+  if(_sketchBusy)return;
   const p=platSketchPayload();if(!p){updateSketchBtn();return;}
   const code=b64url(JSON.stringify(p)),url=PLAT_SKETCH_URL+'#import='+code;
+  _sketchBusy=true;$('sketch-btn').disabled=true;
   let copied=false;
   try{await navigator.clipboard.writeText(code);copied=true;}catch(_){copied=copyTextLegacy(code);}
+  _sketchBusy=false;
   if(!copied){_sketchSaid={text:'The browser didn\u2019t allow the copy to the clipboard, so the sketch page would open empty. Click Sketch a subdivision again.',tone:'warn'};updateSketchBtn();return;}
   // no 'noopener' feature: with it window.open always returns null, and a blocked tab has to be reported
   const w=window.open(url,'_blank');
   if(w){try{w.opener=null;}catch(_){ }}
-  _sketchSaid=w?{text:'Copied. Press \u2318V / Ctrl+V on the sketch canvas.'}
-    :{text:'Copied, but the browser blocked the new tab. Open it here, then press \u2318V / Ctrl+V on the sketch canvas:',tone:'warn',href:url};
+  _sketchSaid=w?{text:'Copied. Press \u2318V / Ctrl+V on the sketch canvas.',code}
+    :{text:'Copied, but the browser blocked the new tab. Open it here, then press \u2318V / Ctrl+V on the sketch canvas:',tone:'warn',href:url,code};
   updateSketchBtn();
 }
 

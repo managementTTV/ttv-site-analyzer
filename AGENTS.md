@@ -753,8 +753,8 @@ project folder (`research/08_plat-sketch-handoff-plan.md`, "Shared payload"). A 
   as the Claude desktop app's own browser does. No copy, no tab. The `#import=` hash on the URL only helps a copy of the
   page served directly. A blocked tab leaves a link beside the button.
 - **The lot is the County GIS ring while the editor still shows it** (`sketchLot()`): State Plane feet (wkid 2264,
-  north = +y), closing point dropped and merged by `mergeParcelRing()` exactly as `loadParcelPolygon()` does, so edge i
-  is the editor's edge i and carries its designation. It's used only while `_gisParcel.gis === window._lastGis`, the
+  north = +y), from `editorParcelRing()`, the one helper `loadParcelPolygon()` also reads (closing point dropped,
+  `mergeParcelRing()`), so edge i is the editor's edge i and carries its designation. It's used only while `_gisParcel.gis === window._lastGis`, the
   address signature matches, and every editor corner is within 0.5 ft of the ring's. Otherwise (no lookup, a reopened
   deal, a lot redrawn, dragged or rescaled) it's the editor's polygon, with the canvas's y flipped back. `source.from`
   says which (`gis` / `editor`). Flag a GIS lot sent through the canvas, or a ring sent after the editor stopped
@@ -762,14 +762,19 @@ project folder (`research/08_plat-sketch-handoff-plan.md`, "Shared payload"). A 
 - **`_gisParcel` sits outside `_lastGis` on purpose.** `_lastGis` is in `getReportData().gis` and `serializeDeal()`, so
   the ring there would change the report hash and the save file. It isn't saved: a reopened deal hands over its editor
   polygon (kept to 1/100 px, so within a few hundredths of a sf).
-- **Street sides** are the proxy's ROW flags per merged edge (`mergeParcelRing()`'s `row`), so a corner or through lot
-  gets both; with none, the front and corner-side designations. **Setbacks per edge** are `edgeSetbackFt()` of each
-  edge's designation, what the envelope uses. **Rules:** `charlotte-n1-a`…`e` for a Mecklenburg N1-A..E row (suffix and
-  townhome rows go to the base zone), otherwise `custom`. Min lot area / width / frontage come from the zone's
-  `SETBACKS` row when it has one, front / side / rear from the setback fields. The analyzer's values win over the
-  sketch page's presets (its N1 fronts are an unconfirmed 20 ft; the UDO rows here are 27 / 17 / 10).
-- **Hand-off only.** It feeds no calculation, `getReportData()`, save file, PDF or Excel, and adds no storage. The
-  button waits for a lot polygon (poly mode, 3+ corners); `calcBuildable()` keeps its state.
+- **Street sides** are the front and corner-side designations, plus (GIS lot) every edge the proxy flagged as ROW per
+  merged edge (`mergeParcelRing()`'s `row`): a corner or through lot gets both streets, and a front the analyst moved is
+  ticked too. A reopened deal has no ring, so an alley or through lot's ROW rear isn't ticked there.
+- **Setbacks per edge** are `edgeSetbackFt()` of each edge's designation, what the envelope uses.
+- **Rules:** `charlotte-n1-a`…`e` for a Mecklenburg N1-A..E row (suffix and townhome rows go to the base zone), otherwise
+  `custom`. Min lot area / width / frontage come from the zone's `SETBACKS` row (0 for a `mfa` townhome row, whose
+  standards are the parent parcel's); front / side / rear from the setback fields. The analyzer's values win over the
+  sketch page's presets (its N1 fronts are an unconfirmed 20 ft; the UDO rows here are 27 / 17 / 10). A zone with no row
+  sends no minimums, and the sketch page's `custom` profile then starts from its N1-C values: open item.
+- **Hand-off only.** It feeds no calculation, `getReportData()`, save file, PDF or Excel, and adds no storage.
+- **The button waits for a lot** (poly mode, 3 to `PLAT_SKETCH_MAX_CORNERS` corners, not `initPolyEditor()`'s untouched
+  starting shape: `polyIsPlaceholder()`); `calcBuildable()` keeps its state. The "Copied" note goes as soon as the
+  payload it copied no longer matches the lot on screen, and a second click while copying is ignored.
 
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
