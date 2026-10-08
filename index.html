@@ -1361,7 +1361,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <p class="note" style="margin-bottom:14px">Loan-to-Cost: lender covers LTC% of total project cost. You bring the rest. Purchase closing costs (1% of loan) are included in the cost base automatically.</p>
         <div class="fr2">
           <div class="field"><label>LTC %</label><div class="input-wrap"><input type="number" id="ltc-pct" value="93" step="1" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div><p class="note">93% = you bring 7% cash</p></div>
-          <div class="field"><label>Annual Interest Rate</label><div class="input-wrap"><input type="number" id="fin-rate" value="10" step="0.25" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div></div>
+          <div class="field"><label>Annual Interest Rate</label><div class="input-wrap"><input type="number" id="fin-rate" value="9.75" step="0.25" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div></div>
         </div>
         <div class="fr2">
           <div class="field"><label>Loan Points</label><div class="input-wrap"><input type="number" id="fin-points" value="1" step="0.25" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div></div>
@@ -6387,6 +6387,10 @@ const RELEASE_NOTES=[
    'New warnings: when Units is more than one building of the plan holds, when a townhome row is longer than the county\u2019s max building length, and, when the deal doesn\u2019t fit, how many units do.',
    'A custom footprint is now one unit of a row: its width \u00d7 Units, like a townhome.',
    'The money doesn\u2019t change: build cost, Max land and the reports were already per unit \u00d7 Units. The plan comparison (Compare builds, PDF sheet 4) still tests each plan at its own unit count; that\u2019s a later fix.']},
+ {v:'8.30',date:'Oct 2026',name:'Loan rate now starts at 9.75%',items:[
+   'The Annual Interest Rate on a new deal starts at 9.75%, the same rate as the deal sheet. It was 10%.',
+   'Why it matters: Send to deal sheet copies this rate into the sheet, so a 10% default overwrote the sheet\u2019s 9.75% on every sent deal.',
+   'Max land, profit and the Excel/PDF figures move a little on a new deal, because the loan costs less. Saved deals keep the rate they were saved with, so they open unchanged.']},
  {v:'8.29',date:'Oct 2026',name:'Corner lots: which side the side street is on',items:[
    'A Rectangle corner lot now asks which side the side street is on: Left or Right, standing in the front street facing the lot. It shows once Corner lot is on.',
    'The diagram draws the corner side setback on that side. Its front street is at the top, so a side street on your right shows on the diagram\u2019s left.',
