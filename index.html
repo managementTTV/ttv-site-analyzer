@@ -748,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.27 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.28 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -915,7 +915,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <!-- TOOLBAR -->
         <div class="lot-editor-toolbar">
           <label>Canvas width =</label>
-          <input type="number" id="canvas-scale-ft" value="200" min="10" oninput="redrawEditor()">
+          <input type="number" id="canvas-scale-ft" value="200" min="10" oninput="calcBuildable()">
           <label>ft &nbsp;|&nbsp; Measurements update live as you drag</label>
           <button class="btn-ghost btn" style="padding:4px 10px;font-size:11px;margin-left:auto" onclick="resetPolyToDefault()">Reset Shape</button>
         </div>
@@ -2439,6 +2439,14 @@ function edgeSetbackFt(des){
   if(des==='corner'){const e=$('sb-corner');return e&&String(e.value).trim()!==''?pv('sb-corner'):pv('sb-sides');}
   return pv('sb-sides');
 }
+// v8.28: the Rectangle-mode envelope in feet, the one place its width rule lives (calcBuildable, drawDiagram, fitStatus).
+// sSide / sCorner are the two side setbacks by role, not by side of the page; on a corner lot sCorner is
+// edgeSetbackFt('corner'), otherwise both are the side setback. bW / bD can go negative; callers clamp.
+function rectEnvelopeFt(w=pv('lot-w'),d=pv('lot-d')){
+  const sSide=pv('sb-sides'),isCorner=!!($('corner-lot')&&$('corner-lot').checked);
+  const sCorner=isCorner?edgeSetbackFt('corner'):sSide;
+  return{bW:w-(sSide+sCorner),bD:d-pv('sb-front')-pv('sb-rear'),sSide,sCorner,isCorner};
+}
 // County GIS rings split one lot line into pieces wherever a neighbour's corner meets it (2731 Dellinger: a 3 + 26 ft front
 // and a 26 + 3 ft rear). Drop every vertex that sits within 0.5 ft of the line its neighbours make (1 ft beside a piece under
 // 2 ft), smallest first, checking the points already dropped too, as long as the merged line stays within 1 sf of the
@@ -3430,7 +3438,10 @@ function initLotCanvasInteractions(){
       drawDiagram();
     }
   }
-  function up(){polyDragIdx=-1;_structDrag=null;canvas.style.cursor='';}
+  function up(){
+    polyDragIdx=-1;_structDrag=null;canvas.style.cursor='';
+    if(_fitHeld){_fitHeld=false;renderFitCheck();renderPlanFitMsg();}   // v8.28: the fit grid and message held mid-drag (v8.26 lost this flush)
+  }
   canvas.addEventListener('mousedown',e=>down(getPos(e),false));
   window.addEventListener('mousemove',e=>{if(polyDragIdx<0&&!_structDrag)return;move(getPos(e));});
   window.addEventListener('mouseup',up);
@@ -3442,7 +3453,7 @@ function initLotCanvasInteractions(){
 // Keep old stubs so nothing breaks
 function initSides(){}
 function renderSidesList(){}
-function addSide(){ if(polyPoints.length<20){ polyPoints.push({x:400,y:300}); redrawEditor(); } }
+function addSide(){ if(polyPoints.length<20){ polyPoints.push({x:400,y:300}); calcBuildable(); } }
 function initSidesFromCount(){ initPolyEditor(); }
 
 // ═══════════════════ PAGE 2 — GIS ═══════════════════
@@ -3578,20 +3589,18 @@ async function openPlatSketch(){
 
 // ═══════════════════ BUILDABLE AREA ═══════════════════
 function calcBuildable(){
-  const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=edgeSetbackFt('corner');
   const minW=pv('sb-minw');
   const br=$('buildable-result');
 
   if(lotMode === 'rect'){
     const w=pv('lot-w'),d=pv('lot-d');
-    const isCorner=$('corner-lot')&&$('corner-lot').checked;
     const overrideSF=pv('buildable-override'),lotSFManual=pv('lot-sf');
     const ww=$('width-warn');
     if(ww&&minW>0&&w>0&&w<minW){ww.style.display='';ww.textContent=`⚠ Lot width (${w} ft) is below the zone minimum (${minW} ft). Verify with the city.`;}
     else if(ww)ww.style.display='none';
-    // v8.27: corner is edgeSetbackFt('corner'), so a blank Corner Side takes the side setback, as poly mode does
-    const sideTotal=isCorner?(sides+corner):(sides*2);
-    const buildW=Math.max(0,w-sideTotal),buildD=Math.max(0,d-front-rear);
+    // v8.27: the corner side is edgeSetbackFt('corner'), so a blank Corner Side takes the side setback, as poly mode does
+    const env=rectEnvelopeFt(w,d);
+    const buildW=Math.max(0,env.bW),buildD=Math.max(0,env.bD);
     buildableArea=overrideSF||(w&&d?buildW*buildD:0);
     if(br){
       if(buildableArea>0){
@@ -3639,7 +3648,7 @@ function calcBuildable(){
       }
     }
   }
-  calcBUA();renderFitCheck();updateSummaryBar();renderSublot();updateSketchBtn();
+  calcBUA();renderFitCheck();renderPlanFitMsg();updateSummaryBar();renderSublot();updateSketchBtn();
   if(lotMode==='rect')drawDiagram();   // the poly branch drew the editor above (buildableArea comes from it)
 }
 
@@ -3782,15 +3791,15 @@ function drawDiagram(){
     ctx.globalAlpha=0.65;ctx.drawImage(lotImageObj,ix,iy,iw,ih);ctx.globalAlpha=1.0;
   }
 
-  const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=edgeSetbackFt('corner');
+  const front=pv('sb-front'),rear=pv('sb-rear');
   const w=pv('lot-w')||100,d=pv('lot-d')||150;
-  const isCorner=$('corner-lot')&&$('corner-lot').checked;
+  const env=rectEnvelopeFt(w,d),sides=env.sSide;
   const pad=40,scale=Math.min((W-pad*2)/w,(H-pad*2)/d);
   const ox=(W-w*scale)/2,oy=(H-d*scale)/2;
   if(!lotImageObj){ctx.strokeStyle='rgba(16,37,56,0.25)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.strokeRect(ox,oy,w*scale,d*scale);ctx.setLineDash([]);}
   // the corner side setback draws on the RIGHT (x = W); the Plat Sketch hand-off's rect branch relies on that
-  const sL=sides,sR=isCorner?corner:sides;
-  const bx=ox+sL*scale,by=oy+front*scale,bw=(w-sL-sR)*scale,bh=(d-front-rear)*scale;
+  const sL=env.sSide,sR=env.sCorner;
+  const bx=ox+sL*scale,by=oy+front*scale,bw=env.bW*scale,bh=env.bD*scale;
   if(bw>0&&bh>0){
     ctx.fillStyle='rgba(94,128,149,0.15)';ctx.fillRect(bx,by,bw,bh);
     ctx.strokeStyle='rgba(176,116,40,0.9)';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.strokeRect(bx,by,bw,bh);ctx.setLineDash([]);
@@ -3806,7 +3815,7 @@ function drawDiagram(){
   if(rear>0)ctx.fillText(`Rear ${rear}'`,W/2,oy+d*scale-rear*scale/2+4);
   ctx.textAlign='left';if(sides>0)ctx.fillText(`${sides}'`,ox+4,H/2+2);
   ctx.textAlign='right';
-  if(isCorner&&corner>0)ctx.fillText(`Corner ${corner}'`,W-ox-4,H/2+2);
+  if(env.isCorner&&env.sCorner>0)ctx.fillText(`Corner ${env.sCorner}'`,W-ox-4,H/2+2);
   else if(sides>0)ctx.fillText(`${sides}'`,W-ox-4,H/2+2);
   ctx.textAlign='center';ctx.fillStyle='rgba(62,85,103,0.75)';
   ctx.fillText(`${w}' × ${d}'`,W/2,oy-8);
@@ -4396,28 +4405,7 @@ function onPlanChange(){
     {const pii=$('plan-info-img');if(pii)pii.innerHTML=planImg(name)?`<button class="plan-img-btn" onclick="openPlanImg('${name}')">${IMG_ICON} View plan drawing</button>`:'';}
     if(du>0&&name!==_unitsFor){$('units').value=du;_unitsFor=name;$('units').style.borderColor='var(--teal)';setTimeout(()=>$('units').style.borderColor='',1200);}
   }
-  // Fit message → plan-fit-msg (Slate plan) or cust-fit-msg (custom footprint)
-  const pfm=isCustom?$('cust-fit-msg'):$('plan-fit-msg');
-  if(pfm){
-    if(buildableArea>0&&fpW>0&&fpD>0){
-      let r;
-      if(lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3){
-        r=planFitsInPolyFt(fpW,fpD);
-      } else {
-        const isCorner=$('corner-lot')&&$('corner-lot').checked;
-        const bW=pv('lot-w')-((isCorner)?(pv('sb-sides')+edgeSetbackFt('corner')):(pv('sb-sides')*2));
-        const bD=pv('lot-d')-pv('sb-front')-pv('sb-rear');
-        if(bW>=fpW&&bD>=fpD)r='fits';
-        else if(bW>=fpD&&bD>=fpW)r='rot';
-        else r='no';
-      }
-      const noun=isCustom?'footprint':'plan';
-      if(r==='fits')pfm.innerHTML=`<div class="ok">✓ This ${noun} fits the buildable envelope.</div>`;
-      else if(r==='tight')pfm.innerHTML=`<div class="warn">⚠ Fits but within 5 ft of a boundary — verify.</div>`;
-      else if(r==='rot')pfm.innerHTML=`<div class="warn">⚠ Fits if rotated 90°.</div>`;
-      else pfm.innerHTML=`<div class="err">✗ Footprint (${fpW}'W×${fpD}'D) exceeds buildable envelope.</div>`;
-    } else pfm.innerHTML='';
-  }
+  renderPlanFitMsg();
   const isDuet=(!isCustom)&&(val.includes('Duet')||val.includes('Triplex'));
   const county=$('county-sel').value;
   const dp=$('duet-prompt');if(dp)dp.style.display=(isDuet&&county==='Mecklenburg')?'':'none';
@@ -4440,6 +4428,31 @@ function onPlanChange(){
   updateAttachedBuild();syncUnitsUI();
   calcBUA();calcAll();renderFitCheck();renderSublot();
   drawDiagram();   // the one lot diagram (step 2) shows the footprint at once
+}
+// Fit message → plan-fit-msg (Slate plan) or cust-fit-msg (custom footprint). v8.28: its verdict is fitStatus(), the one the
+// fit grid, the plan comparison and the PDF show (so it has the 'tight' tier too), and calcBuildable() redraws it as well
+// as onPlanChange(), so a lot or setback edit can't leave it on an old verdict.
+function renderPlanFitMsg(){
+  const val=($('plan-sel')||{}).value||'',isCustom=val==='__CUSTOM__';
+  const pfm=isCustom?$('cust-fit-msg'):$('plan-fit-msg');
+  if(!pfm)return;
+  if(lotMode==='poly'&&polyDragIdx>=0){_fitHeld=true;return;}   // mid-drag, as renderFitCheck(): drawn on release
+  let fpW=0,fpD=0;
+  if(isCustom){fpW=pv('cust-w');fpD=pv('cust-d');}
+  else if(val){const parts=val.split('|');fpW=parseFloat(parts[4])||0;fpD=parseFloat(parts[5])||0;}
+  const fs=buildableArea>0?fitStatus(fpW,fpD):{status:'na'};
+  const noun=isCustom?'footprint':'plan';
+  if(fs.status==='fits')pfm.innerHTML=fs.rotated?`<div class="warn">⚠ Fits if rotated 90°.</div>`:`<div class="ok">✓ This ${noun} fits the buildable envelope.</div>`;
+  else if(fs.status==='tight'){
+    // fitStatus() marks 'rotated' on fits only (its result goes into planComp and the report), so the rect path's
+    // turned-only case is read off the same envelope here; poly "tight" is the 5 ft clearance rule
+    const polyFit=lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3;
+    const e=polyFit?null:rectEnvelopeFt(),turned=!!e&&!(e.bW>=fpW&&e.bD>=fpD);
+    pfm.innerHTML=polyFit?`<div class="warn">⚠ Tight: it fits, but it can't sit 5 ft clear of the envelope on every side. Verify.</div>`
+      :`<div class="warn">⚠ ${turned?'Fits only if rotated 90°, and tight':'Tight: it fits, but'} with under 10 ft to spare in width or depth (5 ft clear on each side). Verify.</div>`;
+  }
+  else if(fs.status==='no')pfm.innerHTML=`<div class="err">✗ Footprint (${fpW}'W×${fpD}'D) exceeds buildable envelope.</div>`;
+  else pfm.innerHTML='';
 }
 function applyCustomDims(){ onPlanChange(); }
 // ── Utility tap fees, per unit ──
@@ -5823,9 +5836,7 @@ function fitStatus(fpW,fpD){
     return{status:r==='fits'?'fits':(r==='tight'?'tight':'no')};
   }
   if(!(buildableArea>0))return{status:'na'};
-  const isCorner=$('corner-lot')&&$('corner-lot').checked;
-  const bW=pv('lot-w')-((isCorner)?(pv('sb-sides')+edgeSetbackFt('corner')):(pv('sb-sides')*2));
-  const bD=pv('lot-d')-pv('sb-front')-pv('sb-rear');
+  const {bW,bD}=rectEnvelopeFt();
   const fits=bW>=fpW&&bD>=fpD,fitFlipped=bW>=fpD&&bD>=fpW;
   if(!(fits||fitFlipped))return{status:'no'};
   const clear=(bW-fpW>=10&&bD-fpD>=10)||(bW-fpD>=10&&bD-fpW>=10);
@@ -6273,8 +6284,12 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.27', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.28', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.28',date:'Oct 2026',name:'The plan fit line keeps up',items:[
+   'The fit line under the plan you picked (or your custom footprint) now updates as you change the lot size, a setback, Corner Side or the Corner lot switch, or drag a lot corner. Before, it kept its old answer until you picked the plan again.',
+   'It now gives the same answer as the fit grid, the plan comparison and the PDF, including \u201cTight\u201d: the plan fits, but with under 10 ft to spare in width or depth (it can\u2019t sit 5 ft clear on every side). A plan that used to show \u201c\u2713 fits\u201d here and \u201cTight\u201d in the PDF now shows Tight in both.',
+   'After you drag a lot corner, the fit grid redraws when you let go again (since 8.26 it waited for your next edit).']},
  {v:'8.27',date:'Oct 2026',name:'Corner lots with Corner Side blank',items:[
    'On a Rectangle corner lot with the Corner Side field blank, the buildable envelope used to take 0 ft on the corner side. It now takes the side setback, as an Irregular lot and the Plat Sketch hand-off already did. A 40 \u00d7 180 N1-B corner lot with Corner Side blank now shows 3,540 sf, not 4,130.',
    'The diagram, the plan fit message and the fit grid follow the same envelope. A Corner Side you type is used as before.',
