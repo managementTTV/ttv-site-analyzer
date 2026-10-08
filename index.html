@@ -3601,7 +3601,7 @@ function calcBuildable(){
   if(lotMode === 'rect'){
     const w=pv('lot-w'),d=pv('lot-d');
     const isCorner=$('corner-lot')&&$('corner-lot').checked;
-    {const r=$('corner-street-row');if(r)r.style.display=isCorner?'':'none';}   // v8.29: asked only for a corner lot
+    {const r=$('corner-street-row');if(r)r.style.display=$('corner-lot')&&$('corner-lot').checked?'':'none';}   // v8.29: asked only for a corner lot
     const overrideSF=pv('buildable-override'),lotSFManual=pv('lot-sf');
     const ww=$('width-warn');
     if(ww&&minW>0&&w>0&&w<minW){ww.style.display='';ww.textContent=`⚠ Lot width (${w} ft) is below the zone minimum (${minW} ft). Verify with the city.`;}
