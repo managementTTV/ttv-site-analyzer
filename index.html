@@ -301,7 +301,7 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 @media print {
   body { background: #fff !important; color: #1a2535 !important; font-size: 11pt; }
   .hdr, .screen-nav, .nav-btns, #plan-overlay-controls, .fit-collapse-btn,
-  .lot-editor-wrap, .lot-editor-toolbar, .lot-stats, .hint-text,
+  .lot-editor-toolbar, .lot-stats, .hint-text, .sides-block, #structures-section,
   button, .tog, .btn, .bua-fill { display: none !important; }
   .page { display: block !important; page-break-after: avoid; }
   .card { border: 1px solid #d0d7e2 !important; background: #fff !important;
@@ -553,7 +553,22 @@ body[data-screen="1"] #sub-nav-site,body[data-screen="2"] #sub-nav-uw{display:fl
 .fit-collapse-btn{background:var(--paper-2)}
 .fit-collapse-btn:hover{background:var(--card-hover)}
 .lot-editor-wrap,.overlay-canvas-wrap{background:var(--paper-2)}
-#sb-canvas{background:var(--paper-2);border:1px solid var(--border)}
+/* v8.26: typed sides table + other structures, under the one lot diagram */
+.sides-block{margin-top:12px;padding:12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm)}
+.sides-title{font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-mid);margin-bottom:6px}
+.sides-table{width:100%;border-collapse:collapse;font-size:12px}
+.sides-table th{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;text-align:left;padding:2px 6px;font-weight:600}
+.sides-table td{padding:3px 6px;border-top:1px solid var(--border);color:var(--text-mid);font-family:var(--f-num)}
+.sides-table input[type=number],.sides-table select{width:92px;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:4px;color:var(--text);font-family:var(--f-num);font-size:12px;padding:5px 6px;outline:none}
+.sides-table input[type=number]:focus,.sides-table select:focus{border-color:var(--teal)}
+.sides-table input[readonly]{color:var(--text-dim);background:transparent;border-color:transparent}
+.sides-table .des-front{color:#2f6fb3}.sides-table .des-rear{color:#b03f37}.sides-table .des-corner{color:#7a4f9a}
+.structures-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.structures-add input{background:var(--input-bg);border:1px solid var(--border-bright);border-radius:4px;color:var(--text);font-family:var(--f-num);font-size:12px;padding:6px 8px;outline:none}
+.structures-add input[type=text]{flex:1;min-width:120px}.structures-add input[type=number]{width:72px}
+.structures-add input:focus{border-color:var(--teal)}
+.struct-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--text-mid)}
+.struct-row b{color:var(--text);font-family:var(--f-num)}
 .lot-mode-btn.active{background:var(--ink)}
 .sb-card{background:#fff;border-color:var(--border);box-shadow:var(--shadow)}
 .sb-card-title{color:var(--ink)}
@@ -733,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.25 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.26 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -876,7 +891,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div id="width-warn" style="display:none" class="warn"></div>
       </div>
 
-      <!-- IRREGULAR MODE -->
+      <!-- IRREGULAR MODE: corner count -->
       <div id="poly-mode-fields" style="display:none">
         <div class="field">
           <label>How many corners does the lot have?</label>
@@ -885,14 +900,18 @@ body[data-screen="2"] .page{padding-bottom:108px}
               style="width:80px;background:var(--input-bg);border:1px solid var(--border-bright);border-radius:var(--radius-sm);color:var(--text);font-family:var(--f-num);font-size:16px;padding:8px;outline:none;text-align:center">
             <button class="btn btn-primary" onclick="initPolyEditor()" style="padding:8px 16px;font-size:12px">Set Corners</button>
           </div>
-          <p class="note" style="margin-top:4px">Enter corner count, click Set Corners, then drag each dot to match your lot shape from Polaris.</p>
+          <p class="note" style="margin-top:4px">Enter corner count, click Set Corners, then drag each dot on the diagram to match your lot shape from Polaris, or type each side&rsquo;s length and bearing in the Sides table under it.</p>
         </div>
+      </div>
 
-        <!-- LOT EDITOR CANVAS -->
-        <div class="lot-editor-wrap" id="lot-editor-wrap">
-          <canvas id="lot-editor-canvas" width="800" height="600"></canvas>
-        </div>
+      <!-- THE LOT DIAGRAM (v8.26: one canvas for both lot modes). The lot, its setbacks and buildable envelope, the plan
+           footprint and any other structures are all drawn here; step 3 no longer keeps a second copy. In the irregular
+           mode the corners drag and the edges click; in both modes the footprints drag. -->
+      <div class="lot-editor-wrap" id="lot-editor-wrap">
+        <canvas id="lot-editor-canvas" width="800" height="600"></canvas>
+      </div>
 
+      <div id="poly-mode-tools" style="display:none">
         <!-- TOOLBAR -->
         <div class="lot-editor-toolbar">
           <label>Canvas width =</label>
@@ -903,22 +922,67 @@ body[data-screen="2"] .page{padding-bottom:108px}
 
         <!-- LIVE STATS -->
         <div class="lot-stats">
-          <div class="lot-stat-box"><div class="lot-stat-val" id="poly-stat-area">—</div><div class="lot-stat-lbl">Lot Area (sq ft)</div></div>
-          <div class="lot-stat-box"><div class="lot-stat-val" id="poly-stat-perimeter">—</div><div class="lot-stat-lbl">Perimeter (ft)</div></div>
-          <div class="lot-stat-box"><div class="lot-stat-val" id="poly-stat-corners">—</div><div class="lot-stat-lbl">Corners</div></div>
+          <div class="lot-stat-box"><div class="lot-stat-val" id="poly-stat-area">&mdash;</div><div class="lot-stat-lbl">Lot Area (sq ft)</div></div>
+          <div class="lot-stat-box"><div class="lot-stat-val" id="poly-stat-perimeter">&mdash;</div><div class="lot-stat-lbl">Perimeter (ft)</div></div>
+          <div class="lot-stat-box"><div class="lot-stat-val" id="poly-stat-corners">&mdash;</div><div class="lot-stat-lbl">Corners</div></div>
         </div>
 
-        <p class="hint-text">💡 Drag orange dots to match your lot shape. Numbers show side lengths in feet. <strong style="color:var(--teal)">Click any edge line</strong> to cycle: Front (blue) → Rear (red) → Side (gray) → Corner side (purple, uses the Corner Side setback). Multiple edges can share the same designation. Set canvas width to calibrate scale.</p>
-        <p id="edge-auto-note" class="note" style="display:none;margin-top:6px"></p>
+        <p class="hint-text">&#128161; Drag orange dots to match your lot shape. Numbers show side lengths in feet. <strong style="color:var(--teal)">Click any edge line</strong> to cycle: Front (blue) &rarr; Rear (red) &rarr; Side (gray) &rarr; Corner side (purple, uses the Corner Side setback). Multiple edges can share the same designation. Set canvas width to calibrate scale.</p>
+
+        <!-- SIDES TABLE (v8.26): type exact lengths and bearings, as on a plat -->
+        <div class="sides-block">
+          <div class="sides-title">Sides &mdash; type exact lengths and bearings</div>
+          <p class="note" style="margin-bottom:6px">Bearing is compass degrees clockwise from north (0 = N, 90 = E), the way a plat reads. Type a value and press Tab or Enter: that side moves the corners after it, the last side closes the shape and is worked out for you, and the drawing refits to the canvas.</p>
+          <div id="sides-table"></div>
+        </div>
 
         <div class="field" style="margin-top:10px">
-          <label>Total Lot Area (sq ft) — from GIS / Polaris (overrides calculated)</label>
-          <input type="number" id="lot-sf-poly" placeholder="Optional — read off Polaris for accuracy" oninput="calcBuildable()">
+          <label>Total Lot Area (sq ft) &mdash; from GIS / Polaris (overrides calculated)</label>
+          <input type="number" id="lot-sf-poly" placeholder="Optional &mdash; read off Polaris for accuracy" oninput="calcBuildable()">
         </div>
       </div>
 
+      <!-- Plan Overlay Controls (moved here from step 3 in v8.26) &mdash; shown when a plan is selected -->
+<div class="plan-overlay-section" id="plan-overlay-controls" style="display:none">
+          <div class="overlay-title">📐 Plan Footprint — Drag to position</div>
+          <div class="rotation-controls">
+            <span style="font-size:11px;color:var(--text-dim)">Rotate:</span>
+            <button class="rot-preset" onclick="setRotation(0)">0°</button>
+            <button class="rot-preset" onclick="setRotation(45)">45°</button>
+            <button class="rot-preset" onclick="setRotation(90)">90°</button>
+            <button class="rot-preset" onclick="setRotation(180)">180°</button>
+            <input type="range" id="rot-slider" class="rot-slider" min="0" max="360" value="0" oninput="setRotation(this.value)">
+            <span class="rot-val" id="rot-val">0°</span>
+          </div>
+          <div class="rotation-controls" style="margin-top:8px">
+            <span style="font-size:11px;color:var(--text-dim)">Units:</span>
+            <button class="rot-preset" onclick="bumpUnits(-1)">−</button>
+            <span class="rot-val" id="ov-units" style="min-width:22px;text-align:center">1</span>
+            <button class="rot-preset" onclick="bumpUnits(1)">+</button>
+            <span id="ov-units-hint" style="font-size:10px;color:var(--text-dim)">synced with Plan &amp; build</span>
+          </div>
+          <div class="overlay-stats">
+            <div class="overlay-stat">Plan: <span id="ov-plan-name">—</span></div>
+            <div class="overlay-stat">Footprint: <span id="ov-footprint">—</span></div>
+            <div class="overlay-stat">Fits: <span id="ov-fits">—</span></div>
+          </div>
+          <p class="note" style="margin-top:6px">Drag the plan footprint within the buildable area. Select a different plan in Plan &amp; build to swap it out.</p>
+        </div>
 
-    </div>
+      <!-- Other structures (v8.26): a garage, ADU or shed drawn on the diagram beside the plan footprint -->
+      <div class="plan-overlay-section" id="structures-section">
+        <div class="overlay-title">&#127968; Other structures &mdash; garage, ADU, shed</div>
+        <div class="structures-add">
+          <input type="text" name="struct-name" placeholder="Name (e.g. Garage)" maxlength="24">
+          <input type="number" name="struct-w" placeholder="W ft" min="1" step="0.5">
+          <input type="number" name="struct-d" placeholder="D ft" min="1" step="0.5">
+          <button class="rot-preset" onclick="addStructure()">+ Add</button>
+        </div>
+        <div id="structures-list"></div>
+        <p class="note" style="margin-top:6px">Drag each one into place on the diagram. Their footprints count toward the Mecklenburg BUA check along with the plan, and they save with the deal.</p>
+      </div>
+
+
     <div class="card" id="sublot-card">
       <div class="card-title"><span class="dot"></span>Sub-Lotting Analysis <span style="font-family:var(--f-num);font-size:9px;color:var(--amber);background:rgba(240,169,60,0.12);border:1px solid rgba(240,169,60,0.3);padding:2px 7px;border-radius:20px;margin-left:6px;text-transform:uppercase;letter-spacing:0.05em">Proof of concept</span></div>
       <p class="note" style="margin-bottom:12px">Detached lots: can this parcel be carved into separate recorded lots, each meeting the zone minimum? Pick a Slate <strong>townhome</strong> in Plan &amp; build (The Underwrite) and this auto-switches to <strong>subplotting</strong> — attached units on sublots, where the zone minimum applies to the parent parcel only and +1 Units adds a unit to the row. Feasibility screen only — a real subdivision needs a recombination/sublot plat + approved Development LDIRL.</p>
@@ -950,37 +1014,6 @@ body[data-screen="2"] .page{padding-bottom:108px}
             <div class="bua-meter"><div class="bua-fill" id="bua-fill"></div></div>
             <div id="bua-msg"></div>
           </div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title"><span class="dot"></span>Setback Diagram &amp; Plan Overlay</div>
-        <canvas id="sb-canvas" width="600" height="500" style="width:100%;display:block;border-radius:6px;cursor:default" id="sb-canvas"></canvas>
-
-        <!-- Plan Overlay Controls — shown when a plan is selected -->
-        <div class="plan-overlay-section" id="plan-overlay-controls" style="display:none">
-          <div class="overlay-title">📐 Plan Footprint — Drag to position</div>
-          <div class="rotation-controls">
-            <span style="font-size:11px;color:var(--text-dim)">Rotate:</span>
-            <button class="rot-preset" onclick="setRotation(0)">0°</button>
-            <button class="rot-preset" onclick="setRotation(45)">45°</button>
-            <button class="rot-preset" onclick="setRotation(90)">90°</button>
-            <button class="rot-preset" onclick="setRotation(180)">180°</button>
-            <input type="range" id="rot-slider" class="rot-slider" min="0" max="360" value="0" oninput="setRotation(this.value)">
-            <span class="rot-val" id="rot-val">0°</span>
-          </div>
-          <div class="rotation-controls" style="margin-top:8px">
-            <span style="font-size:11px;color:var(--text-dim)">Units:</span>
-            <button class="rot-preset" onclick="bumpUnits(-1)">−</button>
-            <span class="rot-val" id="ov-units" style="min-width:22px;text-align:center">1</span>
-            <button class="rot-preset" onclick="bumpUnits(1)">+</button>
-            <span id="ov-units-hint" style="font-size:10px;color:var(--text-dim)">synced with Plan &amp; build</span>
-          </div>
-          <div class="overlay-stats">
-            <div class="overlay-stat">Plan: <span id="ov-plan-name">—</span></div>
-            <div class="overlay-stat">Footprint: <span id="ov-footprint">—</span></div>
-            <div class="overlay-stat">Fits: <span id="ov-fits">—</span></div>
-          </div>
-          <p class="note" style="margin-top:6px">Drag the plan footprint within the buildable area. Select a different plan in Plan &amp; build to swap it out.</p>
         </div>
       </div>
       <div class="card">
@@ -1950,50 +1983,8 @@ let FIT_SORT='sf-desc'; // fit-check sort key-dir
 function setFitSort(v){FIT_SORT=v;renderFitCheck();}
 let lotSides = []; // [{length, angleDeg}] for irregular mode
 
-// Lot editor canvas snapshot (carried to Step 3)
-let lotEditorSnapshot = null; // dataURL
-let lotEditorSnapshotImg = null; // pre-loaded Image object for synchronous draw
-
-function snapshotLotEditor(){
-  const src=$('lot-editor-canvas');
-  if(!src||polyPoints.length<3){
-    lotEditorSnapshot=null;
-    lotEditorSnapshotImg=null;
-    return;
-  }
-
-  // Store buildable polygon centroid BEFORE snapshot
-  if(planOverlay.buildPoly&&planOverlay.buildPoly.length>=3){
-    const bp=planOverlay.buildPoly,n=bp.length;
-    planOverlay.snapshotCentroidEditorX=bp.reduce((s,p)=>s+p.x,0)/n;
-    planOverlay.snapshotCentroidEditorY=bp.reduce((s,p)=>s+p.y,0)/n;
-  } else {
-    planOverlay.snapshotCentroidEditorX=null;
-    planOverlay.snapshotCentroidEditorY=null;
-  }
-
-  // *** KEY FIX: hide plan overlay before taking screenshot ***
-  // Without this the overlay gets baked into the snapshot image,
-  // then Step 3 draws it again on top = double overlay
-  const wasActive=planOverlay.active;
-  planOverlay.active=false;
-  redrawEditor();                          // draw clean lot shape only
-  const dataUrl=src.toDataURL('image/png'); // snapshot WITHOUT overlay
-  planOverlay.active=wasActive;
-  redrawEditor();                          // restore overlay on editor canvas
-
-  lotEditorSnapshot=dataUrl;
-
-  const img=new Image();
-  img.onload=function(){
-    lotEditorSnapshotImg=img;
-    planOverlay.snapshotX=null;
-    planOverlay.snapshotY=null;
-    planOverlay.snapshotPositioned=false;
-    drawDiagram();
-  };
-  img.src=dataUrl;
-}
+// v8.26: there is one lot canvas (#lot-editor-canvas, step 2). Step 3 used to show a PNG snapshot of it on a
+// second canvas with its own copy of the plan overlay; both are gone (snapshotLotEditor, initSnapshotDrag, #sb-canvas).
 
 // Plan overlay state
 let planOverlay = {
@@ -2014,6 +2005,14 @@ let planOverlay = {
   // lot polygon in canvas pixels
   lotPoly: null,
 };
+// v8.26: other structures on the lot (garage, ADU, shed), drawn beside the plan footprint. In poly mode a
+// structure sits at canvas pixels (x,y): the canvas is the ground there, so dragging a lot corner leaves it where
+// it is, and fitPolyToCanvas() moves it with the corners when a typed side rescales the view. In rect mode the
+// lot rectangle is re-laid out on every width/depth change, so there it sits in feet from the lot's top-left
+// (xFt,yFt). A lot-mode switch re-places each one at the envelope centre (placed=false). Both pairs are saved.
+// _structDrag holds whichever footprint (the plan or one of these) is being dragged.
+let extraStructures = [];   // [{id,name,w,d,rot,x,y,xFt,yFt,placed}]
+let _structDrag = null;
 
 // ═══════════════════ HELPERS ═══════════════════
 const $=id=>document.getElementById(id);
@@ -2100,8 +2099,7 @@ function goTo(n){
   const entering=String(prev)!==String(scr);
   if(entering&&scr===1){
     updateGISLink();
-    if(lotMode==='poly'){snapshotLotEditor();calcBuildable();renderFitCheck();updateTopoLinks();}
-    else{calcBuildable();drawDiagram();renderFitCheck();updateTopoLinks();}
+    calcBuildable();renderFitCheck();updateTopoLinks();
   }else if(entering){
     updateSummaryBar();
     applyRankedPlanDefault();applyTapDefaults();
@@ -2192,15 +2190,16 @@ function gisLotMoved(){
   return !t.streets.includes(st)||(!!zip&&t.zips.length>0&&!t.zips.includes(zip))||(!!city&&t.cities.length>0&&!t.cities.includes(city));
 }
 function onAddrCommit(){if(gisLotMoved())clearGisSite();}
-function dropLotEnvelope(){clearEnvelope();Object.assign(planOverlay,{positioned:false,snapshotPositioned:false});}   // v8.19: clearEnvelope() also drops buildPolysFt and zeroes buildableArea
+function dropLotEnvelope(){clearEnvelope();Object.assign(planOverlay,{positioned:false});}   // v8.19: clearEnvelope() also drops buildPolysFt and zeroes buildableArea
 function clearGisSite(){
   const t=_gisLot;_gisLot=null;
   const fields={};SITE_FIELDS.forEach(id=>{const e=$(id);if(e)fields[id]=e.value;});
   const zs=$('zone-sel'),zo=zs.options[zs.selectedIndex];
   _clearedSite={lotMode,pts:polyPoints.map(p=>({x:p.x,y:p.y})),edges:edgeDesignations.slice(),scale:$('canvas-scale-ft').value,
+    structures:extraStructures,   // v8.26: the lot's garage / ADU go with it, and come back with Put them back
     zone:zs.value,zoneText:zo?zo.textContent:'',fields,corner:$('corner-lot').checked,abuts:$('n2-abuts-n1').checked,
     zrn:_zoneRestoreNote,mismatch:_gisMismatch,label:t&&t.label};
-  polyPoints=[];edgeDesignations=[];dropLotEnvelope();_gisMismatch=null;
+  polyPoints=[];edgeDesignations=[];dropLotEnvelope();_gisMismatch=null;extraStructures=[];
   zs.value='';Object.keys(fields).forEach(id=>{$(id).value='';});$('corner-lot').checked=false;
   onZoneChange();   // no zone: hides the setback panel and its notes
   redrawEditor();calcBuildable();
@@ -2213,7 +2212,7 @@ function putBackGisSite(){
   zs.value=c.zone;$('n2-abuts-n1').checked=c.abuts;_zoneRestoreNote=c.zrn;onZoneChange();
   Object.keys(c.fields).forEach(id=>{$(id).value=c.fields[id];});showLooseSetbacks();   // the values as they were, adjusted setbacks included
   $('corner-lot').checked=c.corner;$('canvas-scale-ft').value=c.scale;
-  polyPoints=c.pts;edgeDesignations=c.edges;_gisMismatch=c.mismatch;
+  polyPoints=c.pts;edgeDesignations=c.edges;_gisMismatch=c.mismatch;extraStructures=c.structures||[];
   if(lotMode!==c.lotMode){setLotMode(c.lotMode);
     if(c.lotMode==='poly'&&c.pts.length<3){polyPoints=[];edgeDesignations=[];dropLotEnvelope();}}   // setLotMode('poly') seeds a default shape
   if(lotMode==='poly')redrawEditor();
@@ -2778,12 +2777,15 @@ function renderStreetCheck(d){
 
 // ═══════════════════ PAGE 2 — LOT MODE ═══════════════════
 function setLotMode(mode){
+  if(mode!==lotMode){planOverlay.positioned=false;extraStructures.forEach(st=>{st.placed=false;});}   // v8.26: footprints re-centre in the new mode's envelope
   lotMode = mode;
   $('mode-rect-btn').classList.toggle('active', mode==='rect');
   $('mode-poly-btn').classList.toggle('active', mode==='poly');
   $('rect-mode-fields').style.display = mode==='rect' ? '' : 'none';
   $('poly-mode-fields').style.display = mode==='poly' ? '' : 'none';
+  $('poly-mode-tools').style.display = mode==='poly' ? '' : 'none';
   $('rect-override-field').style.display = mode==='rect' ? '' : 'none';
+  {const w=$('lot-editor-wrap');if(w)w.style.cursor=mode==='poly'?'crosshair':'default';}
   if(mode==='poly' && polyPoints.length===0) initPolyEditor();
   calcBuildable();
 }
@@ -3000,6 +3002,7 @@ function redrawEditor(){
     planOverlay.buildPolyFt=env.ringsFt[0];
     planOverlay.buildPolysFt=env.ringsFt; // every piece; the fit check looks in each (planFitsInPolyFt)
     planOverlay.buildPoly=insetPts; // keep px version for direct use in editor
+    planOverlay.buildPolys=env.rings; // every piece in px: a footprint fits when all its corners sit in one piece
     // Store centroid in feet
     const icxFt=pxToFt(icx),icyFt=pxToFt(icy);
     planOverlay.buildCentroidFt={x:icxFt,y:icyFt};
@@ -3030,28 +3033,10 @@ function redrawEditor(){
     ctx.fillText(i+1,p.x,p.y+4);
   }
 
-  // Plan overlay
-  if(planOverlay.active&&planOverlay.fpW>0&&planOverlay.fpH>0&&planOverlay.buildRect){
-    const sc=planOverlay.scale||1;
-    const pw=planOverlay.fpW*sc,ph=planOverlay.fpH*sc;
-    const rad=planOverlay.rotation*Math.PI/180;
-    if(!planOverlay.positioned){
-      const br=planOverlay.buildRect;
-      planOverlay.x=br.x+br.w/2;planOverlay.y=br.y+br.h/2;planOverlay.positioned=true;
-    }
-    ctx.save();ctx.translate(planOverlay.x,planOverlay.y);ctx.rotate(rad);
-    const br=planOverlay.buildRect;
-    const cosA=Math.abs(Math.cos(rad)),sinA=Math.abs(Math.sin(rad));
-    const rotW=pw*cosA+ph*sinA,rotH=pw*sinA+ph*cosA;
-    const fits=br&&(planOverlay.x-rotW/2>=br.x&&planOverlay.x+rotW/2<=br.x+br.w&&planOverlay.y-rotH/2>=br.y&&planOverlay.y+rotH/2<=br.y+br.h);
-    ctx.fillStyle=fits?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)';ctx.fillRect(-pw/2,-ph/2,pw,ph);
-    ctx.strokeStyle=fits?'rgba(70,192,138,0.9)':'rgba(239,93,87,0.9)';ctx.lineWidth=2.5;ctx.setLineDash([]);ctx.strokeRect(-pw/2,-ph/2,pw,ph);
-    ctx.font='bold 10px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#102538';
-    ctx.fillText(planOverlay.planName||'',0,-2);ctx.font='9px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.7)';
-    ctx.fillText(planOverlay.fpW+"'×"+planOverlay.fpH+"'",0,11);
-    ctx.restore();
-    const fe=$('ov-fits');if(fe){fe.textContent=fits?'✓ Yes':'✗ Outside';fe.className=fits?'overlay-fit-ok':'overlay-fit-warn';}
-  }
+  // Plan footprint and other structures (v8.26: one drawing routine, shared with rect mode)
+  planOverlay.scale=1/getScaleFtPerPx();
+  {const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);planOverlay.lotOriginPx={x:Math.min(...xs),y:Math.min(...ys)};}
+  drawStructuresOnCanvas(ctx);
 
   // Legend
   drawLegend(ctx,W,H);
@@ -3062,7 +3047,7 @@ function redrawEditor(){
 // No envelope (v8.19): drop the last one too, so fitStatus() and the overlays can't keep using it
 function clearEnvelope(){
   if(lotMode==='poly')buildableArea=0;
-  planOverlay.buildPolyFt=null;planOverlay.buildPolysFt=null;planOverlay.buildPoly=null;
+  planOverlay.buildPolyFt=null;planOverlay.buildPolysFt=null;planOverlay.buildPoly=null;planOverlay.buildPolys=null;
   planOverlay.buildCentroidFt=null;planOverlay.buildBBoxFt=null;
   if(lotMode==='poly'){planOverlay.buildRect=null;const fe=$('ov-fits');if(fe&&planOverlay.active){fe.textContent='\u2717 No buildable area';fe.className='overlay-fit-warn';}}
 }
@@ -3079,6 +3064,7 @@ function drawLegend(ctx,W,H){
     {color:'#b03f37',dash:false,label:'Rear'},
     {color:'rgba(16,37,56,0.35)',dash:true,label:'Side'},
     {color:'#7a4f9a',dash:false,label:'Corner side'},
+    {color:'rgba(122,79,154,0.9)',dash:true,label:'Other structure'},
     {color:'rgba(176,116,40,0.9)',dash:true,label:'Setback boundary'},
     {color:'rgba(70,192,138,0.6)',dash:false,label:'Buildable area (inside setbacks)'},
   ];
@@ -3305,6 +3291,64 @@ function updatePolyStats(){
   // buildableArea is NOT set here: redrawEditor() owns it (inset polygon shoelace).
   // This runs at the end of redrawEditor(), so assigning the lot area here used to
   // overwrite the inset and report the whole lot as buildable (v8.3 fix).
+  renderSidesTable();
+}
+
+// ── SIDES TABLE (v8.26): type each side's length and bearing ─────────────────────────────────────
+// Bearing is compass degrees clockwise from north. Canvas y points down, so bearing b is the unit vector
+// (sin b, −cos b): the convention the Plat Sketch hand-off and a recorded plat both use.
+function edgeBearingDeg(a,b){return ((Math.atan2(b.x-a.x,-(b.y-a.y))*180/Math.PI)+360)%360;}
+function renderSidesTable(){
+  const el=$('sides-table');if(!el)return;
+  const n=polyPoints.length;
+  if(n<3){el.innerHTML='';return;}
+  const sc=getScaleFtPerPx(),active=document.activeElement;
+  if(el.querySelectorAll('tr[data-i]').length!==n){
+    el.innerHTML=`<table class="sides-table"><thead><tr><th>Side</th><th>Length ft</th><th>Bearing &deg;</th><th>Type</th></tr></thead><tbody>`
+      +Array.from({length:n},(_,i)=>`<tr data-i="${i}"><td>${i+1}${i===n-1?' (closes)':''}</td>
+        <td><input type="number" step="0.1" min="0.1" data-side-len="${i}" ${i===n-1?'readonly tabindex="-1"':''} onchange="onSideInput(${i},'len',this.value)"></td>
+        <td><input type="number" step="0.1" min="0" max="360" data-side-brg="${i}" ${i===n-1?'readonly tabindex="-1"':''} onchange="onSideInput(${i},'brg',this.value)"></td>
+        <td><select data-side-des="${i}" onchange="setEdgeDesignation(${i},this.value)"><option value="front">Front</option><option value="rear">Rear</option><option value="side">Side</option><option value="corner">Corner side</option></select></td></tr>`).join('')
+      +`</tbody></table>`;
+  }
+  for(let i=0;i<n;i++){
+    const a=polyPoints[i],b=polyPoints[(i+1)%n];
+    const len=Math.hypot(b.x-a.x,b.y-a.y)*sc,brg=edgeBearingDeg(a,b);
+    const li=el.querySelector(`[data-side-len="${i}"]`),bi=el.querySelector(`[data-side-brg="${i}"]`),di=el.querySelector(`[data-side-des="${i}"]`);
+    if(li&&li!==active)li.value=len.toFixed(1);
+    if(bi&&bi!==active)bi.value=brg.toFixed(1);
+    if(di){di.value=edgeDesignations[i]||'side';di.className='des-'+di.value;}
+  }
+}
+function setEdgeDesignation(i,des){if(!['front','rear','side','corner'].includes(des))return;edgeDesignations[i]=des;calcBuildable();}
+function onSideInput(i,field,value){
+  const n=polyPoints.length;if(i<0||i>=n-1)return;   // the closing side is derived, never typed
+  const v=parseFloat(value);if(!isFinite(v))return;
+  const sc=getScaleFtPerPx(),a=polyPoints[i],b=polyPoints[i+1];
+  let len=Math.hypot(b.x-a.x,b.y-a.y)*sc,brg=edgeBearingDeg(a,b);
+  if(field==='len'){if(v<=0)return;len=v;}else brg=((v%360)+360)%360;
+  const rad=brg*Math.PI/180,nx=a.x+Math.sin(rad)*len/sc,ny=a.y-Math.cos(rad)*len/sc;
+  const dx=nx-b.x,dy=ny-b.y;
+  for(let j=i+1;j<n;j++)polyPoints[j]={x:polyPoints[j].x+dx,y:polyPoints[j].y+dy};   // the rest of the lot rides along
+  fitPolyToCanvas();
+  calcBuildable();
+}
+// After a typed side, fit the shape to the canvas: the scale (canvas width in feet) grows or shrinks so the lot
+// fills about 82% of the drawing, and it is recentred. The plan footprint and the other structures move with the
+// corners (same map), so nothing drifts. Dragging never needs this: the drag is clamped to the canvas.
+function fitPolyToCanvas(){
+  const canvas=$('lot-editor-canvas');if(!canvas||polyPoints.length<3)return;
+  const W=canvas.width,H=canvas.height;
+  const xs=polyPoints.map(p=>p.x),ys=polyPoints.map(p=>p.y);
+  const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  const sc=getScaleFtPerPx();
+  const newFtPerPx=Math.max((maxX-minX)*sc/(W*0.82),(maxY-minY)*sc/(H*0.82),1e-6);
+  const scEl=$('canvas-scale-ft');if(scEl)scEl.value=Math.max(20,Math.round(newFtPerPx*W));
+  const k=sc/getScaleFtPerPx();   // old px → new px
+  const cx=(minX+maxX)/2,cy=(minY+maxY)/2,map=p=>({x:W/2+(p.x-cx)*k,y:H/2+(p.y-cy)*k});
+  polyPoints=polyPoints.map(map);
+  if(planOverlay.positioned){const q=map({x:planOverlay.x,y:planOverlay.y});planOverlay.x=q.x;planOverlay.y=q.y;}
+  extraStructures.forEach(st=>{if(st.placed){const q=map({x:st.x||0,y:st.y||0});st.x=q.x;st.y=q.y;}});
 }
 
 // Inscribed rect search removed — buildable area is the full inset polygon
@@ -3330,80 +3374,69 @@ function distToSegment(p,a,b){
   return Math.sqrt((p.x-a.x-t*dx)**2+(p.y-a.y-t*dy)**2);
 }
 
-function initLotEditorDrag(){
+function initLotCanvasInteractions(){
+  // v8.26: one canvas, one set of pointer handlers. In order: a corner dot (poly mode), then a footprint
+  // (other structures first, since they draw on top, then the plan), then an edge click (poly mode).
   const canvas=$('lot-editor-canvas');
   if(!canvas)return;
   const HIT=12;
   function getPos(e){
     const r=canvas.getBoundingClientRect();
     const scX=canvas.width/r.width,scY=canvas.height/r.height;
-    const cx=e.touches?e.touches[0].clientX:e.clientX;
-    const cy=e.touches?e.touches[0].clientY:e.clientY;
+    const t=e.touches&&e.touches[0];
+    const cx=t?t.clientX:e.clientX,cy=t?t.clientY:e.clientY;
     return{x:(cx-r.left)*scX,y:(cy-r.top)*scY};
   }
-  canvas.addEventListener('mousedown',e=>{
-    const pos=getPos(e);
-    polyDragIdx=-1;
-    // Check corner dots first
-    for(let i=0;i<polyPoints.length;i++){
-      const p=polyPoints[i];
-      if(Math.abs(pos.x-p.x)<HIT&&Math.abs(pos.y-p.y)<HIT){
-        polyDragIdx=i;polyDragOffX=pos.x-p.x;polyDragOffY=pos.y-p.y;
-        canvas.style.cursor='grabbing';return;
+  function insideRect(x,y,cx,cy,pw,ph,rot){
+    const rad=rot*Math.PI/180,dx=x-cx,dy=y-cy;
+    const lx=dx*Math.cos(-rad)-dy*Math.sin(-rad),ly=dx*Math.sin(-rad)+dy*Math.cos(-rad);
+    return Math.abs(lx)<=pw/2&&Math.abs(ly)<=ph/2;
+  }
+  function hitStruct(x,y){
+    const sc=planOverlay.scale||1;
+    for(let i=extraStructures.length-1;i>=0;i--){
+      const st=extraStructures[i],p=structToPx(st);
+      if(insideRect(x,y,p.x,p.y,st.w*sc,st.d*sc,st.rot||0))return{kind:'extra',s:st,x:p.x,y:p.y};
+    }
+    if(planOverlay.active&&planOverlay.positioned&&planOverlay.fpW>0&&insideRect(x,y,planOverlay.x,planOverlay.y,planOverlay.fpW*sc,planOverlay.fpH*sc,planOverlay.rotation||0))
+      return{kind:'plan',x:planOverlay.x,y:planOverlay.y};
+    return null;
+  }
+  function down(pos,touch){
+    polyDragIdx=-1;_structDrag=null;
+    if(lotMode==='poly'){
+      const h=touch?HIT+6:HIT;
+      for(let i=0;i<polyPoints.length;i++){
+        const p=polyPoints[i];
+        if(Math.abs(pos.x-p.x)<h&&Math.abs(pos.y-p.y)<h){polyDragIdx=i;polyDragOffX=pos.x-p.x;polyDragOffY=pos.y-p.y;canvas.style.cursor='grabbing';return;}
       }
     }
-    // Check edge clicks (within ~10px of line segment)
-    const n=polyPoints.length;
-    for(let i=0;i<n;i++){
-      const a=polyPoints[i],b=polyPoints[(i+1)%n];
-      if(distToSegment(pos,a,b)<12){
-        cycleEdgeDesignation(i);return;
-      }
+    const hs=hitStruct(pos.x,pos.y);
+    if(hs){_structDrag={kind:hs.kind,s:hs.s,offX:pos.x-hs.x,offY:pos.y-hs.y};canvas.style.cursor='grabbing';return;}
+    if(lotMode==='poly'){
+      const n=polyPoints.length,tol=touch?16:12;
+      for(let i=0;i<n;i++){const a=polyPoints[i],b=polyPoints[(i+1)%n];if(distToSegment(pos,a,b)<tol){cycleEdgeDesignation(i);return;}}
     }
-  });
-  window.addEventListener('mousemove',e=>{
-    if(polyDragIdx<0)return;
-    const canvas2=$('lot-editor-canvas');if(!canvas2)return;
-    const pos=getPos(e);
-    const W=canvas2.width,H=canvas2.height;
-    polyPoints[polyDragIdx]={
-      x:Math.max(10,Math.min(W-10,pos.x-polyDragOffX)),
-      y:Math.max(10,Math.min(H-10,pos.y-polyDragOffY))
-    };
-    redrawEditor();calcBuildable();
-  });
-  window.addEventListener('mouseup',()=>{
-    polyDragIdx=-1;
-    const c=$('lot-editor-canvas');if(c)c.style.cursor='crosshair';
-    if(_fitHeld){_fitHeld=false;renderFitCheck();}
-  });
-  canvas.addEventListener('touchstart',e=>{
-    e.preventDefault();const pos=getPos(e);polyDragIdx=-1;
-    for(let i=0;i<polyPoints.length;i++){
-      const p=polyPoints[i];
-      if(Math.abs(pos.x-p.x)<HIT+6&&Math.abs(pos.y-p.y)<HIT+6){
-        polyDragIdx=i;polyDragOffX=pos.x-p.x;polyDragOffY=pos.y-p.y;return;
-      }
+  }
+  function move(pos){
+    if(polyDragIdx>=0){
+      const W=canvas.width,H=canvas.height;
+      polyPoints[polyDragIdx]={x:Math.max(10,Math.min(W-10,pos.x-polyDragOffX)),y:Math.max(10,Math.min(H-10,pos.y-polyDragOffY))};
+      calcBuildable();return;   // draws the editor itself
     }
-    // Edge tap
-    const n=polyPoints.length;
-    for(let i=0;i<n;i++){
-      const a=polyPoints[i],b=polyPoints[(i+1)%n];
-      if(distToSegment(pos,a,b)<16){cycleEdgeDesignation(i);return;}
+    if(_structDrag){
+      const x=pos.x-_structDrag.offX,y=pos.y-_structDrag.offY;
+      if(_structDrag.kind==='plan'){planOverlay.x=x;planOverlay.y=y;}else structFromPx(_structDrag.s,x,y);
+      drawDiagram();
     }
-  },{passive:false});
-  window.addEventListener('touchmove',e=>{
-    if(polyDragIdx<0)return;e.preventDefault();
-    const pos=getPos(e);
-    const canvas2=$('lot-editor-canvas');if(!canvas2)return;
-    const W=canvas2.width,H=canvas2.height;
-    polyPoints[polyDragIdx]={
-      x:Math.max(10,Math.min(W-10,pos.x-polyDragOffX)),
-      y:Math.max(10,Math.min(H-10,pos.y-polyDragOffY))
-    };
-    redrawEditor();calcBuildable();
-  },{passive:false});
-  window.addEventListener('touchend',()=>{polyDragIdx=-1;if(_fitHeld){_fitHeld=false;renderFitCheck();}});
+  }
+  function up(){polyDragIdx=-1;_structDrag=null;canvas.style.cursor='';}
+  canvas.addEventListener('mousedown',e=>down(getPos(e),false));
+  window.addEventListener('mousemove',e=>{if(polyDragIdx<0&&!_structDrag)return;move(getPos(e));});
+  window.addEventListener('mouseup',up);
+  canvas.addEventListener('touchstart',e=>{e.preventDefault();down(getPos(e),true);},{passive:false});
+  window.addEventListener('touchmove',e=>{if(polyDragIdx<0&&!_structDrag)return;e.preventDefault();move(getPos(e));},{passive:false});
+  window.addEventListener('touchend',up);
 }
 
 // Keep old stubs so nothing breaks
@@ -3608,9 +3641,7 @@ function calcBuildable(){
     }
   }
   calcBUA();renderFitCheck();updateSummaryBar();renderSublot();updateSketchBtn();
-  // For poly mode, snapshotLotEditor handles the draw after image loads
-  if(lotMode==='poly') snapshotLotEditor();
-  else drawDiagram();
+  if(lotMode==='rect')drawDiagram();   // the poly branch drew the editor above (buildableArea comes from it)
 }
 
 // Build polygon in real feet (for calculations)
@@ -3718,11 +3749,12 @@ function calcBUA(){
   const footprint=fpW&&fpD?fpW*fpD:0;
   // v8.8: blank means the field's default (500 sf); a deliberate 0 (no driveway or walks) stays 0, where `||500` made it 500
   const hsEl=$('bua-hardscape'), hardscape=hsEl&&hsEl.value.trim()!==''?pv('bua-hardscape'):(parseFloat(hsEl&&hsEl.defaultValue)||500);
-  const estBUA=footprint+hardscape;
+  const extras=extraStructuresSf();   // v8.26: a garage or ADU is built-upon area too
+  const estBUA=footprint+hardscape+extras;
   const pct=buaLimit>0?Math.min(estBUA/buaLimit,1):0;
   const fill=$('bua-fill');if(fill){fill.style.width=(pct*100)+'%';fill.style.background=pct>1?'var(--red)':pct>0.9?'var(--amber)':'var(--green)';}
   const res=$('bua-result');
-  if(res)res.innerHTML=`<div style="font-family:var(--f-num);font-size:11px;color:var(--text-dim)">Limit: ${fmtN(buaLimit)} sf<br>Est. used: ${fmtN(estBUA)} sf<br>Remaining: ${fmtN(Math.max(0,buaLimit-estBUA))} sf</div>`;
+  if(res)res.innerHTML=`<div style="font-family:var(--f-num);font-size:11px;color:var(--text-dim)">Limit: ${fmtN(buaLimit)} sf<br>Est. used: ${fmtN(estBUA)} sf${extras?' (incl. '+fmtN(extras)+' sf other structures)':''}<br>Remaining: ${fmtN(Math.max(0,buaLimit-estBUA))} sf</div>`;
   const msg=$('bua-msg');
   if(msg){
     if(!footprint)msg.innerHTML='<div class="note">Select a plan (Plan &amp; build, or click a card in the fit check) to run the BUA check.</div>';
@@ -3736,30 +3768,14 @@ function calcBUA(){
 let lotImageObj = null; // kept for rect-mode diagram compat
 
 function drawDiagram(){
-  const canvas=$('sb-canvas');if(!canvas)return;
+  // v8.26: one canvas. In poly mode the editor's own drawing is the diagram; rect mode draws the simple lot here.
+  if(lotMode==='poly'){redrawEditor();return;}
+  const canvas=$('lot-editor-canvas');if(!canvas)return;
   const ctx=canvas.getContext('2d');
   const W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#FBF8F1';ctx.fillRect(0,0,W,H);
 
-  // ── POLY MODE: draw synchronously using pre-loaded snapshot image ──
-  if(lotMode==='poly'){
-    if(lotEditorSnapshotImg){
-      // Synchronous draw — no async race, no ghost overlays
-      ctx.clearRect(0,0,W,H);
-      ctx.drawImage(lotEditorSnapshotImg,0,0,W,H);
-      const edCanvas=$('lot-editor-canvas');
-      const edW=edCanvas?edCanvas.width:800,edH=edCanvas?edCanvas.height:600;
-      const snapshotScaleX=W/edW,snapshotScaleY=H/edH;
-      drawPlanOverlayOnSnapshotCanvas(ctx,W,H,snapshotScaleX,snapshotScaleY);
-    } else {
-      ctx.fillStyle='rgba(94,128,149,0.08)';ctx.fillRect(0,0,W,H);
-      ctx.font='13px Montserrat,sans-serif';ctx.fillStyle='rgba(62,85,103,0.75)';ctx.textAlign='center';
-      ctx.fillText('Choose Irregular Lot in the Lot section to define your lot shape',W/2,H/2);
-    }
-    return;
-  }
-
-  // ── RECT MODE: original diagram ──
   if(lotImageObj){
     const ir=lotImageObj.width/lotImageObj.height,cr=W/H;
     let iw,ih,ix,iy;
@@ -3770,9 +3786,10 @@ function drawDiagram(){
   const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=pv('sb-corner');
   const w=pv('lot-w')||100,d=pv('lot-d')||150;
   const isCorner=$('corner-lot')&&$('corner-lot').checked;
-  const pad=20,scale=Math.min((W-pad*2)/w,(H-pad*2)/d);
+  const pad=40,scale=Math.min((W-pad*2)/w,(H-pad*2)/d);
   const ox=(W-w*scale)/2,oy=(H-d*scale)/2;
   if(!lotImageObj){ctx.strokeStyle='rgba(16,37,56,0.25)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.strokeRect(ox,oy,w*scale,d*scale);ctx.setLineDash([]);}
+  // the corner side setback draws on the RIGHT (x = W); the Plat Sketch hand-off's rect branch relies on that
   const sL=sides,sR=isCorner?corner:sides;
   const bx=ox+sL*scale,by=oy+front*scale,bw=(w-sL-sR)*scale,bh=(d-front-rear)*scale;
   if(bw>0&&bh>0){
@@ -3784,171 +3801,121 @@ function drawDiagram(){
       ctx.beginPath();ctx.moveTo(cx,cy-mk);ctx.lineTo(cx,cy+mk);ctx.stroke();
     });
   }
-  ctx.font='bold 10px Montserrat,sans-serif';ctx.fillStyle='rgba(62,85,103,0.9)';
+  ctx.font='bold 11px Montserrat,sans-serif';ctx.fillStyle='rgba(62,85,103,0.9)';
   ctx.textAlign='center';
   if(front>0)ctx.fillText(`Front ${front}'`,W/2,oy+front*scale/2+4);
   if(rear>0)ctx.fillText(`Rear ${rear}'`,W/2,oy+d*scale-rear*scale/2+4);
   ctx.textAlign='left';if(sides>0)ctx.fillText(`${sides}'`,ox+4,H/2+2);
   ctx.textAlign='right';
-  if(isCorner&&corner>0)ctx.fillText(`${corner}'`,W-ox-4,H/2+2);
+  if(isCorner&&corner>0)ctx.fillText(`Corner ${corner}'`,W-ox-4,H/2+2);
   else if(sides>0)ctx.fillText(`${sides}'`,W-ox-4,H/2+2);
-  if(bw>40&&bh>20){ctx.textAlign='center';ctx.fillStyle='rgba(59,95,117,0.75)';ctx.fillText('Buildable',bx+bw/2,by+bh/2+4);}
+  ctx.textAlign='center';ctx.fillStyle='rgba(62,85,103,0.75)';
+  ctx.fillText(`${w}' × ${d}'`,W/2,oy-8);
+  if(bw>40&&bh>20){ctx.fillStyle='rgba(59,95,117,0.75)';ctx.fillText('Buildable',bx+bw/2,by+bh/2+4);}
   planOverlay.scale=scale;
   planOverlay.buildRect={x:bx,y:by,w:bw,h:bh};
-  planOverlay.buildPoly=null;
-  if(planOverlay.active&&!planOverlay.positioned){
-    planOverlay.x=bx+bw/2;planOverlay.y=by+bh/2;planOverlay.positioned=true;
-  }
-  drawPlanOverlayOnCanvas(ctx,W,H);
+  planOverlay.buildPoly=null;planOverlay.buildPolys=null;
+  planOverlay.lotOriginPx={x:ox,y:oy};
+  drawStructuresOnCanvas(ctx);
 }
 
-// Draw plan overlay on the sb-canvas snapshot (coordinates scaled from lot editor)
-function drawPlanOverlayOnSnapshotCanvas(ctx,W,H,scaleX,scaleY){
-  if(!planOverlay.active||!planOverlay.fpW||!planOverlay.fpH)return;
-  if(!planOverlay.buildPolyFt||!planOverlay.editorFtPerPx)return;
-
-  // px-per-ft in the editor, then scale to snapshot canvas
-  const edPxPerFt=1/planOverlay.editorFtPerPx; // editor pixels per foot
-  const snapPxPerFt=edPxPerFt*scaleX; // snapshot canvas pixels per foot
-
-  // Convert plan footprint feet → snapshot px
-  const pw=planOverlay.fpW*snapPxPerFt;
-  const ph=planOverlay.fpH*snapPxPerFt;
-  const rad=planOverlay.rotation*Math.PI/180;
-
-  // Convert planOverlay.x/y (lot-editor px) to snapshot px
-  const sx=planOverlay.x*scaleX;
-  const sy=planOverlay.y*scaleY;
-
-  // Convert buildPoly from editor px to snapshot px for hit testing
-  const snapPoly=planOverlay.buildPoly
-    ?planOverlay.buildPoly.map(p=>({x:p.x*scaleX,y:p.y*scaleY}))
-    :null;
-
-  // Initial placement: use centroid computed at snapshot time (not recomputed here)
-  if(!planOverlay.snapshotX&&!planOverlay.snapshotY){
-    if(planOverlay.snapshotCentroidEditorX!=null){
-      // Convert stored editor-px centroid to snapshot-px
-      planOverlay.snapshotX=planOverlay.snapshotCentroidEditorX*scaleX;
-      planOverlay.snapshotY=planOverlay.snapshotCentroidEditorY*scaleY;
-    } else {
-      planOverlay.snapshotX=W/2;
-      planOverlay.snapshotY=H/2;
-    }
-    planOverlay.snapshotPositioned=true;
-  }
-  const drawX=planOverlay.snapshotX;
-  const drawY=planOverlay.snapshotY;
-
-  // Hit test: all 4 corners inside snapshot-scaled buildPoly
-  const cos=Math.cos(rad),sin=Math.sin(rad);
-  const hw=pw/2,hh=ph/2;
-  const corners=[
-    {x:drawX+(-hw)*cos-(-hh)*sin,y:drawY+(-hw)*sin+(-hh)*cos},
-    {x:drawX+(hw)*cos-(-hh)*sin, y:drawY+(hw)*sin+(-hh)*cos},
-    {x:drawX+(hw)*cos-(hh)*sin,  y:drawY+(hw)*sin+(hh)*cos},
-    {x:drawX+(-hw)*cos-(hh)*sin, y:drawY+(-hw)*sin+(hh)*cos},
-  ];
-  const fits=snapPoly?corners.every(c=>pointInPolygonPts(c,snapPoly)):false;
-
-  ctx.save();
-  ctx.translate(drawX,drawY);
-  ctx.rotate(rad);
-  ctx.fillStyle=fits?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)';
-        console.log("[OVERLAY] Drawing at x="+drawX.toFixed(1)+",y="+drawY.toFixed(1)+" rot="+planOverlay.rotation+" snapshotPositioned="+planOverlay.snapshotPositioned);
-  ctx.fillRect(-pw/2,-ph/2,pw,ph);
-  ctx.strokeStyle=fits?'rgba(70,192,138,0.9)':'rgba(239,93,87,0.9)';
-  ctx.lineWidth=2.5;ctx.strokeRect(-pw/2,-ph/2,pw,ph);
-  ctx.font='bold 11px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#102538';
-  ctx.fillText(planOverlay.planName||'',0,-2);
-  ctx.font='9px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.7)';
-  ctx.fillText(`${planOverlay.fpW}'×${planOverlay.fpH}'`,0,11);
-  ctx.restore();
-
-  const fe=$('ov-fits');
-  if(fe){fe.textContent=fits?'✓ Fits':'✗ Outside';fe.className=fits?'overlay-fit-ok':'overlay-fit-warn';}
+// ── STRUCTURES ON THE DIAGRAM (v8.26) ──────────────────────────────────────────────────────────────
+// The plan footprint (planOverlay) and the other structures (extraStructures) share one drawing and one fit
+// test: every corner of the rotated rectangle must sit inside one piece of the buildable envelope (the inset
+// polygon(s) in poly mode, the setback rectangle in rect mode).
+function structRectCorners(cx,cy,pw,ph,rad){
+  const cos=Math.cos(rad),sin=Math.sin(rad),hw=pw/2,hh=ph/2;
+  return [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([x,y])=>({x:cx+x*cos-y*sin,y:cy+x*sin+y*cos}));
 }
-
-// Drag on sb-canvas for poly mode: move snapshotX/Y
-function initSnapshotDrag(){
-  const canvas=$('sb-canvas');if(!canvas)return;
-  let dragging=false,offX=0,offY=0;
-  const HIT=20;
-  function getPos(e){
-    const r=canvas.getBoundingClientRect();
-    const scX=canvas.width/r.width,scY=canvas.height/r.height;
-    const cx=e.touches?e.touches[0].clientX:e.clientX;
-    const cy=e.touches?e.touches[0].clientY:e.clientY;
-    return{x:(cx-r.left)*scX,y:(cy-r.top)*scY};
-  }
-  function hitTest(x,y){
-    if(!planOverlay.active||!planOverlay.snapshotPositioned)return false;
-    const dx=x-(planOverlay.snapshotX||0),dy=y-(planOverlay.snapshotY||0);
-    return Math.abs(dx)<(planOverlay.fpW*20+HIT)&&Math.abs(dy)<(planOverlay.fpH*20+HIT);
-  }
-  canvas.addEventListener('mousedown',e=>{
-    if(lotMode!=='poly')return;
-    const pos=getPos(e);
-    if(hitTest(pos.x,pos.y)){dragging=true;offX=pos.x-(planOverlay.snapshotX||0);offY=pos.y-(planOverlay.snapshotY||0);canvas.style.cursor='grabbing';}
-  });
-  window.addEventListener('mousemove',e=>{
-    if(!dragging||lotMode!=='poly')return;
-    const pos=getPos(e);
-    planOverlay.snapshotX=pos.x-offX;
-    planOverlay.snapshotY=pos.y-offY;
-    drawDiagram();
-  });
-  window.addEventListener('mouseup',()=>{if(dragging){dragging=false;const c=$('sb-canvas');if(c)c.style.cursor='default';}});
-  canvas.addEventListener('touchstart',e=>{
-    if(lotMode!=='poly')return;
-    e.preventDefault();const pos=getPos(e);
-    if(hitTest(pos.x,pos.y)){dragging=true;offX=pos.x-(planOverlay.snapshotX||0);offY=pos.y-(planOverlay.snapshotY||0);}
-  },{passive:false});
-  window.addEventListener('touchmove',e=>{
-    if(!dragging||lotMode!=='poly')return;
-    e.preventDefault();const pos=getPos(e);
-    planOverlay.snapshotX=pos.x-offX;planOverlay.snapshotY=pos.y-offY;drawDiagram();
-  },{passive:false});
-  window.addEventListener('touchend',()=>{dragging=false;});
-}
-
-function drawPlanOverlayOnCanvas(ctx,W,H){
-  if(!planOverlay.active||!planOverlay.fpW||!planOverlay.fpH)return;
-  const sc=planOverlay.scale||1;
-  const pw=planOverlay.fpW*sc,ph=planOverlay.fpH*sc;
-  const rad=planOverlay.rotation*Math.PI/180;
-  if(!planOverlay.positioned&&planOverlay.buildRect){
-    const br=planOverlay.buildRect;
-    planOverlay.x=br.x+br.w/2;planOverlay.y=br.y+br.h/2;planOverlay.positioned=true;
-  }
-  if(!planOverlay.x)return;
-  ctx.save();ctx.translate(planOverlay.x,planOverlay.y);ctx.rotate(rad);
+function footprintFits(cx,cy,pw,ph,rad){
+  const c=structRectCorners(cx,cy,pw,ph,rad);
+  const polys=planOverlay.buildPolys||(planOverlay.buildPoly?[planOverlay.buildPoly]:null);
+  if(polys&&polys.length)return polys.some(poly=>poly.length>=3&&c.every(p=>pointInPolygonPts(p,poly)));
   const br=planOverlay.buildRect;
-  const cos2=Math.cos(rad),sin2=Math.sin(rad);
-  const hw2=pw/2,hh2=ph/2;
-  const corners2=[
-    {x:planOverlay.x+(-hw2)*cos2-(-hh2)*sin2,y:planOverlay.y+(-hw2)*sin2+(-hh2)*cos2},
-    {x:planOverlay.x+(hw2)*cos2-(-hh2)*sin2, y:planOverlay.y+(hw2)*sin2+(-hh2)*cos2},
-    {x:planOverlay.x+(hw2)*cos2-(hh2)*sin2,  y:planOverlay.y+(hw2)*sin2+(hh2)*cos2},
-    {x:planOverlay.x+(-hw2)*cos2-(hh2)*sin2, y:planOverlay.y+(-hw2)*sin2+(hh2)*cos2},
-  ];
-  const poly2=planOverlay.buildPoly||null;
-  const fits=poly2
-    ?corners2.every(c=>pointInPolygonPts(c,poly2))
-    :br&&corners2.every(c=>c.x>=br.x&&c.x<=br.x+br.w&&c.y>=br.y&&c.y<=br.y+br.h);
-  ctx.fillStyle=fits?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)';
-  ctx.fillRect(-pw/2,-ph/2,pw,ph);
-  ctx.strokeStyle=fits?'rgba(70,192,138,0.9)':'rgba(239,93,87,0.9)';
-  ctx.lineWidth=2.5;ctx.strokeRect(-pw/2,-ph/2,pw,ph);
-  ctx.font='bold 11px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#102538';
-  ctx.fillText(planOverlay.planName||'',0,-2);
-  ctx.font='9px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.7)';
-  ctx.fillText(`${planOverlay.fpW}'×${planOverlay.fpH}'`,0,11);
-  ctx.restore();
-  const fe=$('ov-fits');
-  if(fe){fe.textContent=fits?'✓ Fits':'✗ Outside';fe.className=fits?'overlay-fit-ok':'overlay-fit-warn';}
+  return !!br&&br.w>0&&br.h>0&&c.every(p=>p.x>=br.x-0.01&&p.x<=br.x+br.w+0.01&&p.y>=br.y-0.01&&p.y<=br.y+br.h+0.01);
 }
-
+function structToPx(st){
+  if(lotMode==='poly')return{x:st.x||0,y:st.y||0};
+  const o=planOverlay.lotOriginPx||{x:0,y:0},k=planOverlay.scale||1;return{x:o.x+(st.xFt||0)*k,y:o.y+(st.yFt||0)*k};
+}
+function structFromPx(st,x,y){
+  const o=planOverlay.lotOriginPx||{x:0,y:0},k=planOverlay.scale||1;
+  st.x=x;st.y=y;st.xFt=(x-o.x)/k;st.yFt=(y-o.y)/k;st.placed=true;
+}
+// where a new (or re-placed) structure goes: the envelope centre, stepped so several don't stack
+function placeStructure(st,k){
+  const br=planOverlay.buildRect,sc=planOverlay.scale||1,o=planOverlay.lotOriginPx||{x:0,y:0};
+  const cx=br?(br.cx!=null?br.cx:br.x+br.w/2):o.x+st.w*sc,cy=br?(br.cy!=null?br.cy:br.y+br.h/2):o.y+st.d*sc;
+  structFromPx(st,cx+k*8*sc,cy+k*8*sc);
+}
+const PLAN_STYLE={fillOk:'rgba(70,192,138,0.3)',fillBad:'rgba(239,93,87,0.3)',strokeOk:'rgba(70,192,138,0.9)',strokeBad:'rgba(239,93,87,0.9)',dash:[]};
+const EXTRA_STYLE={fillOk:'rgba(122,79,154,0.22)',fillBad:'rgba(239,93,87,0.3)',strokeOk:'rgba(122,79,154,0.9)',strokeBad:'rgba(239,93,87,0.9)',dash:[5,3]};
+function drawFootprint(ctx,cx,cy,pw,ph,rad,fits,label,dims,style){
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(rad);
+  ctx.fillStyle=fits?style.fillOk:style.fillBad;ctx.fillRect(-pw/2,-ph/2,pw,ph);
+  ctx.strokeStyle=fits?style.strokeOk:style.strokeBad;ctx.lineWidth=2.5;ctx.setLineDash(style.dash);ctx.strokeRect(-pw/2,-ph/2,pw,ph);ctx.setLineDash([]);
+  ctx.font='bold 11px Montserrat,sans-serif';ctx.textAlign='center';ctx.fillStyle='#102538';ctx.fillText(label,0,-2);
+  ctx.font='9px Montserrat,sans-serif';ctx.fillStyle='rgba(16,37,56,0.7)';ctx.fillText(dims,0,11);
+  ctx.restore();
+}
+function drawStructuresOnCanvas(ctx){
+  const sc=planOverlay.scale||1;
+  if(planOverlay.active&&planOverlay.fpW>0&&planOverlay.fpH>0&&(planOverlay.buildRect||planOverlay.buildPoly)){
+    if(!planOverlay.positioned){
+      const br=planOverlay.buildRect;
+      if(br){planOverlay.x=br.cx!=null?br.cx:br.x+br.w/2;planOverlay.y=br.cy!=null?br.cy:br.y+br.h/2;planOverlay.positioned=true;}
+    }
+    if(planOverlay.positioned){
+      const pw=planOverlay.fpW*sc,ph=planOverlay.fpH*sc,rad=(planOverlay.rotation||0)*Math.PI/180;
+      const fits=footprintFits(planOverlay.x,planOverlay.y,pw,ph,rad);
+      drawFootprint(ctx,planOverlay.x,planOverlay.y,pw,ph,rad,fits,planOverlay.planName||'',`${planOverlay.fpW}'×${planOverlay.fpH}'`,PLAN_STYLE);
+      const fe=$('ov-fits');if(fe){fe.textContent=fits?'✓ Fits':'✗ Outside';fe.className=fits?'overlay-fit-ok':'overlay-fit-warn';}
+    }
+  }
+  extraStructures.forEach((st,i)=>{
+    if(!st.placed)placeStructure(st,i+(planOverlay.active?1:0));
+    const p=structToPx(st),pw=st.w*sc,ph=st.d*sc,rad=(st.rot||0)*Math.PI/180;
+    st._fits=footprintFits(p.x,p.y,pw,ph,rad);
+    drawFootprint(ctx,p.x,p.y,pw,ph,rad,st._fits,st.name||'Structure',`${st.w}'×${st.d}'`,EXTRA_STYLE);
+  });
+  renderStructuresList();
+}
+const newStructId=()=>'s'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const escHtml=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function extraStructuresSf(){return extraStructures.reduce((t,st)=>t+(st.w>0&&st.d>0?st.w*st.d:0),0);}
+function renderStructuresList(){
+  const el=$('structures-list');if(!el)return;
+  const sig=extraStructures.map(st=>[st.id,st.name,st.w,st.d,st.rot||0,st._fits?1:0].join('|')).join(';');
+  if(el.dataset.sig===sig)return;   // drawn on every canvas redraw; only rebuild the buttons when something listed changed
+  el.dataset.sig=sig;
+  if(!extraStructures.length){
+    el.innerHTML='<div class="note" style="margin-top:6px">None yet. Add a garage, ADU or shed to see whether it fits inside the setbacks with the plan.</div>';
+    return;
+  }
+  const tot=extraStructuresSf();
+  el.innerHTML=extraStructures.map(st=>`<div class="struct-row"><b>${escHtml(st.name)}</b><span>${st.w}'W × ${st.d}'D · ${fmtN(st.w*st.d)} sf · ${st.rot||0}°</span>
+    <span class="${st._fits?'overlay-fit-ok':'overlay-fit-warn'}">${st._fits?'✓ fits':'✗ outside'}</span>
+    <button class="rot-preset" onclick="rotateStructure('${st.id}',-90)" title="Rotate left">&#10226; 90°</button>
+    <button class="rot-preset" onclick="rotateStructure('${st.id}',90)" title="Rotate right">&#10227; 90°</button>
+    <button class="rot-preset" onclick="removeStructure('${st.id}')">Remove</button></div>`).join('')
+    +`<div class="note" style="margin-top:8px">${extraStructures.length} other structure${extraStructures.length>1?'s':''} · ${fmtN(tot)} sf of footprint, counted in the BUA check.</div>`;
+}
+function addStructure(){
+  // scratch inputs (name= not id=, so serializeDeal() leaves them out of the deal file)
+  const sEl=k=>document.querySelector('#structures-section input[name="'+k+'"]'),sVal=k=>{const e=sEl(k);return e?parseFloat(e.value)||0:0;};
+  const nameEl=sEl('struct-name'),name=((nameEl&&nameEl.value)||'').trim().slice(0,24)||'Structure '+(extraStructures.length+1);
+  const w=sVal('struct-w'),d=sVal('struct-d');
+  if(!(w>0&&d>0)){showToast('Give the structure a width and a depth in feet.','warn');return;}
+  const noLot=lotMode==='rect'?!(pv('lot-w')>0&&pv('lot-d')>0):!(planOverlay.buildRect||planOverlay.buildPoly);
+  if(noLot){showToast('Enter the lot and its setbacks first, so there is an envelope to place it in.','warn');return;}
+  const st={id:newStructId(),name,w,d,rot:0,x:0,y:0,xFt:0,yFt:0,placed:false};
+  placeStructure(st,extraStructures.length+(planOverlay.active?1:0));
+  extraStructures.push(st);
+  ['struct-name','struct-w','struct-d'].forEach(k=>{const e=sEl(k);if(e)e.value='';});
+  calcBUA();drawDiagram();
+}
+function removeStructure(id){extraStructures=extraStructures.filter(st=>st.id!==id);calcBUA();drawDiagram();}
+function rotateStructure(id,deg){const st=extraStructures.find(x=>x.id===id);if(!st)return;st.rot=(((st.rot||0)+deg)%360+360)%360;drawDiagram();}
 
 function setRotation(deg){
   planOverlay.rotation = parseFloat(deg) % 360;
@@ -3956,45 +3923,6 @@ function setRotation(deg){
   const rv=$('rot-val');if(rv)rv.textContent=Math.round(planOverlay.rotation)+'°';
   drawDiagram();
 }
-
-// ── DRAG ──────────────────────────────────────────────────────────────────
-function initDrag(){
-  const canvas=$('sb-canvas');if(!canvas)return;
-  function getPos(e){
-    const r=canvas.getBoundingClientRect();
-    const scX=canvas.width/r.width,scY=canvas.height/r.height;
-    const clientX=e.touches?e.touches[0].clientX:e.clientX;
-    const clientY=e.touches?e.touches[0].clientY:e.clientY;
-    return[(clientX-r.left)*scX,(clientY-r.top)*scY];
-  }
-  function hitTest(x,y){
-    if(!planOverlay.active||!planOverlay.buildRect)return false;
-    const dx=x-planOverlay.x,dy=y-planOverlay.y;
-    const rad=planOverlay.rotation*Math.PI/180;
-    const sc=planOverlay.scale;
-    const hw=planOverlay.fpW*sc/2,hh=planOverlay.fpH*sc/2;
-    const lx=dx*Math.cos(-rad)-dy*Math.sin(-rad);
-    const ly=dx*Math.sin(-rad)+dy*Math.cos(-rad);
-    return Math.abs(lx)<=hw&&Math.abs(ly)<=hh;
-  }
-  canvas.addEventListener('mousedown',e=>{
-    const[x,y]=getPos(e);
-    if(hitTest(x,y)){planOverlay.dragging=true;planOverlay.dragOffX=x-planOverlay.x;planOverlay.dragOffY=y-planOverlay.y;canvas.style.cursor='grabbing';}
-  });
-  window.addEventListener('mousemove',e=>{
-    if(!planOverlay.dragging)return;
-    const[x,y]=getPos(e);
-    planOverlay.x=x-planOverlay.dragOffX;
-    planOverlay.y=y-planOverlay.dragOffY;
-    drawDiagram();
-  });
-  window.addEventListener('mouseup',()=>{planOverlay.dragging=false;const canvas=$('sb-canvas');if(canvas)canvas.style.cursor='default';});
-  // Touch
-  canvas.addEventListener('touchstart',e=>{e.preventDefault();const[x,y]=getPos(e);if(hitTest(x,y)){planOverlay.dragging=true;planOverlay.dragOffX=x-planOverlay.x;planOverlay.dragOffY=y-planOverlay.y;}},{passive:false});
-  window.addEventListener('touchmove',e=>{if(!planOverlay.dragging)return;e.preventDefault();const[x,y]=getPos(e);planOverlay.x=x-planOverlay.dragOffX;planOverlay.y=y-planOverlay.dragOffY;drawDiagram();},{passive:false});
-  window.addEventListener('touchend',()=>{planOverlay.dragging=false;});
-}
-
 
 function selectPlanFromTile(planKey){
   const sel=$('plan-sel');
@@ -4255,7 +4183,7 @@ function syncUnitsUI(){
 function onUnitsChange(){
   updateAttachedBuild();syncUnitsUI();
   calcAll();renderSublot();
-  if($('page-3')&&$('page-3').classList.contains('active')){if(lotMode==='poly')snapshotLotEditor();drawDiagram();}
+  drawDiagram();
 }
 function bumpUnits(delta){const u=$('units');if(!u)return;const cur=Math.max(1,parseInt(u.value)||1);u.value=Math.min(20,Math.max(1,cur+delta));onUnitsChange();}
 // For attached townhomes the plotted footprint is a ROW: width = per-unit width × units.
@@ -4455,7 +4383,7 @@ function onPlanChange(){
       const pfm0=$('plan-fit-msg');if(pfm0)pfm0.innerHTML='';
       planOverlay.active=false;const oc=$('plan-overlay-controls');if(oc)oc.style.display='none';
       calcBUA();calcAll();renderFitCheck();
-      if($('page-3').classList.contains('active')){if(lotMode==='poly')snapshotLotEditor();drawDiagram();}
+      drawDiagram();
       return;
     }
     const parts=val.split('|');
@@ -4501,7 +4429,6 @@ function onPlanChange(){
     planOverlay.planName=name;
     planOverlay.rotation=0;
     planOverlay.positioned=false;
-    planOverlay.snapshotPositioned=false; // reset snapshot position too
     $('plan-overlay-controls').style.display='';
     $('rot-slider').value=0;
     $('rot-val').textContent='0°';
@@ -4513,11 +4440,7 @@ function onPlanChange(){
   }
   updateAttachedBuild();syncUnitsUI();
   calcBUA();calcAll();renderFitCheck();renderSublot();
-  // If we're on step 3, refresh the diagram so overlay appears immediately
-  if($('page-3').classList.contains('active')){
-    if(lotMode==='poly')snapshotLotEditor();
-    drawDiagram();
-  }
+  drawDiagram();   // the one lot diagram (step 2) shows the footprint at once
 }
 function applyCustomDims(){ onPlanChange(); }
 // ── Utility tap fees, per unit ──
@@ -4939,12 +4862,8 @@ $('land-cost').addEventListener('input',()=>{calcFinancing();calcScenarios();});
 calcLF();
 calcAll();
 calcFinancing();
-// Init drag for plan overlay
-initDrag();
-// Init lot editor drag
-initLotEditorDrag();
-// Init snapshot canvas drag (for poly mode plan overlay on Step 3)
-initSnapshotDrag();
+// v8.26: corners, edges and footprints all on the one lot canvas
+initLotCanvasInteractions();
 
 // ── REPORT PACKAGE EXPORT ────────────────────────────────────────────────
 function generateReportPackage(){
@@ -4957,11 +4876,10 @@ function generateReportPackage(){
 function generatePDF(){
   // refresh the site diagram first so the memo never exports a blank canvas
   try{
-    if(lotMode==='poly'&&typeof snapshotLotEditor==='function')snapshotLotEditor();
-    else if(typeof drawDiagram==='function'){calcBuildable();drawDiagram();}
+    calcBuildable();
   }catch(_){ }
   setTimeout(()=>{
-    const sbCanvas=$('sb-canvas');
+    const sbCanvas=$('lot-editor-canvas');   // v8.26: the one lot diagram
     const canvasDataUrl=sbCanvas?sbCanvas.toDataURL('image/png'):null;
     const html=buildReportHTML(canvasDataUrl);
     const w=window.open('','_blank','width=960,height=750');
@@ -6164,6 +6082,7 @@ function serializeDeal(){
     tapSig:_tapSig,rankSig:_rankSig,   // what the entry-time defaults last applied, so a reopen replays one still due
     tapManual:{w:isManual('tap-water'),s:isManual('tap-sewer')},   // v8.14: typed tap quotes stay typed on reopen
     upgrades:Array.from(selectedUpgrades),
+    structures:extraStructures.map(st=>({name:st.name,w:st.w,d:st.d,rot:st.rot||0,x:st.x,y:st.y,xFt:st.xFt,yFt:st.yFt})),   // v8.26
     comps:COMPS.map(c=>Object.assign({},c)),
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     gisMismatch:_gisMismatch,   // v8.16: a reopened parcel that isn't this address stays flagged across saves
@@ -6177,7 +6096,7 @@ function restoreDeal(d){
   const list=(k,ok)=>d[k]==null||(Array.isArray(d[k])&&d[k].every(ok));
   if(!vals||typeof vals!=='object'||!Object.values(vals).every(f=>f&&typeof f==='object')||!Object.keys(vals).some(isField)
      ||!list('polyPoints',p=>p&&typeof p==='object')||!list('edges',x=>x==null||typeof x==='string')
-     ||!list('choices',x=>x==null||typeof x==='string')||!list('upgrades',x=>typeof x==='string')
+     ||!list('choices',x=>x==null||typeof x==='string')||!list('upgrades',x=>typeof x==='string')||!list('structures',x=>x&&typeof x==='object')
      ||!list('comps',x=>x&&typeof x==='object')){
     showToast('That file doesn’t look like a saved deal.','warn');return;
   }
@@ -6264,6 +6183,9 @@ function restoreDeal(d){
     // the analyst's choice. No plan restored: leave the ranking open so it can pick one.
     _rankSig=!$('plan-sel').value?null:('rankSig' in d)?d.rankSig:rankSig();
     selectedUpgrades.clear();(d.upgrades||[]).forEach(u=>selectedUpgrades.add(u));
+    extraStructures=(d.structures||[]).filter(st=>+st.w>0&&+st.d>0).map(st=>({id:newStructId(),   // v8.26: ids are this page's, never the file's
+      name:String(st.name||'Structure').slice(0,24),w:+st.w,d:+st.d,rot:(((+st.rot||0)%360)+360)%360,
+      x:+st.x||0,y:+st.y||0,xFt:+st.xFt||0,yFt:+st.yFt||0,placed:isFinite(+st.x)&&isFinite(+st.y)&&(st.x!=null)}));
     COMPS.length=0;(d.comps||[]).forEach(c=>COMPS.push(Object.assign({},c)));
     try{window._lastGis=d.gis||null;}catch(_){ }
     // v8.16: a reopened deal's county parcel, lot and zone belong to its address (G16: moving off it clears them). A
@@ -6352,8 +6274,12 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.25', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.26', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.26',date:'Oct 2026',name:'One lot diagram, typed sides, other structures',items:[
+   'The lot is drawn once, under Lot Dimensions, in both lot modes. Step 3 no longer repeats it: the plan footprint and its rotate / units controls now sit under that one diagram, and the footprint is dragged there.',
+   'Irregular lots can be typed as well as dragged: a Sides table under the diagram lists every side\u2019s length and bearing (compass degrees clockwise from north, as on a plat). Editing one moves the corners after it; the last side closes the shape. The Type column sets front / rear / side / corner side.',
+   'Other structures: add a garage, ADU or shed by name and size, drag it into place beside the plan and see whether it fits inside the setbacks. Their footprints count in the Mecklenburg BUA check and save with the deal.']},
  {v:'8.25',date:'Oct 2026',name:'Sketch a rectangular lot',items:[
    'Sketch a subdivision now works on a Rectangle lot too: enter the width and depth and the button sends that rectangle, with no need to redraw it under Irregular Lot.',
    'The front is ticked as the street, and each side carries the setback the buildable envelope uses. On a corner lot, one side gets the corner side setback, as in the envelope here, and is ticked as a second street.',
