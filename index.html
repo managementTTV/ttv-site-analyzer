@@ -3991,7 +3991,7 @@ function renderFitCheck(){
   });
   // Sort (#1)
   const [skey,sdir]=(FIT_SORT||'sf-desc').split('-');
-  const sval=o=>skey==='fp'?o.area:(skey==='c'?o.cost:o.sf);
+  const sval=o=>skey==='fp'?o.L.sf:(skey==='c'?o.cost:o.sf);   // v8.31: footprint = what the tile tests at the deal's Units
   evaluated.sort((a,b)=>sdir==='asc'?sval(a)-sval(b):sval(b)-sval(a));
   const fitting=evaluated.filter(o=>o.selectable);
   const tooLarge=evaluated.filter(o=>!o.selectable);
@@ -4291,10 +4291,10 @@ function renderSubplot(p){
   const county=($('county-sel')||{}).value||'';
   const rules=attachedRules(county);
   const u=Math.max(1,pv('units'));
-  const unitW=p.w,unitD=p.d,bldgLen=+(unitW*u).toFixed(1),maxLen=rules.maxBuildingLen;
+  const row=planLayout(p,u),unitW=p.w,unitD=p.d,bldgLen=row.w,maxLen=rules.maxBuildingLen;   // v8.31: the one row rule
   const over=maxLen?bldgLen>maxLen:false;
   const maxByLen=maxLen?Math.floor(maxLen/unitW):null;
-  const fit=buildableArea>0?(L=>fitStatus(L.w,L.d))(planLayout(p,u)):null;   // v8.31: the row the message and grid test
+  const fit=buildableArea>0?fitStatus(row.w,row.d):null;   // v8.31: the row the message and grid test
   const {frontage,area}=getParentLot();
   const zoneKey=($('zone-sel')||{}).value||'';
   const sb=SETBACKS[zoneKey]||null;const minW=pv('sb-minw')||(sb?sb.minWidth:0)||0;const minSF=sb?(sb.minSF||0):0;
