@@ -741,6 +741,46 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   Code.gs and publishing a **new version of the existing deployment** (Deploy › Manage deployments › edit), which
   keeps the /exec link.
 
+### Plat Sketch hand-off (v8.24)
+Lot (Site Intelligence step 2) has **Sketch a subdivision** (`openPlatSketch()`). It hands the lot to the Plat Sketch
+page, Pat's subdivision sketcher: a claude.ai artifact at `PLAT_SKETCH_URL`, the **"Analyzer edition"** (her page plus
+the import hook). Pat's own artifact has no hook and stays as she built it (Brian, 2026-10-07), so don't point
+`PLAT_SKETCH_URL` at it: the paste would do nothing. Flag a change that does, unless her page has had the hook added.
+The payload (v1) is read by that page's `projectFromImport()`; the shared contract is in Brian's project folder
+(`research/08_plat-sketch-handoff-plan.md`, "Shared payload"). A field change needs both sides.
+- **The clipboard is the route.** A claude.ai artifact runs in a frame that never sees the page URL's hash or query, and
+  the frame has no `clipboard-read`. So the click writes base64url JSON (`b64url()`) to the clipboard and the person
+  presses ⌘V / Ctrl+V on the sketch canvas. The write is awaited before `window.open` (a write still pending when the
+  new tab takes focus can be refused), with `copyTextLegacy()` (`execCommand('copy')`) when the clipboard API is refused,
+  as the Claude desktop app's own browser does. No copy, no tab. The `#import=` hash on the URL only helps a copy of the
+  page served directly. A blocked tab leaves a link beside the button.
+- **The lot is the County GIS ring while the editor still shows it** (`sketchLot()`): State Plane feet (wkid 2264,
+  north = +y), from `editorParcelRing()`, the one helper `loadParcelPolygon()` also reads (closing point dropped,
+  `mergeParcelRing()`), so edge i is the editor's edge i and carries its designation. It's used only while `_gisParcel.gis === window._lastGis`, the
+  address signature matches, and every editor corner is within 0.5 ft of the ring's. Otherwise (no lookup, a reopened
+  deal, a lot redrawn, dragged or rescaled) it's the editor's polygon, with the canvas's y flipped back. `source.from`
+  says which (`gis` / `editor`). Flag a GIS lot sent through the canvas, or a ring sent after the editor stopped
+  showing it.
+- **`_gisParcel` sits outside `_lastGis` on purpose.** `_lastGis` is in `getReportData().gis` and `serializeDeal()`, so
+  the ring there would change the report hash and the save file. It isn't saved: a reopened deal hands over its editor
+  polygon (kept to 1/100 px, so within a few hundredths of a sf).
+- **Street sides** are the front and corner-side designations, plus (GIS lot) every edge the proxy flagged as ROW per
+  merged edge (`mergeParcelRing()`'s `row`): a corner or through lot gets both streets, and a front the analyst moved is
+  ticked too. A reopened deal has no ring, so an alley or through lot's ROW rear isn't ticked there.
+- **Setbacks per edge** are `edgeSetbackFt()` of each edge's designation, what the envelope uses.
+- **Rules:** `charlotte-n1-a`…`e` for a Mecklenburg N1-A..E row (suffix and townhome rows go to the base zone), otherwise
+  `custom`. Min lot area / width / frontage come from the zone's `SETBACKS` row (0 for a `mfa` townhome row, whose
+  standards are the parent parcel's); front / side / rear from the setback fields. The analyzer's values win over the
+  sketch page's presets (its N1 fronts are an unconfirmed 20 ft; the UDO rows here are 27 / 17 / 10). A zone with no row
+  sends no minimums, and the sketch page's `custom` profile then starts from its N1-C values, so the note beside the
+  button says so in amber. The PID (name and `source.pid`) is left off while `_gisMismatch` flags the lot as another
+  parcel's.
+- **Hand-off only.** It feeds no calculation, `getReportData()`, save file, PDF or Excel, and adds no storage.
+- **The button waits for a lot** (poly mode, 3 to `PLAT_SKETCH_MAX_CORNERS` corners, not `initPolyEditor()`'s untouched
+  starting shape: `polyIsPlaceholder()` compares by value with `polySeedShape()`, so a reopened deal saved with that
+  shape counts too); `calcBuildable()` and `onAddrChange()` keep its state. The "Copied" note goes as soon as the
+  payload it copied no longer matches the lot on screen, and a second click while copying is ignored.
+
 ### Versioning & verification (compensates for no test suite)
 - Any user-facing change bumps **both** `APP_VERSION` and the header badge together, and
   adds a release-notes / changelog entry. Flag a mismatch.
