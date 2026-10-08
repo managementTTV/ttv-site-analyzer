@@ -695,6 +695,10 @@ most deals take.
     a side when no front is found (audit G3, G13, G14).
 - **Edges are `'front' | 'rear' | 'side' | 'corner'`.**
   - `edgeSetbackFt()` is the single reader. Corner uses `sb-corner`; a blank Corner Side falls back to `sb-sides`.
+    Rect mode reads it too (v8.27): `calcBuildable()`, `drawDiagram()`, the plan-fit message in `onPlanChange()` and
+    `fitStatus()` take the corner side as `edgeSetbackFt('corner')`, so one corner lot gets the same corner setback in
+    both modes and in the Plat Sketch payload. Flag a `pv('sb-corner')` anywhere else (before v8.27 rect mode read a
+    blank Corner Side as 0 ft: 40×180 N1-B corner lot 4,130 sf instead of 3,540).
   - The editor's edge click cycles all four (audit G5).
 - **The envelope is the lot minus each edge's setback band** (`buildEnvelopeFt()`).
   - It is worked as disjoint convex pieces cut with `clipHPLabFt`, then joined back into outlines.
@@ -790,9 +794,7 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   `drawDiagram()` draws the corner setback) `corner`, so it carries the corner side setback and is ticked as a street,
   matching rect `calcBuildable()`'s `sides + corner`. The rect payload is the rectangle only: `lot-sf` and
   `buildable-override` don't travel, so a typed Lot Area off W × D by 1 sf or more, or an override, turns the note amber.
-  Known gap: rect `calcBuildable()` reads a blank Corner Side as 0 ft, but `edgeSetbackFt('corner')` (and so the payload)
-  falls back to the side setback, so on a corner lot with Corner Side blank the sketch's envelope is narrower than the
-  card's; the note says so in amber. These warnings are appended to a "Copied" note that is still showing.
+  These warnings are appended to a "Copied" note that is still showing.
 - **`_gisParcel` sits outside `_lastGis` on purpose.** `_lastGis` is in `getReportData().gis` and `serializeDeal()`, so
   the ring there would change the report hash and the save file. It isn't saved: a reopened deal hands over its editor
   polygon (kept to 1/100 px, so within a few hundredths of a sf).
@@ -827,7 +829,8 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
   - 3 × Dayton Townhomes, land $75,000, $265/sf: Max land **$262,309**, lot factor $25,850.
-  - Rect mode, N1-B: 40×180 → 3,540 sf, 80×180 → 8,260 sf.
+  - Rect mode, N1-B: 40×180 → 3,540 sf, 80×180 → 8,260 sf. With Corner lot ticked and Corner Side 13.5: 2,537 /
+    7,257 sf; with Corner Side blank it falls back to the side setback (v8.27): 3,540 / 8,260.
   Flag a math-touching PR that ships without one.
 
 ---

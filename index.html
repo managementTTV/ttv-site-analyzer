@@ -748,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.26 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.27 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -3530,13 +3530,11 @@ function updateSketchBtn(){
   // a zone with no SETBACKS row sends no lot minimums, and the sketch page's Custom rules then start from its N1-C values
   if(ok&&!SETBACKS[($('zone-sel')||{}).value||''])warn.push('This zone has no lot standards here, so set the minimum lot size and width in the sketch page’s rules (they start from Charlotte N1-C).');
   // v8.25: what a Rectangle lot's payload can't carry. A Lot Area typed over W × D means the lot isn't that rectangle; the
-  // sketch works out its own envelope, so an override stays here; and rect calcBuildable() reads a blank Corner Side as
-  // 0 ft where edgeSetbackFt() (the payload) falls back to the side setback
+  // sketch works out its own envelope, so an override stays here
   if(ok&&rect){
-    const typed=pv('lot-sf'),over=pv('buildable-override'),cs=$('sb-corner');
+    const typed=pv('lot-sf'),over=pv('buildable-override');
     if(typed>0&&Math.abs(typed-w*d)>=1)warn.push(`It sends the ${w} × ${d} ft rectangle (${fmtN(w*d)} sf), not the ${fmtN(typed)} sf entered as Lot Area. For the lot’s real shape, run the County GIS auto-fill above or draw it under Irregular Lot.`);
     if(over>0)warn.push(`The sketch works out its own buildable envelope from the setbacks; the ${fmtN(over)} sf Buildable Area Override stays here.`);
-    if($('corner-lot').checked&&cs&&String(cs.value).trim()==='')warn.push(`Corner Side is blank: the envelope here takes 0 ft on the corner side, the sketch the side setback (${pv('sb-sides')} ft).`);
   }
   // the "Copied" note stays while the payload it copied does, but a warning that arrives after it is still shown
   const m=(_sketchSaid&&warn.length&&!_sketchSaid.href?{text:_sketchSaid.text+' '+warn.join(' '),tone:'warn'}:_sketchSaid)
@@ -3580,7 +3578,7 @@ async function openPlatSketch(){
 
 // ═══════════════════ BUILDABLE AREA ═══════════════════
 function calcBuildable(){
-  const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=pv('sb-corner');
+  const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=edgeSetbackFt('corner');
   const minW=pv('sb-minw');
   const br=$('buildable-result');
 
@@ -3591,6 +3589,7 @@ function calcBuildable(){
     const ww=$('width-warn');
     if(ww&&minW>0&&w>0&&w<minW){ww.style.display='';ww.textContent=`⚠ Lot width (${w} ft) is below the zone minimum (${minW} ft). Verify with the city.`;}
     else if(ww)ww.style.display='none';
+    // v8.27: corner is edgeSetbackFt('corner'), so a blank Corner Side takes the side setback, as poly mode does
     const sideTotal=isCorner?(sides+corner):(sides*2);
     const buildW=Math.max(0,w-sideTotal),buildD=Math.max(0,d-front-rear);
     buildableArea=overrideSF||(w&&d?buildW*buildD:0);
@@ -3783,7 +3782,7 @@ function drawDiagram(){
     ctx.globalAlpha=0.65;ctx.drawImage(lotImageObj,ix,iy,iw,ih);ctx.globalAlpha=1.0;
   }
 
-  const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=pv('sb-corner');
+  const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=edgeSetbackFt('corner');
   const w=pv('lot-w')||100,d=pv('lot-d')||150;
   const isCorner=$('corner-lot')&&$('corner-lot').checked;
   const pad=40,scale=Math.min((W-pad*2)/w,(H-pad*2)/d);
@@ -4406,7 +4405,7 @@ function onPlanChange(){
         r=planFitsInPolyFt(fpW,fpD);
       } else {
         const isCorner=$('corner-lot')&&$('corner-lot').checked;
-        const bW=pv('lot-w')-((isCorner)?(pv('sb-sides')+pv('sb-corner')):(pv('sb-sides')*2));
+        const bW=pv('lot-w')-((isCorner)?(pv('sb-sides')+edgeSetbackFt('corner')):(pv('sb-sides')*2));
         const bD=pv('lot-d')-pv('sb-front')-pv('sb-rear');
         if(bW>=fpW&&bD>=fpD)r='fits';
         else if(bW>=fpD&&bD>=fpW)r='rot';
@@ -5825,7 +5824,7 @@ function fitStatus(fpW,fpD){
   }
   if(!(buildableArea>0))return{status:'na'};
   const isCorner=$('corner-lot')&&$('corner-lot').checked;
-  const bW=pv('lot-w')-((isCorner)?(pv('sb-sides')+pv('sb-corner')):(pv('sb-sides')*2));
+  const bW=pv('lot-w')-((isCorner)?(pv('sb-sides')+edgeSetbackFt('corner')):(pv('sb-sides')*2));
   const bD=pv('lot-d')-pv('sb-front')-pv('sb-rear');
   const fits=bW>=fpW&&bD>=fpD,fitFlipped=bW>=fpD&&bD>=fpW;
   if(!(fits||fitFlipped))return{status:'no'};
@@ -6274,8 +6273,12 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.26', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.27', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.27',date:'Oct 2026',name:'Corner lots with Corner Side blank',items:[
+   'On a Rectangle corner lot with the Corner Side field blank, the buildable envelope used to take 0 ft on the corner side. It now takes the side setback, as an Irregular lot and the Plat Sketch hand-off already did. A 40 \u00d7 180 N1-B corner lot with Corner Side blank now shows 3,540 sf, not 4,130.',
+   'The diagram, the plan fit message and the fit grid follow the same envelope. A Corner Side you type is used as before.',
+   'The amber "Corner Side is blank" warning beside Sketch a subdivision is gone: the sketch and the envelope here now agree.']},
  {v:'8.26',date:'Oct 2026',name:'One lot diagram, typed sides, other structures',items:[
    'The lot is drawn once, under Lot Dimensions, in both lot modes. Step 3 no longer repeats it: the plan footprint and its rotate / units controls now sit under that one diagram, and the footprint is dragged there.',
    'Irregular lots can be typed as well as dragged: a Sides table under the diagram lists every side\u2019s length and bearing (compass degrees clockwise from north, as on a plat). Editing one moves the corners after it; the last side closes the shape. The Type column sets front / rear / side / corner side.',
