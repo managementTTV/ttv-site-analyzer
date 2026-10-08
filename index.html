@@ -3496,10 +3496,18 @@ function updateSketchBtn(){
   const warn=[];
   // a zone with no SETBACKS row sends no lot minimums, and the sketch page's Custom rules then start from its N1-C values
   if(ok&&!SETBACKS[($('zone-sel')||{}).value||''])warn.push('This zone has no lot standards here, so set the minimum lot size and width in the sketch page’s rules (they start from Charlotte N1-C).');
-  // v8.25: a Lot Area typed over W × D means the lot isn't that rectangle, and the sketch only gets the rectangle
-  const typed=ok&&rect?pv('lot-sf'):0;
-  if(typed>0&&Math.abs(typed-w*d)>=1)warn.push(`It sends the ${w} × ${d} ft rectangle (${fmtN(w*d)} sf), not the ${fmtN(typed)} sf entered as Lot Area. For the lot’s real shape, run the County GIS auto-fill above or draw it under Irregular Lot.`);
-  const m=_sketchSaid||(ok?{text:['Opens the Plat Sketch page with this lot, its street side and setbacks.'].concat(warn).join(' '),tone:warn.length?'warn':''}
+  // v8.25: what a Rectangle lot's payload can't carry. A Lot Area typed over W × D means the lot isn't that rectangle; the
+  // sketch works out its own envelope, so an override stays here; and rect calcBuildable() reads a blank Corner Side as
+  // 0 ft where edgeSetbackFt() (the payload) falls back to the side setback
+  if(ok&&rect){
+    const typed=pv('lot-sf'),over=pv('buildable-override'),cs=$('sb-corner');
+    if(typed>0&&Math.abs(typed-w*d)>=1)warn.push(`It sends the ${w} × ${d} ft rectangle (${fmtN(w*d)} sf), not the ${fmtN(typed)} sf entered as Lot Area. For the lot’s real shape, run the County GIS auto-fill above or draw it under Irregular Lot.`);
+    if(over>0)warn.push(`The sketch works out its own buildable envelope from the setbacks; the ${fmtN(over)} sf Buildable Area Override stays here.`);
+    if($('corner-lot').checked&&cs&&String(cs.value).trim()==='')warn.push(`Corner Side is blank: the envelope here takes 0 ft on the corner side, the sketch the side setback (${pv('sb-sides')} ft).`);
+  }
+  // the "Copied" note stays while the payload it copied does, but a warning that arrives after it is still shown
+  const m=(_sketchSaid&&warn.length&&!_sketchSaid.href?{text:_sketchSaid.text+' '+warn.join(' '),tone:'warn'}:_sketchSaid)
+    ||(ok?{text:['Opens the Plat Sketch page with this lot, its street side and setbacks.'].concat(warn).join(' '),tone:warn.length?'warn':''}
     :{text:rect?'Needs the lot’s width and depth, or run the County GIS auto-fill above.'
     :seeded?'Drag the corners to the lot’s shape first, or run the County GIS auto-fill above.'
     :big?`This lot has ${n} corners; the Plat Sketch page takes up to ${PLAT_SKETCH_MAX_CORNERS}.`

@@ -765,9 +765,10 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   `[front, side, rear, side]`, `source.from = 'rect'`. The Corner lot box makes edge 1 (the right-hand side, where
   `drawDiagram()` draws the corner setback) `corner`, so it carries the corner side setback and is ticked as a street,
   matching rect `calcBuildable()`'s `sides + corner`. The rect payload is the rectangle only: `lot-sf` and
-  `buildable-override` don't travel, and a typed Lot Area off W × D by 1 sf or more turns the note amber. One known gap:
-  rect `calcBuildable()` reads a blank Corner Side as 0 ft, but `edgeSetbackFt('corner')` (and so the payload) falls back
-  to the side setback, so on a corner lot with Corner Side blank the sketch's envelope is narrower than the card's.
+  `buildable-override` don't travel, so a typed Lot Area off W × D by 1 sf or more, or an override, turns the note amber.
+  Known gap: rect `calcBuildable()` reads a blank Corner Side as 0 ft, but `edgeSetbackFt('corner')` (and so the payload)
+  falls back to the side setback, so on a corner lot with Corner Side blank the sketch's envelope is narrower than the
+  card's; the note says so in amber. These warnings are appended to a "Copied" note that is still showing.
 - **`_gisParcel` sits outside `_lastGis` on purpose.** `_lastGis` is in `getReportData().gis` and `serializeDeal()`, so
   the ring there would change the report hash and the save file. It isn't saved: a reopened deal hands over its editor
   polygon (kept to 1/100 px, so within a few hundredths of a sf).
