@@ -915,7 +915,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <!-- TOOLBAR -->
         <div class="lot-editor-toolbar">
           <label>Canvas width =</label>
-          <input type="number" id="canvas-scale-ft" value="200" min="10" oninput="redrawEditor()">
+          <input type="number" id="canvas-scale-ft" value="200" min="10" oninput="calcBuildable()">
           <label>ft &nbsp;|&nbsp; Measurements update live as you drag</label>
           <button class="btn-ghost btn" style="padding:4px 10px;font-size:11px;margin-left:auto" onclick="resetPolyToDefault()">Reset Shape</button>
         </div>
@@ -3453,7 +3453,7 @@ function initLotCanvasInteractions(){
 // Keep old stubs so nothing breaks
 function initSides(){}
 function renderSidesList(){}
-function addSide(){ if(polyPoints.length<20){ polyPoints.push({x:400,y:300}); redrawEditor(); } }
+function addSide(){ if(polyPoints.length<20){ polyPoints.push({x:400,y:300}); calcBuildable(); } }
 function initSidesFromCount(){ initPolyEditor(); }
 
 // ═══════════════════ PAGE 2 — GIS ═══════════════════
@@ -3799,7 +3799,7 @@ function drawDiagram(){
   if(!lotImageObj){ctx.strokeStyle='rgba(16,37,56,0.25)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.strokeRect(ox,oy,w*scale,d*scale);ctx.setLineDash([]);}
   // the corner side setback draws on the RIGHT (x = W); the Plat Sketch hand-off's rect branch relies on that
   const sL=env.sSide,sR=env.sCorner;
-  const bx=ox+sL*scale,by=oy+front*scale,bw=(w-sL-sR)*scale,bh=(d-front-rear)*scale;
+  const bx=ox+sL*scale,by=oy+front*scale,bw=env.bW*scale,bh=env.bD*scale;
   if(bw>0&&bh>0){
     ctx.fillStyle='rgba(94,128,149,0.15)';ctx.fillRect(bx,by,bw,bh);
     ctx.strokeStyle='rgba(176,116,40,0.9)';ctx.lineWidth=2;ctx.setLineDash([6,3]);ctx.strokeRect(bx,by,bw,bh);ctx.setLineDash([]);
@@ -4443,7 +4443,14 @@ function renderPlanFitMsg(){
   const fs=buildableArea>0?fitStatus(fpW,fpD):{status:'na'};
   const noun=isCustom?'footprint':'plan';
   if(fs.status==='fits')pfm.innerHTML=fs.rotated?`<div class="warn">⚠ Fits if rotated 90°.</div>`:`<div class="ok">✓ This ${noun} fits the buildable envelope.</div>`;
-  else if(fs.status==='tight')pfm.innerHTML=`<div class="warn">⚠ Tight: it fits, but with under 10 ft to spare in width or depth (5 ft clear on each side). Verify.</div>`;
+  else if(fs.status==='tight'){
+    // fitStatus() marks 'rotated' on fits only (its result goes into planComp and the report), so the rect path's
+    // turned-only case is read off the same envelope here; poly "tight" is the 5 ft clearance rule
+    const polyFit=lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3;
+    const e=polyFit?null:rectEnvelopeFt(),turned=!!e&&!(e.bW>=fpW&&e.bD>=fpD);
+    pfm.innerHTML=polyFit?`<div class="warn">⚠ Tight: it fits, but it can't sit 5 ft clear of the envelope on every side. Verify.</div>`
+      :`<div class="warn">⚠ ${turned?'Fits only if rotated 90°, and tight':'Tight: it fits, but'} with under 10 ft to spare in width or depth (5 ft clear on each side). Verify.</div>`;
+  }
   else if(fs.status==='no')pfm.innerHTML=`<div class="err">✗ Footprint (${fpW}'W×${fpD}'D) exceeds buildable envelope.</div>`;
   else pfm.innerHTML='';
 }

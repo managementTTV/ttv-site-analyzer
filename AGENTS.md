@@ -725,10 +725,13 @@ most deals take.
     the plan comparison (`getReportData().planComp` → PDF), the compare table and the plan-fit message
     (`renderPlanFitMsg()`, `#plan-fit-msg` / `#cust-fit-msg`, v8.28) all show it. "Tight" is the same rule in both modes:
     the plan can't sit 5 ft clear of the envelope on every side (rect: under 10 ft to spare in width or depth, in either
-    orientation). Before v8.28 the message worked out its own rect fit with no tight tier, so a plan could read
+    orientation). The message words it per mode, and on a rect lot says when a tight plan fits only rotated 90°, which it
+    reads off `rectEnvelopeFt()` because `fitStatus()` keeps `rotated` for "fits" (its result goes into `planComp`). Before v8.28 the message worked out its own rect fit with no tight tier, so a plan could read
     "✓ fits" there and "⚠ Tight" in the PDF. Flag a reader that computes its own fit.
   - The plan-fit message is drawn by `onPlanChange()` and by `calcBuildable()`, so a lot, setback or corner edit
-    redraws it with the grid (before v8.28 only a plan change did, and it kept the old verdict).
+    redraws it with the grid (before v8.28 only a plan change did, and it kept the old verdict). Lot edits go through
+    `calcBuildable()`, not `redrawEditor()` alone: the canvas scale input and `addSide()` called only `redrawEditor()`
+    until v8.28, which moved the envelope and left the grid, the message, BUA and the summary on the old lot.
   - A convex envelope uses the exact half-plane solver (`polyIsConvexFt` ignores turns under 1.5°).
   - A nearly convex one gets the exact solver first, then `planFitsSamplingFt()` if that finds no "fits".
   - A non-convex one uses `planFitsSamplingFt()`: the exact solver on the envelope's kernel, then `rectFitsPolyFt()`.
