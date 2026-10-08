@@ -868,7 +868,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div id="gis-link-block" style="margin-bottom:16px"></div>
       <div style="margin:-6px 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <button class="topo-btn" id="sketch-btn" onclick="openPlatSketch()" disabled>&#9998; Sketch a subdivision &rarr;</button>
-        <span id="sketch-status" style="font-size:12px;color:var(--text-dim)">Needs the lot as a polygon: run the County GIS auto-fill above, or draw it under Irregular Lot.</span>
+        <span id="sketch-status" style="font-size:12px;color:var(--text-dim)">Needs the lot&rsquo;s width and depth, or run the County GIS auto-fill above.</span>
       </div>
 
       <!-- Mode Toggle -->
@@ -3469,22 +3469,31 @@ let _sketchSaid=null;  // {text, tone, href, code}: what the last click said, sh
                        // (code: what was copied, so the note goes once the lot, its edges or setbacks change)
 let _sketchBusy=false; // a click is still copying: a second one would open a second tab
 const PLAT_SKETCH_MAX_CORNERS=200;   // the sketch page's import takes 3-200 sides
-// The lot in feet, north = +y (pts [[x,y]], no closing point), with the edges that face a street. The County GIS ring
-// (State Plane feet) while the editor still shows it; otherwise the editor's polygon, whose canvas runs y down.
-// Street sides: the analyzer's front and corner-side edges, plus every edge the proxy flagged as right-of-way (an alley
-// or through lot's rear), so an edge the analyst made the front is ticked even where the proxy saw no street.
+// The lot in feet, north = +y (pts [[x,y]], no closing point), each edge's designation (des) and the edges that face a
+// street. The County GIS ring (State Plane feet) while the editor still shows it; otherwise the editor's polygon, whose
+// canvas runs y down. Street sides: the analyzer's front and corner-side edges, plus every edge the proxy flagged as
+// right-of-way (an alley or through lot's rear), so an edge the analyst made the front is ticked even where the proxy saw
+// no street.
+// v8.25: a Rectangle lot goes as W × D, front along y = 0 (edges front, side, rear, side). calcBuildable() takes the
+// corner side setback on one side only (sides + corner): it goes on edge 1, the right-hand side, where drawDiagram()
+// draws it.
 function sketchLot(){
+  if(lotMode==='rect'){
+    const w=pv('lot-w'),d=pv('lot-d');if(!(w>0&&d>0))return null;
+    const des=['front',$('corner-lot')&&$('corner-lot').checked?'corner':'side','rear','side'];
+    return{pts:[[0,0],[w,0],[w,d],[0,d]],des,street:des.map(x=>x==='front'||x==='corner'),from:'rect'};
+  }
   if(lotMode!=='poly'||polyPoints.length<3)return null;
-  const n=polyPoints.length,f=getScaleFtPerPx(),des=edgeDesignations;
+  const n=polyPoints.length,f=getScaleFtPerPx(),des=polyPoints.map((_,i)=>edgeDesignations[i]||'side');
   const ed=polyPoints.map(p=>[p.x*f,-p.y*f]);
-  const street=ed.map((_,i)=>des[i]==='front'||des[i]==='corner');
+  const street=des.map(x=>x==='front'||x==='corner');
   const g=window._lastGis,gp=_gisParcel;
   const pr=gp&&g&&gp.gis===g&&g.addrSig===gisAddressSignature()?gp.pr:null;
   // only while the editor still holds that lot: not redrawn, dragged or rescaled (every corner within 0.5 ft)
   const P=pr&&pr.m.pts;
   if(P&&P.length===n&&P.every((p,i)=>Math.abs(p[0]-P[0][0]-(ed[i][0]-ed[0][0]))<0.5&&Math.abs(p[1]-P[0][1]-(ed[i][1]-ed[0][1]))<0.5))
-    return{pts:P,street:street.map((s,i)=>s||!!pr.m.row[i]),from:'gis'};
-  return{pts:ed,street,from:'editor'};
+    return{pts:P,des,street:street.map((s,i)=>s||!!pr.m.row[i]),from:'gis'};
+  return{pts:ed,des,street,from:'editor'};
 }
 // Payload v1. Setbacks per edge are edgeSetbackFt() of the edge's designation, as the envelope takes them; the rule
 // profile is the zone's row (charlotte-n1-a..e for N1-A..E, else custom) with the setbacks on screen.
@@ -3506,23 +3515,36 @@ function platSketchPayload(){
     source:{pid,address:fullAddr(),zone,county,lotSf:Math.round(Math.abs(polyAreaFt(pts))),from:lot.from},
     units:'ft-dec',
     lot:{points:pts,segments,streetSides:lot.street},
-    setbacks:pts.map((_,i)=>edgeSetbackFt(edgeDesignations[i]||'side')),
+    setbacks:lot.des.map(edgeSetbackFt),
     rules};
 }
 function sketchCode(){const p=platSketchPayload();return p?b64url(JSON.stringify(p)):'';}
 function updateSketchBtn(){
   const b=$('sketch-btn'),s=$('sketch-status');if(!b||!s)return;
+  const rect=lotMode==='rect',w=pv('lot-w'),d=pv('lot-d');
   const n=lotMode==='poly'?polyPoints.length:0,seeded=n>=3&&polyIsPlaceholder(),big=n>PLAT_SKETCH_MAX_CORNERS;
-  const ok=n>=3&&!seeded&&!big;
+  const ok=rect?w>0&&d>0:n>=3&&!seeded&&!big;
   b.disabled=!ok||_sketchBusy;
   if(_sketchSaid&&(!ok||(_sketchSaid.code&&_sketchSaid.code!==sketchCode())))_sketchSaid=null;
+  const warn=[];
   // a zone with no SETBACKS row sends no lot minimums, and the sketch page's Custom rules then start from its N1-C values
-  const noRow=ok&&!SETBACKS[($('zone-sel')||{}).value||''];
-  const m=_sketchSaid||(noRow?{text:'Opens the Plat Sketch page with this lot, its street side and setbacks. This zone has no lot standards here, so set the minimum lot size and width in the sketch page\u2019s rules (they start from Charlotte N1-C).',tone:'warn'}
-    :null)||{text:ok?'Opens the Plat Sketch page with this lot, its street side and setbacks.'
+  if(ok&&!SETBACKS[($('zone-sel')||{}).value||''])warn.push('This zone has no lot standards here, so set the minimum lot size and width in the sketch page’s rules (they start from Charlotte N1-C).');
+  // v8.25: what a Rectangle lot's payload can't carry. A Lot Area typed over W × D means the lot isn't that rectangle; the
+  // sketch works out its own envelope, so an override stays here; and rect calcBuildable() reads a blank Corner Side as
+  // 0 ft where edgeSetbackFt() (the payload) falls back to the side setback
+  if(ok&&rect){
+    const typed=pv('lot-sf'),over=pv('buildable-override'),cs=$('sb-corner');
+    if(typed>0&&Math.abs(typed-w*d)>=1)warn.push(`It sends the ${w} × ${d} ft rectangle (${fmtN(w*d)} sf), not the ${fmtN(typed)} sf entered as Lot Area. For the lot’s real shape, run the County GIS auto-fill above or draw it under Irregular Lot.`);
+    if(over>0)warn.push(`The sketch works out its own buildable envelope from the setbacks; the ${fmtN(over)} sf Buildable Area Override stays here.`);
+    if($('corner-lot').checked&&cs&&String(cs.value).trim()==='')warn.push(`Corner Side is blank: the envelope here takes 0 ft on the corner side, the sketch the side setback (${pv('sb-sides')} ft).`);
+  }
+  // the "Copied" note stays while the payload it copied does, but a warning that arrives after it is still shown
+  const m=(_sketchSaid&&warn.length&&!_sketchSaid.href?{text:_sketchSaid.text+' '+warn.join(' '),tone:'warn'}:_sketchSaid)
+    ||(ok?{text:['Opens the Plat Sketch page with this lot, its street side and setbacks.'].concat(warn).join(' '),tone:warn.length?'warn':''}
+    :{text:rect?'Needs the lot’s width and depth, or run the County GIS auto-fill above.'
     :seeded?'Drag the corners to the lot’s shape first, or run the County GIS auto-fill above.'
     :big?`This lot has ${n} corners; the Plat Sketch page takes up to ${PLAT_SKETCH_MAX_CORNERS}.`
-    :'Needs the lot as a polygon: run the County GIS auto-fill above, or draw it under Irregular Lot.'};
+    :'Needs the lot as a polygon: run the County GIS auto-fill above, or draw it under Irregular Lot.'});
   s.textContent=m.text;s.style.color=m.tone==='warn'?'var(--amber)':'var(--text-dim)';
   if(m.href){const a=document.createElement('a');a.href=m.href;a.target='_blank';a.rel='noopener';a.textContent='Open the sketch page';
     s.appendChild(document.createTextNode(' '));s.appendChild(a);}
@@ -6258,6 +6280,10 @@ const RELEASE_NOTES=[
    'The lot is drawn once, under Lot Dimensions, in both lot modes. Step 3 no longer repeats it: the plan footprint and its rotate / units controls now sit under that one diagram, and the footprint is dragged there.',
    'Irregular lots can be typed as well as dragged: a Sides table under the diagram lists every side\u2019s length and bearing (compass degrees clockwise from north, as on a plat). Editing one moves the corners after it; the last side closes the shape. The Type column sets front / rear / side / corner side.',
    'Other structures: add a garage, ADU or shed by name and size, drag it into place beside the plan and see whether it fits inside the setbacks. Their footprints count in the Mecklenburg BUA check and save with the deal.']},
+ {v:'8.25',date:'Oct 2026',name:'Sketch a rectangular lot',items:[
+   'Sketch a subdivision now works on a Rectangle lot too: enter the width and depth and the button sends that rectangle, with no need to redraw it under Irregular Lot.',
+   'The front is ticked as the street, and each side carries the setback the buildable envelope uses. On a corner lot, one side gets the corner side setback, as in the envelope here, and is ticked as a second street.',
+   'If you typed a Lot Area that differs from width \u00d7 depth, the note beside the button says the sketch gets the rectangle, not your figure. For the lot\u2019s real shape, use the County GIS auto-fill or Irregular Lot.']},
  {v:'8.24',date:'Oct 2026',name:'Sketch a subdivision',items:[
    'Lot (Site Intelligence) has a Sketch a subdivision button. It copies this lot and opens the Plat Sketch page; press \u2318V / Ctrl+V on its canvas and the lot comes in already drawn, with no screenshot to trace or scale to calibrate.',
    'The lot is the County GIS parcel itself (its exact corners), or the lot drawn in the editor when there\u2019s no GIS parcel or you\u2019ve changed it. The street side comes ticked, each side carries the setback the buildable envelope uses (front, side, rear or corner side), and the rule profile is the zone\u2019s: Charlotte N1-A to N1-E, or custom with this zone\u2019s minimum lot size and width.',
