@@ -743,9 +743,11 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
 
 ### Plat Sketch hand-off (v8.24)
 Lot (Site Intelligence step 2) has **Sketch a subdivision** (`openPlatSketch()`). It hands the lot to the Plat Sketch
-page, Pat's subdivision sketcher: a claude.ai artifact at `PLAT_SKETCH_URL` (the private staging copy until go-live, then
-Pat's own artifact). The payload (v1) is read by that page's `projectFromImport()`; the shared contract is in Brian's
-project folder (`research/08_plat-sketch-handoff-plan.md`, "Shared payload"). A field change needs both sides.
+page, Pat's subdivision sketcher: a claude.ai artifact at `PLAT_SKETCH_URL`, the **"Analyzer edition"** (her page plus
+the import hook). Pat's own artifact has no hook and stays as she built it (Brian, 2026-10-07), so don't point
+`PLAT_SKETCH_URL` at it: the paste would do nothing. Flag a change that does, unless her page has had the hook added.
+The payload (v1) is read by that page's `projectFromImport()`; the shared contract is in Brian's project folder
+(`research/08_plat-sketch-handoff-plan.md`, "Shared payload"). A field change needs both sides.
 - **The clipboard is the route.** A claude.ai artifact runs in a frame that never sees the page URL's hash or query, and
   the frame has no `clipboard-read`. So the click writes base64url JSON (`b64url()`) to the clipboard and the person
   presses ⌘V / Ctrl+V on the sketch canvas. The write is awaited before `window.open` (a write still pending when the
@@ -770,10 +772,13 @@ project folder (`research/08_plat-sketch-handoff-plan.md`, "Shared payload"). A 
   `custom`. Min lot area / width / frontage come from the zone's `SETBACKS` row (0 for a `mfa` townhome row, whose
   standards are the parent parcel's); front / side / rear from the setback fields. The analyzer's values win over the
   sketch page's presets (its N1 fronts are an unconfirmed 20 ft; the UDO rows here are 27 / 17 / 10). A zone with no row
-  sends no minimums, and the sketch page's `custom` profile then starts from its N1-C values: open item.
+  sends no minimums, and the sketch page's `custom` profile then starts from its N1-C values, so the note beside the
+  button says so in amber. The PID (name and `source.pid`) is left off while `_gisMismatch` flags the lot as another
+  parcel's.
 - **Hand-off only.** It feeds no calculation, `getReportData()`, save file, PDF or Excel, and adds no storage.
 - **The button waits for a lot** (poly mode, 3 to `PLAT_SKETCH_MAX_CORNERS` corners, not `initPolyEditor()`'s untouched
-  starting shape: `polyIsPlaceholder()`); `calcBuildable()` keeps its state. The "Copied" note goes as soon as the
+  starting shape: `polyIsPlaceholder()` compares by value with `polySeedShape()`, so a reopened deal saved with that
+  shape counts too); `calcBuildable()` and `onAddrChange()` keep its state. The "Copied" note goes as soon as the
   payload it copied no longer matches the lot on screen, and a second click while copying is ignored.
 
 ### Versioning & verification (compensates for no test suite)

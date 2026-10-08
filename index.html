@@ -2122,6 +2122,7 @@ function onAddrChange(){
   validateAddress();
   invalidateGisIfAddressMoved();
   renderSheetHandoff();
+  updateSketchBtn();   // v8.24: the copied payload carried the old address
 }
 // The cached GIS result carries the PID that the comps pull keys off. If the analyst edits the
 // address after a lookup, that PID belongs to the PREVIOUS property — pulling comps then would
@@ -2632,7 +2633,7 @@ function applyGisData(d,sig){
     swim:d.swim_buffer?{i:!!d.swim_buffer.intersects,t:(d.swim_buffer.types||[]).slice(0,3)}:null,
     historic:d.historic?{i:!!d.historic.in_district,n:d.historic.name||null}:null,
     cama:d.cama||null,site:d.site||null};
-    _gisParcel=d.parcel&&d.parcel.geometry?{gis:window._lastGis,rings:d.parcel.geometry.rings,edges:d.parcel.edges||null}:null;}catch(_){ }
+    _gisParcel=d.parcel&&d.parcel.geometry?{gis:window._lastGis,pr:editorParcelRing(d.parcel.geometry.rings,d.parcel.edges)}:null;}catch(_){ }
   renderZoneNote();   // v8.15: now that the cache holds this parcel's zoning string (and any suffix)
   renderGisResult(d);
   if(d.parcel&&d.parcel.pid)checkStreet();else hideStreetCheck();   // v8.18: not awaited, the lookup is done
@@ -2794,7 +2795,6 @@ let _fitHeld = false;     // v8.19: a fit grid skipped mid-drag, drawn on releas
 let polyDragOffX = 0, polyDragOffY = 0;
 let edgeDesignations = []; // 'front'|'rear'|'side'|'corner' per edge i
 let _edgeNote = null;      // v8.19: {pts,warn,text} from loadParcelPolygon, shown while polyPoints is still that lot
-let _polySeed = null;      // v8.24: {pts,xy} the placeholder shape initPolyEditor() drew, until a corner moves
 
 function getScaleFtPerPx(){
   const canvas = $('lot-editor-canvas');
@@ -2806,28 +2806,36 @@ function getScaleFtPerPx(){
 function pxToFt(px){ return px * getScaleFtPerPx(); }
 function ftToPx(ft){ return ft / getScaleFtPerPx(); }
 
-function initPolyEditor(){
-  const n = parseInt(($('corner-count')||{value:'6'}).value) || 6;
-  const canvas = $('lot-editor-canvas');
-  if(!canvas) return;
-  const W = canvas.width, H = canvas.height;
+// The starting shape initPolyEditor() draws: n corners on an ellipse, in canvas pixels
+function polySeedShape(n,W,H){
   const cx = W/2, cy = H/2;
   const rx = W*0.32, ry = H*0.32;
-  polyPoints = [];
+  const pts = [];
   for(let i=0;i<n;i++){
     const angle = (i/n)*Math.PI*2 - Math.PI/2;
-    polyPoints.push({
+    pts.push({
       x: Math.round(cx + rx*Math.cos(angle)),
       y: Math.round(cy + ry*Math.sin(angle))
     });
   }
-  _polySeed = {pts:polyPoints, xy:JSON.stringify(polyPoints)};
+  return pts;
+}
+function initPolyEditor(){
+  const n = parseInt(($('corner-count')||{value:'6'}).value) || 6;
+  const canvas = $('lot-editor-canvas');
+  if(!canvas) return;
+  polyPoints = polySeedShape(n, canvas.width, canvas.height);
   initEdgeDesignations();
   redrawEditor();
   calcBuildable();
 }
-// v8.24: the lot on screen is still initPolyEditor()'s starting shape (nobody has dragged a corner), not a drawn lot
-function polyIsPlaceholder(){ const s=_polySeed; return !!(s && s.pts===polyPoints && s.xy===JSON.stringify(polyPoints)); }
+// v8.24: the lot on screen is still initPolyEditor()'s starting shape (nobody has dragged a corner), not a drawn lot.
+// Compared by value, so a deal saved with the untouched shape and reopened still counts.
+function polyIsPlaceholder(){
+  const c=$('lot-editor-canvas');if(!c||polyPoints.length<3)return false;
+  const s=polySeedShape(polyPoints.length,c.width,c.height);
+  return polyPoints.every((p,i)=>p.x===s[i].x&&p.y===s[i].y);
+}
 
 function initEdgeDesignations(){
   const n = polyPoints.length;
@@ -3418,11 +3426,12 @@ function updateGISLink(){
 // "Sketch a subdivision" hands the lot to the Plat Sketch page (Pat's subdivision sketcher, a claude.ai artifact) with
 // its street side, each edge's setback and the zone's lot rules: payload v1 in research/08_plat-sketch-handoff-plan.md.
 // A claude.ai artifact runs in a frame that never sees the page URL's hash, so the payload goes on the clipboard and the
-// person pastes it on the sketch canvas; the #import= hash only helps a copy of the page served directly.
-// Staging copy until go-live, when this becomes Pat's own artifact.
+// person pastes it on the sketch page; the #import= hash only helps a copy of the page served directly.
+// The "Analyzer edition" of Pat's sketcher (her page plus the import hook). Pat's own artifact has no hook: pointing this
+// at it would open her page and the paste would do nothing (decision 2026-10-07: her page stays as she built it).
 const PLAT_SKETCH_URL='https://claude.ai/artifact/F6bgDXtVXy43sKCzLXQYvT';
-let _gisParcel=null;   // {gis, rings, edges}: the County GIS parcel behind window._lastGis (gis: that same object, so a
-                       // cleared, replaced or restored _lastGis leaves this one stale)
+let _gisParcel=null;   // {gis, pr}: the County GIS parcel behind window._lastGis, pr = its editorParcelRing() (gis: that
+                       // same object, so a cleared, replaced or restored _lastGis leaves this one stale)
 let _sketchSaid=null;  // {text, tone, href, code}: what the last click said, shown beside the button while it still holds
                        // (code: what was copied, so the note goes once the lot, its edges or setbacks change)
 let _sketchBusy=false; // a click is still copying: a second one would open a second tab
@@ -3437,7 +3446,7 @@ function sketchLot(){
   const ed=polyPoints.map(p=>[p.x*f,-p.y*f]);
   const street=ed.map((_,i)=>des[i]==='front'||des[i]==='corner');
   const g=window._lastGis,gp=_gisParcel;
-  const pr=gp&&g&&gp.gis===g&&g.addrSig===gisAddressSignature()?editorParcelRing(gp.rings,gp.edges):null;
+  const pr=gp&&g&&gp.gis===g&&g.addrSig===gisAddressSignature()?gp.pr:null;
   // only while the editor still holds that lot: not redrawn, dragged or rescaled (every corner within 0.5 ft)
   const P=pr&&pr.m.pts;
   if(P&&P.length===n&&P.every((p,i)=>Math.abs(p[0]-P[0][0]-(ed[i][0]-ed[0][0]))<0.5&&Math.abs(p[1]-P[0][1]-(ed[i][1]-ed[0][1]))<0.5))
@@ -3458,7 +3467,8 @@ function platSketchPayload(){
   // a townhome row's lot standards are the parent parcel's (Table 5-1 fn 1), so the unit lots carry no minimums
   if(row)Object.assign(rules,row.mfa?{minLotArea:0,minLotWidth:0,minFrontage:0}:{minLotArea:row.minSF,minLotWidth:row.minWidth,minFrontage:row.minWidth});
   Object.assign(rules,{frontSetback:pv('sb-front'),sideSetback:pv('sb-sides'),rearSetback:pv('sb-rear')});
-  const g=window._lastGis,pid=g&&g.addrSig===gisAddressSignature()&&g.pid||'';
+  // no PID on a lot the analyzer flags as another parcel's (_gisMismatch): the sketch would carry this PID on its outline
+  const g=window._lastGis,pid=!_gisMismatch&&g&&g.addrSig===gisAddressSignature()&&g.pid||'';
   return{v:1,name:[addrStreet()||'Lot from the analyzer',pid?'PID '+pid:''].filter(Boolean).join(' · '),
     source:{pid,address:fullAddr(),zone,county,lotSf:Math.round(Math.abs(polyAreaFt(pts))),from:lot.from},
     units:'ft-dec',
@@ -3473,7 +3483,10 @@ function updateSketchBtn(){
   const ok=n>=3&&!seeded&&!big;
   b.disabled=!ok||_sketchBusy;
   if(_sketchSaid&&(!ok||(_sketchSaid.code&&_sketchSaid.code!==sketchCode())))_sketchSaid=null;
-  const m=_sketchSaid||{text:ok?'Opens the Plat Sketch page with this lot, its street side and setbacks.'
+  // a zone with no SETBACKS row sends no lot minimums, and the sketch page's Custom rules then start from its N1-C values
+  const noRow=ok&&!SETBACKS[($('zone-sel')||{}).value||''];
+  const m=_sketchSaid||(noRow?{text:'Opens the Plat Sketch page with this lot, its street side and setbacks. This zone has no lot standards here, so set the minimum lot size and width in the sketch page\u2019s rules (they start from Charlotte N1-C).',tone:'warn'}
+    :null)||{text:ok?'Opens the Plat Sketch page with this lot, its street side and setbacks.'
     :seeded?'Drag the corners to the lot’s shape first, or run the County GIS auto-fill above.'
     :big?`This lot has ${n} corners; the Plat Sketch page takes up to ${PLAT_SKETCH_MAX_CORNERS}.`
     :'Needs the lot as a polygon: run the County GIS auto-fill above, or draw it under Irregular Lot.'};
