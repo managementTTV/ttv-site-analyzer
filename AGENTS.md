@@ -731,6 +731,19 @@ most deals take.
     orientation). The message words it per mode, and on a rect lot says when a tight plan fits only rotated 90°, which it
     reads off `rectEnvelopeFt()` because `fitStatus()` keeps `rotated` for "fits" (its result goes into `planComp`). Before v8.28 the message worked out its own rect fit with no tight tier, so a plan could read
     "✓ fits" there and "⚠ Tight" in the PDF. Flag a reader that computes its own fit.
+  - **The deal's Units, not one unit (v8.31, audit M2/G10, G8).** `unitsLayout()` / `planLayout(p, units)` /
+    `dealLayout()` give the ground a unit count takes; the fit grid, the plan-fit message, the sub-lot card and
+    `calcBUA()` all read it. A townhome (`t:'th'`) or a **custom footprint** is one unit of an attached row: Units × its
+    width, every unit at the listed width (no wider end units). Every other plan's footprint is the whole building,
+    holding `plan.u` units (house 1, duet 2, triplex 3); more Units means `ceil(Units / plan.u)` buildings side by side,
+    `2 × sb-sides` apart, as if the lot were split (Brian, 2026-10-08). The fit grid tests every plan at the deal's Units.
+    BUA counts the buildings' footprints, not the gaps. `onUnitsChange()` redraws the grid, the message and BUA.
+    `unitsWarnings()` says when Units is more than one building holds, when a row passes the county's
+    `maxBuildingLen`, and how many units (or whole buildings) fit when the deal doesn't. The fit test may turn the
+    whole layout 90° (separate buildings then stand one behind the other; the message says so). Still open: the plan
+    comparison (`buildPlanComparison()`, the compare table, `dealForPlan()`) tests and prices each plan at its catalogue
+    `plan.u` (X-F2), and the hardscape stays one flat figure per deal. Flag a new fit or BUA reader that uses one
+    unit's footprint for a multi-unit deal.
   - The plan-fit message is drawn by `onPlanChange()` and by `calcBuildable()`, so a lot, setback or corner edit
     redraws it with the grid (before v8.28 only a plan change did, and it kept the old verdict). Lot edits go through
     `calcBuildable()`, not `redrawEditor()` alone: the canvas scale input and `addSide()` called only `redrawEditor()`

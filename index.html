@@ -748,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.30 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.31 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -3772,10 +3772,9 @@ function calcBUA(){
   const lotSF=lotSFManual;if(!lotSF)return;
   const buaLimit=Math.min(lotSF*0.24,5000);
   const val=($('plan-sel')||{}).value||'';
-  let fpW,fpD;
-  if(val==='__CUSTOM__'){fpW=pv('cust-w');fpD=pv('cust-d');}
-  else{const parts=val.split('|');fpW=parseFloat(parts[4])||0;fpD=parseFloat(parts[5])||0;}
-  const footprint=fpW&&fpD?fpW*fpD:0;
+  // v8.31 (audit G8): every unit's footprint, not one unit's: a townhome or custom row is Units × the unit, other plans
+  // each whole building (dealLayout()); the gaps between separate buildings aren't built on
+  const L=val?dealLayout():null,footprint=L?L.sf:0;
   // v8.8: blank means the field's default (500 sf); a deliberate 0 (no driveway or walks) stays 0, where `||500` made it 500
   const hsEl=$('bua-hardscape'), hardscape=hsEl&&hsEl.value.trim()!==''?pv('bua-hardscape'):(parseFloat(hsEl&&hsEl.defaultValue)||500);
   const extras=extraStructuresSf();   // v8.26: a garage or ADU is built-upon area too
@@ -3783,7 +3782,8 @@ function calcBUA(){
   const pct=buaLimit>0?Math.min(estBUA/buaLimit,1):0;
   const fill=$('bua-fill');if(fill){fill.style.width=(pct*100)+'%';fill.style.background=pct>1?'var(--red)':pct>0.9?'var(--amber)':'var(--green)';}
   const res=$('bua-result');
-  if(res)res.innerHTML=`<div style="font-family:var(--f-num);font-size:11px;color:var(--text-dim)">Limit: ${fmtN(buaLimit)} sf<br>Est. used: ${fmtN(estBUA)} sf${extras?' (incl. '+fmtN(extras)+' sf other structures)':''}<br>Remaining: ${fmtN(Math.max(0,buaLimit-estBUA))} sf</div>`;
+  const incl=[footprint&&L.units>1?`${fmtN(footprint)} sf for ${L.units} units`:'',extras?fmtN(extras)+' sf other structures':''].filter(Boolean);
+  if(res)res.innerHTML=`<div style="font-family:var(--f-num);font-size:11px;color:var(--text-dim)">Limit: ${fmtN(buaLimit)} sf<br>Est. used: ${fmtN(estBUA)} sf${incl.length?' (incl. '+incl.join(', ')+')':''}<br>Remaining: ${fmtN(Math.max(0,buaLimit-estBUA))} sf</div>`;
   const msg=$('bua-msg');
   if(msg){
     if(!footprint)msg.innerHTML='<div class="note">Select a plan (Plan &amp; build, or click a card in the fit check) to run the BUA check.</div>';
@@ -3977,18 +3977,21 @@ function renderFitCheck(){
   const isCorner=$('corner-lot')&&$('corner-lot').checked;
   const polyFt=(lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3)
     ?planOverlay.buildPolyFt:null;
+  // v8.31 (audit M2/G10): each plan is tested at the deal's Units (Brian, 2026-10-08): a townhome as a row of that many,
+  // other plans as whole buildings side by side (planLayout()). With Units = 1 that's each plan's own footprint, as before.
+  const U=Math.max(1,pv('units'));
   const evaluated=PLANS.filter(p=>p.w>0&&p.d>0).map(p=>{
-    const fpW=p.w,fpD=p.d;
+    const fpW=p.w,fpD=p.d,L=planLayout(p,U);
     let cls,badge,selectable=true;
-    const fs=fitStatus(fpW,fpD);
+    const fs=fitStatus(L.w,L.d);
     if(fs.status==='fits'){cls='fit-ok';badge=fs.rotated?'Fits (rotated)':'Fits';}
     else if(fs.status==='tight'){cls='fit-warn';badge='Tight — verify';}
     else{cls='fit-no';badge='Too Large';selectable=false;}
-    return {p,name:p.n,sf:p.sf,cost:p.c,fpW,fpD,cls,badge,selectable,area:fpW*fpD};
+    return {p,name:p.n,sf:p.sf,cost:p.c,fpW,fpD,cls,badge,selectable,area:fpW*fpD,L};
   });
   // Sort (#1)
   const [skey,sdir]=(FIT_SORT||'sf-desc').split('-');
-  const sval=o=>skey==='fp'?o.area:(skey==='c'?o.cost:o.sf);
+  const sval=o=>skey==='fp'?o.L.sf:(skey==='c'?o.cost:o.sf);   // v8.31: footprint = what the tile tests at the deal's Units
   evaluated.sort((a,b)=>sdir==='asc'?sval(a)-sval(b):sval(b)-sval(a));
   const fitting=evaluated.filter(o=>o.selectable);
   const tooLarge=evaluated.filter(o=>!o.selectable);
@@ -4001,6 +4004,7 @@ function renderFitCheck(){
       +(planImg(o.name)?`<button class="fit-img-btn" title="View plan drawing" onclick="event.stopPropagation();openPlanImg('${o.name}')">${IMG_ICON}</button>`:'')
       +`<div class="fit-name">${o.name}${isSel?' ✓':''}</div>`
       +`<div class="fit-detail">Footprint ${o.fpW}'W × ${o.fpD}'D · ${o.area.toLocaleString()} sf`
+      +((o.L.attached?U>1:o.L.bldgs>1)?`<br>${U} units: ${o.L.attached?'row':o.L.bldgs+' buildings'} ${o.L.w}'W × ${o.L.d}'D`:'')
       +`<br>Finished ${o.sf>0?o.sf.toLocaleString()+' sf':'—'} · ${fmt(o.cost)}</div>`
       +`<span class="fit-badge">${o.badge}</span></div>`;
   };
@@ -4014,7 +4018,8 @@ function renderFitCheck(){
     html+=`<div class="fit-group-hdr">${TYPE_LABEL[t]} <span>(${g.length})</span></div>`
       +`<div class="fit-grid">${g.map(card).join('')}</div>`;
   });
-  if(!fitting.length)html='<div class="note">No plans with footprint data fit the current envelope.</div>';
+  if(!fitting.length)html=`<div class="note">${U>1?`No plan fits ${U} units in the current envelope.`:'No plans with footprint data fit the current envelope.'}</div>`;
+  if(U>1)html=`<div class="note" style="margin-bottom:8px">Each plan is tested at the deal’s ${U} units (Units, Plan &amp; build): townhomes as one attached row, other plans as whole buildings side by side, two side setbacks apart.</div>`+html;
   if(tooLarge.length>0){
     html+=`<button class="fit-collapse-btn" onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('.fit-collapse-arrow').textContent=this.nextElementSibling.classList.contains('open')?'▲':'▼'"><span>Plans that don't fit (${tooLarge.length})</span><span class="fit-collapse-arrow">▼</span></button><div class="fit-collapse-section"><div class="fit-grid" style="opacity:0.6">${tooLarge.map(card).join('')}</div></div>`;
   }
@@ -4207,27 +4212,62 @@ function sublotSvg(n,frontage,area,minW){
 // ── Attached townhome "subplotting": +1 Units adds a unit to the row; flag past the county cap ──
 function currentPlanObj(){const val=($('plan-sel')||{}).value||'';if(!val||val==='__CUSTOM__')return null;return PLANS.find(p=>p.val===val)||null;}
 function isAttachedPlan(){const p=currentPlanObj();return !!(p&&p.t==='th');}
+// v8.31 (audit M2/G10, G8): the ground the deal's Units take with a plan. fitStatus() tests w × d; calcBUA() counts sf (the
+// buildings, not the gaps between them). A townhome (t:'th') or a custom footprint is ONE unit of an attached row: the row
+// is Units × its width, every unit at the listed width (Brian, 2026-10-08). Any other plan's footprint is the whole
+// building, holding plan.u units (a house 1, a duet 2, the triplex 3), so Units past that means more buildings: side by
+// side, two side setbacks apart, as if the lot were split (Brian, 2026-10-08).
+function unitsLayout(w,d,perBldg,attached,units){
+  units=Math.max(1,units||1);
+  if(!(w>0&&d>0))return{w:0,d:0,sf:0,bldgs:0,gap:0,per:1,units,attached};
+  if(attached)return{w:+(w*units).toFixed(2),d,sf:w*d*units,bldgs:1,gap:0,per:units,units,attached,unitW:w};
+  const per=Math.max(1,perBldg||1),n=Math.ceil(units/per),gap=n>1?2*edgeSetbackFt('side'):0;
+  return{w:+(n*w+(n-1)*gap).toFixed(2),d,sf:n*w*d,bldgs:n,gap,per,units,attached};
+}
+const planLayout=(p,units)=>unitsLayout(p.w,p.d,p.u,p.t==='th',units);
+// The deal's own plan, read off the plan-sel value like the other readers (footprint and unit count from the value, the
+// type from PLANS by name). n: a unit count other than the deal's, for maxUnitsFit().
+function dealLayout(n){
+  const val=($('plan-sel')||{}).value||'',units=n||Math.max(1,pv('units'));
+  if(val==='__CUSTOM__')return unitsLayout(pv('cust-w'),pv('cust-d'),1,true,units);
+  const parts=val.split('|'),p=val?PLANS.find(x=>x.n===parts[0]):null;
+  return unitsLayout(parseFloat(parts[4])||0,parseFloat(parts[5])||0,parseInt(parts[3])||1,!!(p&&p.t==='th'),units);
+}
+// How much of the deal's plan fits the envelope ('fits' or 'tight'): the most units of an attached row, or the most whole
+// buildings, below `below`; 0 = not even one. A fit is monotone in the count (the layout only gets wider), so this is a
+// binary search.
+function maxUnitsFit(below,per=1){
+  let lo=0,hi=Math.ceil(below)-1;
+  while(lo<hi){const m=Math.floor((lo+hi+1)/2),L=dealLayout(m*per);if(fitStatus(L.w,L.d).status!=='no')lo=m;else hi=m-1;}
+  return lo;
+}
 function syncUnitsUI(){
   const el=$('ov-units');if(el)el.textContent=Math.max(1,pv('units'));
-  const h=$('ov-units-hint');if(h)h.textContent=isAttachedPlan()?'attached row — grows footprint':'synced with Plan & build';
+  const h=$('ov-units-hint');if(h)h.textContent=dealLayout().attached?'attached row — grows footprint':'synced with Plan & build';
 }
+// v8.31: the fit grid, the plan-fit message and BUA follow Units too (before, a Units change left them on the old count)
 function onUnitsChange(){
   updateAttachedBuild();syncUnitsUI();
   calcAll();renderSublot();
+  calcBUA();renderFitCheck();renderPlanFitMsg();
   drawDiagram();
 }
 function bumpUnits(delta){const u=$('units');if(!u)return;const cur=Math.max(1,parseInt(u.value)||1);u.value=Math.min(20,Math.max(1,cur+delta));onUnitsChange();}
-// For attached townhomes the plotted footprint is a ROW: width = per-unit width × units.
+// An attached row (a townhome, or a custom footprint since v8.31) is plotted as the ROW: width = per-unit width × units.
+// Separate buildings are plotted one at a time, and the label says so.
 function updateAttachedBuild(){
-  const p=currentPlanObj();
-  if(p&&p.t==='th'&&planOverlay.active){
-    const u=Math.max(1,pv('units'));
-    planOverlay.attached=true;planOverlay.unitW=p.w;
-    planOverlay.fpW=+(p.w*u).toFixed(2);planOverlay.fpH=p.d;
-    planOverlay.planName=p.n+(u>1?` ×${u} (attached row)`:'');
-    const ofn=$('ov-plan-name');if(ofn)ofn.textContent=planOverlay.planName;
-    const off=$('ov-footprint');if(off)off.textContent=`${planOverlay.fpW}'W×${p.d}'D  (${u}×${p.w}')`;
-  }else{planOverlay.attached=false;}
+  if(!planOverlay.active){planOverlay.attached=false;return;}
+  const L=dealLayout(),u=L.units,name=planNameFromVal(($('plan-sel')||{}).value||'');
+  if(L.attached){
+    planOverlay.attached=true;planOverlay.unitW=L.unitW;
+    planOverlay.fpW=L.w;planOverlay.fpH=L.d;
+    planOverlay.planName=name+(u>1?` ×${u} (attached row)`:'');
+    const off=$('ov-footprint');if(off)off.textContent=`${L.w}'W×${L.d}'D  (${u}×${L.unitW}')`;
+  }else{
+    planOverlay.attached=false;
+    planOverlay.planName=name+(L.bldgs>1?` (1 of ${L.bldgs} buildings)`:'');
+  }
+  const ofn=$('ov-plan-name');if(ofn)ofn.textContent=planOverlay.planName;
 }
 function subplotSvg(u,unitW,unitD,maxLen){
   const totalW=unitW*u;
@@ -4251,10 +4291,10 @@ function renderSubplot(p){
   const county=($('county-sel')||{}).value||'';
   const rules=attachedRules(county);
   const u=Math.max(1,pv('units'));
-  const unitW=p.w,unitD=p.d,bldgLen=+(unitW*u).toFixed(1),maxLen=rules.maxBuildingLen;
+  const row=planLayout(p,u),unitW=p.w,unitD=p.d,bldgLen=row.w,maxLen=rules.maxBuildingLen;   // v8.31: the one row rule
   const over=maxLen?bldgLen>maxLen:false;
   const maxByLen=maxLen?Math.floor(maxLen/unitW):null;
-  const fit=buildableArea>0?fitStatus(bldgLen,unitD):null;
+  const fit=buildableArea>0?fitStatus(row.w,row.d):null;   // v8.31: the row the message and grid test
   const {frontage,area}=getParentLot();
   const zoneKey=($('zone-sel')||{}).value||'';
   const sb=SETBACKS[zoneKey]||null;const minW=pv('sb-minw')||(sb?sb.minWidth:0)||0;const minSF=sb?(sb.minSF||0):0;
@@ -4460,22 +4500,53 @@ function renderPlanFitMsg(){
   const pfm=isCustom?$('cust-fit-msg'):$('plan-fit-msg');
   if(!pfm)return;
   if(lotMode==='poly'&&polyDragIdx>=0){_fitHeld=true;return;}   // mid-drag, as renderFitCheck(): drawn on release
-  let fpW=0,fpD=0;
-  if(isCustom){fpW=pv('cust-w');fpD=pv('cust-d');}
-  else if(val){const parts=val.split('|');fpW=parseFloat(parts[4])||0;fpD=parseFloat(parts[5])||0;}
+  // v8.31 (audit M2/G10): test the deal's Units, not one unit: a townhome or custom row is Units × its width, and Units
+  // past what one building holds are more buildings side by side (dealLayout()). One unit reads as before.
+  const L=val?dealLayout():{w:0,d:0,units:1,bldgs:0},fpW=L.w,fpD=L.d;
   const fs=buildableArea>0?fitStatus(fpW,fpD):{status:'na'};
   const noun=isCustom?'footprint':'plan';
-  if(fs.status==='fits')pfm.innerHTML=fs.rotated?`<div class="warn">⚠ Fits if rotated 90°.</div>`:`<div class="ok">✓ This ${noun} fits the buildable envelope.</div>`;
+  const multi=L.attached?L.units>1:L.bldgs>1;
+  const what=!multi?'':L.attached?`the row of ${L.units} (${fpW}'W×${fpD}'D)`
+    :`${L.bldgs} buildings side by side${L.gap?`, ${L.gap} ft apart`:''} (${fpW}'W×${fpD}'D)`;
+  const What=what&&what[0].toUpperCase()+what.slice(1);
+  // separate buildings turned 90° stand one behind the other, not side by side: say so
+  const rot=multi&&!L.attached?'turned 90° (one behind the other, not side by side)':'rotated 90°';
+  let html='';
+  if(fs.status==='fits')html=fs.rotated?`<div class="warn">⚠ ${multi?What+' fits':'Fits'} if ${rot}.</div>`:`<div class="ok">✓ ${multi?What:'This '+noun} fits the buildable envelope.</div>`;
   else if(fs.status==='tight'){
     // fitStatus() marks 'rotated' on fits only (its result goes into planComp and the report), so the rect path's
     // turned-only case is read off the same envelope here; poly "tight" is the 5 ft clearance rule
     const polyFit=lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3;
     const e=polyFit?null:rectEnvelopeFt(),turned=!!e&&!(e.bW>=fpW&&e.bD>=fpD);
-    pfm.innerHTML=polyFit?`<div class="warn">⚠ Tight: it fits, but it can't sit 5 ft clear of the envelope on every side. Verify.</div>`
-      :`<div class="warn">⚠ ${turned?'Fits only if rotated 90°, and tight':'Tight: it fits, but'} with under 10 ft to spare in width or depth (5 ft clear on each side). Verify.</div>`;
+    html=polyFit?`<div class="warn">⚠ Tight: ${multi?what:'it'} fits, but it can't sit 5 ft clear of the envelope on every side. Verify.</div>`
+      :`<div class="warn">⚠ ${turned?(multi?What+' fits only':'Fits only')+` if ${rot}, and tight`:'Tight: '+(multi?what:'it')+' fits, but'} with under 10 ft to spare in width or depth (5 ft clear on each side). Verify.</div>`;
   }
-  else if(fs.status==='no')pfm.innerHTML=`<div class="err">✗ Footprint (${fpW}'W×${fpD}'D) exceeds buildable envelope.</div>`;
-  else pfm.innerHTML='';
+  else if(fs.status==='no')html=multi?`<div class="err">✗ ${What} doesn't fit the buildable envelope.</div>`
+    :`<div class="err">✗ Footprint (${fpW}'W×${fpD}'D) exceeds buildable envelope.</div>`;
+  pfm.innerHTML=html+unitsWarnings(L,fs,isCustom?'This footprint':planNameFromVal(val));
+}
+// v8.31: say when Units is more than the plan or the lot holds. A plan that is a whole building (a house, a duet, the
+// triplex) takes more buildings; an attached row can't pass the county's max building length; and when the deal's layout
+// doesn't fit, how many units do.
+function unitsWarnings(L,fs,name){
+  if(!(L.w>0))return'';
+  const out=[],u=L.units;
+  if(!L.attached&&u>L.per)out.push(`${name} holds ${L.per} unit${L.per>1?'s':''} per building, so ${u} units need ${L.bldgs} separate buildings`
+    +(u%L.per?` (room for ${L.bldgs*L.per}: Units isn’t a whole number of buildings)`:'')
+    +`. They’re tested side by side${L.gap?`, ${L.gap} ft apart (two side setbacks)`:' with no gap (no side setback)'}, as if the lot were split: check the sub-lot card.`);
+  if(L.attached&&u>1){
+    const county=($('county-sel')||{}).value||'',maxLen=attachedRules(county).maxBuildingLen;
+    if(maxLen&&L.w>maxLen)out.push(`A row of ${u} is ${L.w.toFixed(0)} ft long, over ${county}’s ${maxLen} ft max building length (${Math.floor(maxLen/L.unitW)} units at most).`);
+  }
+  // one building that doesn't fit already says so; this is for a row or for several buildings
+  if(fs.status==='no'&&L.attached&&u>1){
+    const n=maxUnitsFit(u);
+    out.push(n?`Only ${n} unit${n>1?'s':''} fit${n>1?'':'s'} the buildable envelope; Units is ${u}.`:'Not even one unit fits the buildable envelope.');
+  }else if(fs.status==='no'&&!L.attached&&L.bldgs>1){
+    const b=maxUnitsFit(L.bldgs,L.per);
+    out.push(b?`Only ${b} building${b>1?'s':''} (${b*L.per} unit${b*L.per>1?'s':''}) fit${b>1?'':'s'} the buildable envelope; Units is ${u}.`:'Not even one building fits the buildable envelope.');
+  }
+  return out.map(t=>`<div class="warn" style="margin-top:6px">${t}</div>`).join('');
 }
 function applyCustomDims(){ onPlanChange(); }
 // ── Utility tap fees, per unit ──
@@ -6307,8 +6378,15 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.30', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.31', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.31',date:'Oct 2026',name:'Townhome rows and multi-unit deals',items:[
+   'The fit check now tests every unit, not just one. A townhome row is Units \u00d7 the unit width (3 Daytons are a 65 ft row). A house, duet or triplex is a whole building, so more Units than it holds means more buildings, side by side and two side setbacks apart, as if the lot were split. Before, a Hampton \u00d7 2 or a row of 3 Daytons was checked as one unit and could say \u201cfits\u201d when it didn\u2019t.',
+   'The fit grid tests each plan at the deal\u2019s Units, and the line under the plan you picked says what it tested (the row, or how many buildings). Changing Units now redraws the grid, the fit line and the BUA check at once.',
+   'The Mecklenburg BUA check counts every unit\u2019s footprint. A row of 3 Daytons is 2,600 sf of roof, not 867.',
+   'New warnings: when Units is more than one building of the plan holds, when a townhome row is longer than the county\u2019s max building length, and, when the deal doesn\u2019t fit, how many units do.',
+   'A custom footprint is now one unit of a row: its width \u00d7 Units, like a townhome.',
+   'The money doesn\u2019t change: build cost, Max land and the reports were already per unit \u00d7 Units. The plan comparison (Compare builds, PDF sheet 4) still tests each plan at its own unit count; that\u2019s a later fix.']},
  {v:'8.30',date:'Oct 2026',name:'Loan rate now starts at 9.75%',items:[
    'The Annual Interest Rate on a new deal starts at 9.75%, the same rate as the deal sheet. It was 10%.',
    'Why it matters: Send to deal sheet copies this rate into the sheet, so a 10% default overwrote the sheet\u2019s 9.75% on every sent deal.',
