@@ -890,7 +890,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         </div>
         <div class="field" id="corner-street-row" style="display:none;margin-top:6px">
           <label for="corner-street-side">Side street on the</label>
-          <select id="corner-street-side" onchange="calcBuildable()" style="max-width:180px">
+          <select id="corner-street-side" onchange="onCornerSideChange()" style="max-width:180px">
             <option value="left" selected>Left</option>
             <option value="right">Right</option>
           </select>
@@ -3604,6 +3604,9 @@ async function openPlatSketch(){
 // (sides + corner) doesn't depend on it. A deal saved before v8.29 has no choice and opens on 'left': the side
 // drawDiagram() always drew it on (the page's right, with the front at the top).
 function cornerStreetSide(){return ($('corner-street-side')||{}).value==='right'?'right':'left';}
+// The envelope moves sideways, so the plan footprint and other structures re-centre in it, as on a lot-mode switch;
+// left where they were, a centred plan would now overlap the corner side's band.
+function onCornerSideChange(){planOverlay.positioned=false;extraStructures.forEach(st=>{st.placed=false;});calcBuildable();}
 function calcBuildable(){
   const minW=pv('sb-minw');
   const br=$('buildable-result');
@@ -3611,6 +3614,7 @@ function calcBuildable(){
   if(lotMode === 'rect'){
     const w=pv('lot-w'),d=pv('lot-d');
     {const r=$('corner-street-row');if(r)r.style.display=$('corner-lot')&&$('corner-lot').checked?'':'none';}   // v8.29: asked only for a corner lot
+    {const e=$('corner-street-side');if(e&&e.selectedIndex<0)e.value='left';}   // a saved value that isn't an option shows as Left, as it's read
     const overrideSF=pv('buildable-override'),lotSFManual=pv('lot-sf');
     const ww=$('width-warn');
     if(ww&&minW>0&&w>0&&w<minW){ww.style.display='';ww.textContent=`⚠ Lot width (${w} ft) is below the zone minimum (${minW} ft). Verify with the city.`;}
@@ -3833,7 +3837,7 @@ function drawDiagram(){
   ctx.textAlign='center';
   if(front>0)ctx.fillText(`Front ${front}'`,W/2,oy+front*scale/2+4);
   if(rear>0)ctx.fillText(`Rear ${rear}'`,W/2,oy+d*scale-rear*scale/2+4);
-  const sideLbl=c=>c&&env.sCorner>0?`Corner ${env.sCorner}'`:sides>0?`${sides}'`:'';   // each side's band, the corner's on its side
+  const sideLbl=c=>c?(env.sCorner>0?`Corner ${env.sCorner}'`:''):sides>0?`${sides}'`:'';   // each side's band, the corner's on its side
   ctx.textAlign='left';ctx.fillText(sideLbl(cornerLeft),ox+4,H/2+2);
   ctx.textAlign='right';ctx.fillText(sideLbl(env.isCorner&&!cornerLeft),W-ox-4,H/2+2);
   ctx.textAlign='center';ctx.fillStyle='rgba(62,85,103,0.75)';
