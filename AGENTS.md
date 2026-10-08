@@ -849,10 +849,15 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   (PID 04118536, 3,455 sf) and 2731 (PID 04118537, 4,312 sf), all N1-B, Central Catawba. The older
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
-  Reference numbers since v8.19:
+  Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the Max land and hash below are v8.30's):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
-  - 3 × Dayton Townhomes, land $75,000, $265/sf: Max land **$262,309**, lot factor $25,850.
+  - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$263,493** at the 9.75% default (it was
+    $262,309 at 10% through v8.29), lot factor $25,850. Base interest $38,425, profit $117,845 per the report.
+  - **Reference hash (v8.30): `c7e8f10b0bd7`** (v8.19–v8.29: `882293828f24`, the 10% rate). Recipe: a fresh page, 2723
+    Dellinger Dr / Charlotte / 28269 via `gisLookup()`, land 75000, Base $/sf 265, Dayton Townhomes, Units 3; sha-256
+    of `JSON.stringify(getReportData())` with `date`, `gis.ts` and `gis.mpt` deleted, first 12 hex. Run Dellinger
+    before any rect case (a rect run first changes `lotW`/`lotD`).
   - Rect mode, N1-B: 40×180 → 3,540 sf, 80×180 → 8,260 sf. With Corner lot ticked and Corner Side 13.5: 2,537 /
     7,257 sf; with Corner Side blank it falls back to the side setback (v8.27): 3,540 / 8,260.
   Flag a math-touching PR that ships without one.
