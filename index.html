@@ -748,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.27 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.29 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -887,6 +887,14 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="toggle-row" style="margin-top:4px">
           <span class="toggle-lbl">Corner lot (corner side setback applies to one side)</span>
           <label class="tog"><input type="checkbox" id="corner-lot" onchange="calcBuildable()"><div class="tog-track"></div><div class="tog-thumb"></div></label>
+        </div>
+        <div class="field" id="corner-street-row" style="display:none;margin-top:6px">
+          <label for="corner-street-side">Side street on the</label>
+          <select id="corner-street-side" onchange="calcBuildable()" style="max-width:180px">
+            <option value="left" selected>Left</option>
+            <option value="right">Right</option>
+          </select>
+          <p class="note">Standing in the front street, facing the lot. The diagram has the front street at the top, so it draws your left on its right.</p>
         </div>
         <div id="width-warn" style="display:none" class="warn"></div>
       </div>
@@ -2197,10 +2205,10 @@ function clearGisSite(){
   const zs=$('zone-sel'),zo=zs.options[zs.selectedIndex];
   _clearedSite={lotMode,pts:polyPoints.map(p=>({x:p.x,y:p.y})),edges:edgeDesignations.slice(),scale:$('canvas-scale-ft').value,
     structures:extraStructures,   // v8.26: the lot's garage / ADU go with it, and come back with Put them back
-    zone:zs.value,zoneText:zo?zo.textContent:'',fields,corner:$('corner-lot').checked,abuts:$('n2-abuts-n1').checked,
+    zone:zs.value,zoneText:zo?zo.textContent:'',fields,corner:$('corner-lot').checked,cornerSide:$('corner-street-side').value,abuts:$('n2-abuts-n1').checked,
     zrn:_zoneRestoreNote,mismatch:_gisMismatch,label:t&&t.label};
   polyPoints=[];edgeDesignations=[];dropLotEnvelope();_gisMismatch=null;extraStructures=[];
-  zs.value='';Object.keys(fields).forEach(id=>{$(id).value='';});$('corner-lot').checked=false;
+  zs.value='';Object.keys(fields).forEach(id=>{$(id).value='';});$('corner-lot').checked=false;$('corner-street-side').value='left';
   onZoneChange();   // no zone: hides the setback panel and its notes
   redrawEditor();calcBuildable();
   setGisStatus(`The address moved off ${t&&t.label||'the last parcel'}, so that parcel’s lot, zone and setbacks were cleared. Run the County GIS auto-fill for this address, or enter the lot by hand.`,'warn');
@@ -2211,7 +2219,7 @@ function putBackGisSite(){
   if(c.zone&&!Array.from(zs.options).some(o=>o.value===c.zone)){const o=document.createElement('option');o.value=c.zone;o.textContent=c.zoneText||c.zone;zs.appendChild(o);}
   zs.value=c.zone;$('n2-abuts-n1').checked=c.abuts;_zoneRestoreNote=c.zrn;onZoneChange();
   Object.keys(c.fields).forEach(id=>{$(id).value=c.fields[id];});showLooseSetbacks();   // the values as they were, adjusted setbacks included
-  $('corner-lot').checked=c.corner;$('canvas-scale-ft').value=c.scale;
+  $('corner-lot').checked=c.corner;$('corner-street-side').value=c.cornerSide||'left';$('canvas-scale-ft').value=c.scale;
   polyPoints=c.pts;edgeDesignations=c.edges;_gisMismatch=c.mismatch;extraStructures=c.structures||[];
   if(lotMode!==c.lotMode){setLotMode(c.lotMode);
     if(c.lotMode==='poly'&&c.pts.length<3){polyPoints=[];edgeDesignations=[];dropLotEnvelope();}}   // setLotMode('poly') seeds a default shape
@@ -3475,12 +3483,15 @@ const PLAT_SKETCH_MAX_CORNERS=200;   // the sketch page's import takes 3-200 sid
 // right-of-way (an alley or through lot's rear), so an edge the analyst made the front is ticked even where the proxy saw
 // no street.
 // v8.25: a Rectangle lot goes as W × D, front along y = 0 (edges front, side, rear, side). calcBuildable() takes the
-// corner side setback on one side only (sides + corner): it goes on edge 1, the right-hand side, where drawDiagram()
-// draws it.
+// corner side setback on one side only (sides + corner). v8.29: that side is cornerStreetSide(). The payload's front is
+// at the bottom, so a person standing in the front street facing the lot looks north (+y): their right is edge 1
+// (x = W), their left edge 3 (x = 0). drawDiagram() has the front at the top, so the same lot draws there turned
+// 180°, not mirrored.
 function sketchLot(){
   if(lotMode==='rect'){
     const w=pv('lot-w'),d=pv('lot-d');if(!(w>0&&d>0))return null;
-    const des=['front',$('corner-lot')&&$('corner-lot').checked?'corner':'side','rear','side'];
+    const corner=$('corner-lot')&&$('corner-lot').checked,right=cornerStreetSide()==='right';
+    const des=['front',corner&&right?'corner':'side','rear',corner&&!right?'corner':'side'];
     return{pts:[[0,0],[w,0],[w,d],[0,d]],des,street:des.map(x=>x==='front'||x==='corner'),from:'rect'};
   }
   if(lotMode!=='poly'||polyPoints.length<3)return null;
@@ -3577,6 +3588,11 @@ async function openPlatSketch(){
 }
 
 // ═══════════════════ BUILDABLE AREA ═══════════════════
+// v8.29: which side of a Rectangle corner lot the side street is on, for a person standing in the front street facing
+// the lot ('left' | 'right'). drawDiagram() and sketchLot() place the corner side setback by it; the envelope's size
+// (sides + corner) doesn't depend on it. A deal saved before v8.29 has no choice and opens on 'left': the side
+// drawDiagram() always drew it on (the page's right, with the front at the top).
+function cornerStreetSide(){return ($('corner-street-side')||{}).value==='right'?'right':'left';}
 function calcBuildable(){
   const front=pv('sb-front'),rear=pv('sb-rear'),sides=pv('sb-sides'),corner=edgeSetbackFt('corner');
   const minW=pv('sb-minw');
@@ -3585,6 +3601,7 @@ function calcBuildable(){
   if(lotMode === 'rect'){
     const w=pv('lot-w'),d=pv('lot-d');
     const isCorner=$('corner-lot')&&$('corner-lot').checked;
+    {const r=$('corner-street-row');if(r)r.style.display=isCorner?'':'none';}   // v8.29: asked only for a corner lot
     const overrideSF=pv('buildable-override'),lotSFManual=pv('lot-sf');
     const ww=$('width-warn');
     if(ww&&minW>0&&w>0&&w<minW){ww.style.display='';ww.textContent=`⚠ Lot width (${w} ft) is below the zone minimum (${minW} ft). Verify with the city.`;}
@@ -3788,8 +3805,11 @@ function drawDiagram(){
   const pad=40,scale=Math.min((W-pad*2)/w,(H-pad*2)/d);
   const ox=(W-w*scale)/2,oy=(H-d*scale)/2;
   if(!lotImageObj){ctx.strokeStyle='rgba(16,37,56,0.25)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.strokeRect(ox,oy,w*scale,d*scale);ctx.setLineDash([]);}
-  // the corner side setback draws on the RIGHT (x = W); the Plat Sketch hand-off's rect branch relies on that
-  const sL=sides,sR=isCorner?corner:sides;
+  // v8.29: the front street is at the TOP, so a person standing in it facing the lot has their right on the page's
+  // LEFT. A side street on their right draws on the left (x = 0), on their left on the right: the Plat Sketch payload's
+  // picture (sketchLot(), front at the bottom) turned 180°, not mirrored.
+  const cornerLeft=isCorner&&cornerStreetSide()==='right';
+  const sL=cornerLeft?corner:sides,sR=isCorner&&!cornerLeft?corner:sides;
   const bx=ox+sL*scale,by=oy+front*scale,bw=(w-sL-sR)*scale,bh=(d-front-rear)*scale;
   if(bw>0&&bh>0){
     ctx.fillStyle='rgba(94,128,149,0.15)';ctx.fillRect(bx,by,bw,bh);
@@ -3804,10 +3824,9 @@ function drawDiagram(){
   ctx.textAlign='center';
   if(front>0)ctx.fillText(`Front ${front}'`,W/2,oy+front*scale/2+4);
   if(rear>0)ctx.fillText(`Rear ${rear}'`,W/2,oy+d*scale-rear*scale/2+4);
-  ctx.textAlign='left';if(sides>0)ctx.fillText(`${sides}'`,ox+4,H/2+2);
-  ctx.textAlign='right';
-  if(isCorner&&corner>0)ctx.fillText(`Corner ${corner}'`,W-ox-4,H/2+2);
-  else if(sides>0)ctx.fillText(`${sides}'`,W-ox-4,H/2+2);
+  const sideLbl=c=>c&&corner>0?`Corner ${corner}'`:sides>0?`${sides}'`:'';   // each side's band, the corner's on its side
+  ctx.textAlign='left';ctx.fillText(sideLbl(cornerLeft),ox+4,H/2+2);
+  ctx.textAlign='right';ctx.fillText(sideLbl(isCorner&&!cornerLeft),W-ox-4,H/2+2);
   ctx.textAlign='center';ctx.fillStyle='rgba(62,85,103,0.75)';
   ctx.fillText(`${w}' × ${d}'`,W/2,oy-8);
   if(bw>40&&bh>20){ctx.fillStyle='rgba(59,95,117,0.75)';ctx.fillText('Buildable',bx+bw/2,by+bh/2+4);}
@@ -6273,8 +6292,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.27', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.29', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.29',date:'Oct 2026',name:'Corner lots: which side the side street is on',items:[
+   'A Rectangle corner lot now asks which side the side street is on: Left or Right, standing in the front street facing the lot. It shows once Corner lot is on.',
+   'The diagram draws the corner side setback on that side. Its front street is at the top, so a side street on your right shows on the diagram\u2019s left.',
+   'Sketch a subdivision sends the side street on the same side, so the sketch shows the lot the way it sits in real life: the diagram\u2019s picture turned around, not a mirror image.',
+   'The buildable area doesn\u2019t change, because the corner setback takes the same width on either side. Deals saved before this version open on Left, the side the diagram always drew.']},
  {v:'8.27',date:'Oct 2026',name:'Corner lots with Corner Side blank',items:[
    'On a Rectangle corner lot with the Corner Side field blank, the buildable envelope used to take 0 ft on the corner side. It now takes the side setback, as an Irregular lot and the Plat Sketch hand-off already did. A 40 \u00d7 180 N1-B corner lot with Corner Side blank now shows 3,540 sf, not 4,130.',
    'The diagram, the plan fit message and the fit grid follow the same envelope. A Corner Side you type is used as before.',
