@@ -646,6 +646,26 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - When a saved stub reopens on its base row with setbacks that differ from that row, `_zoneRestoreNote` says so.
 
 ### Buildable envelope & plan fit (poly mode, v8.19)
+- **One lot canvas (v8.26).** `#lot-editor-canvas` (step 2, Lot Dimensions) is the only lot drawing, in both lot
+  modes. `drawDiagram()` draws the rect-mode lot on it and defers to `redrawEditor()` in poly mode; `snapshotLotEditor()`
+  is an alias of `drawDiagram()` for old call sites. `#sb-canvas`, the PNG snapshot, `initSnapshotDrag()` and the second
+  copy of the plan overlay are gone. The plan overlay controls (`#plan-overlay-controls`, rotate / units) live under that
+  canvas. Flag any change that brings back a second canvas or a snapshot: two drawings of one lot drifted apart (the
+  plan footprint had two positions, `x/y` and `snapshotX/Y`, that never synced).
+  - **Footprints:** `drawStructuresOnCanvas()` draws the plan footprint (`planOverlay`) and the other structures
+    (`extraStructures`: garage, ADU, shed) and runs one fit test, `footprintFits()`: every corner of the rotated
+    rectangle inside one piece of the envelope (`planOverlay.buildPolys`, px, in poly mode; `buildRect` in rect mode).
+    Other structures keep their position in **feet from the lot's top-left** (`planOverlay.lotOriginPx` + `scale`), so
+    a canvas rescale, a mode switch or a save / restore keeps them in place. They are saved as `structures` in the
+    deal file and **their footprint counts in `calcBUA()`** (`extraStructuresSf()`), nowhere else: not in the fit
+    check, not in cost. Flag a change that adds them to the plan's cost or footprint.
+  - **Typed sides:** the Sides table (`renderSidesTable()`, `onSideInput()`) edits an irregular lot by length and
+    compass bearing (degrees clockwise from north; canvas y down, so bearing b = (sin b, −cos b), the Plat Sketch
+    convention). Editing side i moves vertex i+1 and translates every later vertex, so only the closing side changes
+    length; the closing side is read-only. `fitPolyToCanvas()` widens `canvas-scale-ft` and recentres when a typed
+    side leaves the canvas. Flag a bearing convention change (it must match `sketchLot()` / the hand-off payload).
+  - In rect mode the corner side setback is still drawn on the RIGHT (`sR`), which the Plat Sketch hand-off's rect
+    branch relies on.
 Every County GIS lookup switches the lot to poly mode (`loadParcelPolygon` → `setLotMode('poly')`), so this is the path
 most deals take.
 - **`loadParcelPolygon()` merges, then designates.**
