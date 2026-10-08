@@ -695,10 +695,12 @@ most deals take.
     a side when no front is found (audit G3, G13, G14).
 - **Edges are `'front' | 'rear' | 'side' | 'corner'`.**
   - `edgeSetbackFt()` is the single reader. Corner uses `sb-corner`; a blank Corner Side falls back to `sb-sides`.
-    Rect mode reads it too (v8.27): `calcBuildable()`, `drawDiagram()`, the plan-fit message in `onPlanChange()` and
-    `fitStatus()` take the corner side as `edgeSetbackFt('corner')`, so one corner lot gets the same corner setback in
-    both modes and in the Plat Sketch payload. Flag a `pv('sb-corner')` anywhere else (before v8.27 rect mode read a
-    blank Corner Side as 0 ft: 40×180 N1-B corner lot 4,130 sf instead of 3,540).
+    Rect mode reads it too (v8.27), through one helper since v8.28: `rectEnvelopeFt()` returns the setback rectangle
+    (`bW`, `bD`, and the two side setbacks by role, `sSide` / `sCorner`, with `sCorner = edgeSetbackFt('corner')` on a
+    corner lot). `calcBuildable()`, `drawDiagram()` and `fitStatus()` all take it from there, so one corner lot gets the
+    same corner setback in both modes and in the Plat Sketch payload. Flag a `pv('sb-corner')` anywhere else, or a rect
+    reader that works out the envelope width itself (before v8.27 rect mode read a blank Corner Side as 0 ft: 40×180
+    N1-B corner lot 4,130 sf instead of 3,540).
   - The editor's edge click cycles all four (audit G5).
 - **The envelope is the lot minus each edge's setback band** (`buildEnvelopeFt()`).
   - It is worked as disjoint convex pieces cut with `clipHPLabFt`, then joined back into outlines.
@@ -719,6 +721,14 @@ most deals take.
   - This half-plane reading is stricter on irregular lots with obtuse corners than "distance to the nearest point of
     the lot line". Flag a change that switches between the two without saying so.
 - **Fit check.**
+  - **One verdict, `fitStatus()`** (fits / tight / no; `rotated` only on a rect "fits"). The fit grid, the sub-lot card,
+    the plan comparison (`getReportData().planComp` → PDF), the compare table and the plan-fit message
+    (`renderPlanFitMsg()`, `#plan-fit-msg` / `#cust-fit-msg`, v8.28) all show it. "Tight" is the same rule in both modes:
+    the plan can't sit 5 ft clear of the envelope on every side (rect: under 10 ft to spare in width or depth, in either
+    orientation). Before v8.28 the message worked out its own rect fit with no tight tier, so a plan could read
+    "✓ fits" there and "⚠ Tight" in the PDF. Flag a reader that computes its own fit.
+  - The plan-fit message is drawn by `onPlanChange()` and by `calcBuildable()`, so a lot, setback or corner edit
+    redraws it with the grid (before v8.28 only a plan change did, and it kept the old verdict).
   - A convex envelope uses the exact half-plane solver (`polyIsConvexFt` ignores turns under 1.5°).
   - A nearly convex one gets the exact solver first, then `planFitsSamplingFt()` if that finds no "fits".
   - A non-convex one uses `planFitsSamplingFt()`: the exact solver on the envelope's kernel, then `rectFitsPolyFt()`.
@@ -728,8 +738,10 @@ most deals take.
     5 ft on every edge, cached on the ring as `_e5`). That's the same distance rule the convex path uses.
   - Neither can report a placement that isn't inside the envelope. Flag a corners-only containment test (audit G6).
   - Speed: each verdict is kept on its ring (`_fit`), and one plan's verdict settles smaller or bigger plans (a fit is
-    monotone in size). While a lot corner is dragged, `renderFitCheck()` waits for the release (`_fitHeld`). A first
-    draw on an irregular envelope can still take up to ~200 ms.
+    monotone in size). While a lot corner is dragged, `renderFitCheck()` and `renderPlanFitMsg()` wait for the release
+    (`_fitHeld`), and the canvas's `up()` handler draws them. v8.26 dropped that flush, so after a drag the grid kept
+    its pre-drag verdicts until the next edit; v8.28 restores it. A first draw on an irregular envelope can still take
+    up to ~200 ms.
 - **`redrawEditor()` owns `buildableArea` in poly mode**, as the envelope's area (all pieces). `updatePolyStats()` must
   not assign it (v8.3).
 - **`polyPoints` keep 1/100 px**, not whole pixels, which moved GIS corners up to 0.15 ft.
