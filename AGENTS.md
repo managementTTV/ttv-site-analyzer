@@ -668,8 +668,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     convention). Editing side i moves vertex i+1 and translates every later vertex, so only the closing side changes
     length; the closing side is read-only. Sides commit on `change` (not every keystroke), then `fitPolyToCanvas()`
     refits the lot to ~82% of the canvas (the scale grows or shrinks) and recentres it. Flag a bearing convention change (it must match `sketchLot()` / the hand-off payload).
-  - In rect mode the corner side setback is still drawn on the RIGHT (`sR`), which the Plat Sketch hand-off's rect
-    branch relies on.
+  - In rect mode the corner side setback draws on the side the Side street choice (`#corner-street-side`,
+    `cornerStreetSide()`, v8.29) puts it: the front street is at the top, so the person's **right is the page's left**
+    (`sL`), their left the page's right (`sR`, the default, and where every corner lot drew before v8.29). That is the
+    Plat Sketch payload's picture turned 180°; flag a change that mirrors one of the two instead. `rectEnvelopeFt()`
+    stays orientation-free (`sSide` / `sCorner` by role); the left/right swap happens only where `drawDiagram()` draws.
 Every County GIS lookup switches the lot to poly mode (`loadParcelPolygon` → `setLotMode('poly')`), so this is the path
 most deals take.
 - **`loadParcelPolygon()` merges, then designates.**
@@ -784,7 +787,7 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   Code.gs and publishing a **new version of the existing deployment** (Deploy › Manage deployments › edit), which
   keeps the /exec link.
 
-### Plat Sketch hand-off (v8.24; rectangle lots v8.25)
+### Plat Sketch hand-off (v8.24; rectangle lots v8.25; corner side street v8.29)
 Lot (Site Intelligence step 2) has **Sketch a subdivision** (`openPlatSketch()`). It hands the lot to the Plat Sketch
 page, Pat's subdivision sketcher: a claude.ai artifact at `PLAT_SKETCH_URL`, the **"Analyzer edition"** (her page plus
 the import hook). Pat's own artifact has no hook and stays as she built it (Brian, 2026-10-07), so don't point
@@ -805,9 +808,15 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   says which (`gis` / `editor` / `rect`). Flag a GIS lot sent through the canvas, or a ring sent after the editor stopped
   showing it.
 - **A Rectangle lot (v8.25)** goes as `lot-w` × `lot-d`: points (0,0), (W,0), (W,D), (0,D), north = +y, edges
-  `[front, side, rear, side]`, `source.from = 'rect'`. The Corner lot box makes edge 1 (the right-hand side, where
-  `drawDiagram()` draws the corner setback) `corner`, so it carries the corner side setback and is ticked as a street,
-  matching rect `calcBuildable()`'s `sides + corner`. The rect payload is the rectangle only: `lot-sf` and
+  `[front, side, rear, side]`, `source.from = 'rect'`. With Corner lot ticked, one side edge is `corner`: it carries
+  the corner side setback and is ticked as a street, matching rect `calcBuildable()`'s `sides + corner`. Which one is
+  the **Side street on the Left / Right** choice (v8.29), shown only while Corner lot is on, read standing in the
+  front street facing the lot: the payload's front is at the bottom and that person looks north, so **Right = edge 1
+  (x = W), Left = edge 3 (x = 0)**. `drawDiagram()` (front at the top) draws the same lot turned 180°: Right on the
+  page's left. Left is the default and what a deal saved before v8.29 opens on (it keeps the diagram where it always
+  was; v8.25's payload sent edge 1, i.e. Right). The choice saves with the deal as a field and goes and comes back with
+  `clearGisSite()` / `putBackGisSite()`; it is in no calculation, `getReportData()` or storage key. Flag a mapping that
+  mirrors the diagram instead of rotating it. The rect payload is the rectangle only: `lot-sf` and
   `buildable-override` don't travel, so a typed Lot Area off W × D by 1 sf or more, or an override, turns the note amber.
   These warnings are appended to a "Copied" note that is still showing.
 - **`_gisParcel` sits outside `_lastGis` on purpose.** `_lastGis` is in `getReportData().gis` and `serializeDeal()`, so
