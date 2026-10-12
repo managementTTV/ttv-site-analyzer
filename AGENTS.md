@@ -919,11 +919,13 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
   - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$263,493** at the 9.75% default (it was
     $262,309 at 10% through v8.29), lot factor $25,850. Base interest $38,425, profit $117,845 per the report.
-  - **Reference hash (v8.30): `c7e8f10b0bd7`** (v8.19–v8.29: `882293828f24`, the 10% rate). v8.34 adds
-    `compStats.cap`, so the hash moves with no change to any figure: on 2026-10-12, with the county's
-    `TaxParcel_camadata` layer empty (which blanks the GIS assessor block), main gave `31e8e99b1fe8` and v8.34
-    `d5b26a3d3bfb` (`31e8e99b1fe8` with `cap` deleted). Re-record it once the county layer is back or the gis.js
-    fallback ships; until then compare main and branch in the same run, and Max land $263,493. Recipe: a fresh page, 2723
+  - **Reference hash (v8.35, 2026-10-12): `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
+    county's backup tables (`gis.cama.source` "… (backup tables)"). History, no figure moving at any step:
+    `c7e8f10b0bd7` (v8.30 on 10/08, main layer up); `31e8e99b1fe8` (v8.31–v8.33 while `TaxParcel_camadata` was empty
+    and the assessor block blank); `d5b26a3d3bfb` (v8.34 adds `compStats.cap`); `ae9025aadcaa` (v8.35 brings the
+    block back from the backup; `f88547f59dfe` on both v8.34 and v8.35 with `gis.cama` deleted). When the county
+    repairs its layer the block's `source` (and the county's newer address for the lot) moves the hash again:
+    re-record it then. Until then compare main and branch in the same run. Recipe: a fresh page, 2723
     Dellinger Dr / Charlotte / 28269 via `gisLookup()`, land 75000, Base $/sf 265, Dayton Townhomes, Units 3; sha-256
     of `JSON.stringify(getReportData())` with `date`, `gis.ts` and `gis.mpt` deleted, first 12 hex. Run Dellinger
     before any rect case (a rect run first changes `lotW`/`lotD`).
