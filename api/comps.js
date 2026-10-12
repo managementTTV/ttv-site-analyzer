@@ -141,6 +141,8 @@ async function camaFetch(pids, errs, used){
         outFields:'pid,address,yearbuilt,heatedarea,bedrooms,fullbath,halfbath,grade,'
                  +'landuse_description,xcoord,ycoord,gisacres,neighbordesc,bldgtype',
         returnGeometry:'false', f:'json'});
+      // one row per building; a lot with two buildings comes back twice and the last row wins (audit C-L4, as before
+      // v8.34). The backup reads building 1 only.
       (j.features||[]).forEach(f=>out.set(f.attributes.pid, f.attributes));
     }catch(e){ mainErr = 'cama: '+e.message; }
     // the PIDs the main layer didn't answer: all of them while it's empty, a fresh split now and then otherwise
@@ -150,7 +152,7 @@ async function camaFetch(pids, errs, used){
     try{
       const [pj, bj] = await Promise.all([
         ajPost(`${CAMA_PARCELS}/query`, {where:`parcelid IN (${list2})`,
-          outFields:'parcelid,yearid,streetnumber,streetname,gis1,gis2,num_heatedarea,legalacres,neighborhood_description,landuse_description',
+          outFields:'parcelid,yearid,location_address,streetnumber,streetname,gis1,gis2,num_heatedarea,legalacres,neighborhood_description,landuse_description',
           returnGeometry:'false', f:'json'}),
         ajPost(`${CAMA_BUILDINGS}/query`, {where:`parcelid IN (${list2}) AND buildingsequence=1`,
           outFields:'parcelid,yearid,yearbuilt,grade,buildingtype,bedrooms,fullbath,halfbath,finishedarea',
@@ -161,7 +163,9 @@ async function camaFetch(pids, errs, used){
       const P = latest(pj), B = latest(bj);
       P.forEach((a, pid)=>{
         const b = B.get(pid) || {};
-        out.set(pid, {pid, address:[a.streetnumber, a.streetname].filter(Boolean).join(' ').trim() || null,
+        // location_address is the main layer's own address format ("15004 ANNAN CT CHARLOTTE NC"); a pre-v8.34 row
+        // and a backup row for the same sale then read the same
+        out.set(pid, {pid, address:(a.location_address||'').trim() || [a.streetnumber, a.streetname].filter(Boolean).join(' ').trim() || null,
           yearbuilt:b.yearbuilt||null, heatedarea:a.num_heatedarea!=null ? a.num_heatedarea : (b.finishedarea||null),
           bedrooms:b.bedrooms||null, fullbath:b.fullbath||null, halfbath:b.halfbath||null, grade:b.grade||null,
           landuse_description:a.landuse_description||null, xcoord:num(a.gis2), ycoord:num(a.gis1),
