@@ -89,10 +89,10 @@ const CHECKS = [
   // area's rate. 311 complaints are shown, not judged (info): who calls 311 varies street by street, and a street whose
   // new neighbours call more would read worse for it.
   {key:'cases_per100', label:`Code violations, last ${RECORD_MONTHS} months (per 100 parcels)`, gap:'rel', records:true,
-    enough:(s,n)=>s.cases!=null && n.cases!=null && s.parcels>=5 && n.parcels>=10,
+    enough:(s,n)=>s.cases!=null && n.cases!=null && s.record_parcels>=5 && n.record_parcels>=10,
     weaker:(g,s)=>s.cases>=3 && g>=1},
   {key:'complaints_per100', label:`311 condition complaints, last ${RECORD_MONTHS} months (per 100 parcels)`, gap:'rel', records:true, info:true,
-    enough:(s,n)=>s.complaints!=null && n.complaints!=null && s.parcels>=5 && n.parcels>=10,
+    enough:(s,n)=>s.complaints!=null && n.complaints!=null && s.record_parcels>=5 && n.record_parcels>=10,
     more:(g,s)=>s.complaints>=3 && g>=1},
 ];
 
@@ -109,7 +109,8 @@ const SR311_LAYER = 'https://gis.charlottenc.gov/arcgis/rest/services/ODP/Servic
 const CE_AREA_LAYER = 25;   // Accela "Code Enforcement Service Areas"
 const AADT = 'https://services.arcgis.com/NuWFvHYDMVmmxMeM/ArcGIS/rest/services/NCDOT_AADT_Traffic_Segmentation/FeatureServer';
 const AADT_LAYERS = [1, 2, 3];   // segments: secondary / non-system, primaries, interstates (layer 0 is count stations)
-const RECORD_PID_CHUNK = 500, OID_CHUNK = 500, RECORD_POOL = 4;
+const OID_CHUNK = 500, RECORD_POOL = 4;
+const RECORD_PAD_DEG = 0.002;   // ~700 ft around the parcels' points: a record's point can sit off its parcel's centre
 // The City's 311 server can stall for a minute; the records and the traffic count get this long between them, then
 // give up (an errors entry), so they never hold up the rest of the street check.
 const RECORDS_MS = 10000;
@@ -123,87 +124,95 @@ const CONFIRMED = "(Conclusion LIKE '%Compliance%' OR Conclusion = 'Vehicle Towe
 // housing code) cases count whole. The City's "Parking" case type isn't lawn parking (it doesn't cite 14-216), so lawn
 // parking comes only from the citation.
 export const CASE_KINDS = [
-  {key:'overgrowth', one:'overgrown yard', many:'overgrown yards', pats:['10-155%Overgrown vegetation']},
-  {key:'vehicles', one:'junked or abandoned vehicle', many:'junked or abandoned vehicles',
-    pats:['10-167%Junked Motor Vehicle', '10-166%Hazardous vehicle', '10-165%Abandoned vehicle']},
-  {key:'lawn_parking', one:'car parked on the lawn', many:'cars parked on the lawn', pats:['14-216%Parking on the Lawn']},
-  {key:'junk', one:'junk, neglect or dumping case', many:'junk, neglect or dumping cases', pats:['10-136%Neglect of a Premise', '10-138%Illegal dumping']},
+  {key:'overgrowth', pats:['10-155%Overgrown vegetation']},
+  {key:'vehicles', pats:['10-167%Junked Motor Vehicle', '10-166%Hazardous vehicle', '10-165%Abandoned vehicle']},
+  {key:'lawn_parking', pats:['14-216%Parking on the Lawn']},
+  {key:'junk', pats:['10-136%Neglect of a Premise', '10-138%Illegal dumping']},
 ];
-const HOUSING_KIND = {key:'housing', one:'housing-code repair', many:'housing-code repairs'};
 // 311 complaints by request type, and by keyword in TITLE for the City's catch-all "HNS HEALTH AND SANITATION" (the
 // biggest condition type: "High weeds & grass, junk in yard, etc."). Only these three; the catch-all's generic title,
-// HNS HOUSING (mostly indoor repairs) and the street-service types aren't counted.
+// HNS HOUSING (mostly indoor repairs) and the street-service types aren't counted. The words for each kind live in
+// index.html (streetRecordsHtml()).
+const COMPLAINT_TYPES = ['HNS HEALTH AND SANITATION', 'DUMPING IN STREET/ROW', 'BOARDED UP STRUCTURE', 'PARKING ON LAWN WORKDAYS', 'PARKING ON LAWN OFFHOURS'];
 const HS = "REQUEST_TYPE='HNS HEALTH AND SANITATION'", T = w => `UPPER(TITLE) LIKE '%${w}%'`;
 export const COMPLAINT_KINDS = [
-  {key:'yard', one:'overgrown or junky yard', many:'overgrown or junky yards',
-    where:`((${HS} AND (${T('WEED')} OR ${T('GRASS')} OR ${T('TRASH')} OR ${T('DUMP')} OR ${T('DEBRIS')} OR (${T('JUNK')} AND NOT ${T('VEHICLE')}))) OR REQUEST_TYPE='DUMPING IN STREET/ROW')`},
-  {key:'vehicles', one:'junk, abandoned or lawn-parked car', many:'junk, abandoned or lawn-parked cars',
-    where:`((${HS} AND (${T('VEHICLE')} OR ${T('LAWN')})) OR REQUEST_TYPE LIKE 'PARKING ON LAWN%')`},
-  {key:'boarded', one:'boarded-up house', many:'boarded-up houses', where:`(REQUEST_TYPE='BOARDED UP STRUCTURE' OR ${T('BOARDED')})`},
+  {key:'yard', where:`((${HS} AND (${T('WEED')} OR ${T('GRASS')} OR ${T('TRASH')} OR ${T('DUMP')} OR ${T('DEBRIS')} OR (${T('JUNK')} AND NOT ${T('VEHICLE')}))) OR REQUEST_TYPE='DUMPING IN STREET/ROW')`},
+  {key:'vehicles', where:`((${HS} AND (${T('VEHICLE')} OR ${T('PARKING')} OR ${T('PARKED')})) OR REQUEST_TYPE LIKE 'PARKING ON LAWN%')`},
+  {key:'boarded', where:`(REQUEST_TYPE='BOARDED UP STRUCTURE' OR ${T('BOARDED')})`},
 ];
 
 const isoDay = ms => new Date(ms).toISOString().slice(0,10);
 const chunked = (a, n) => { const out=[]; for(let i=0; i<a.length; i+=n) out.push(a.slice(i, i+n)); return out; };
-const inList = (field, ids) => `${field} IN (${ids.map(p=>`'${sq(p)}'`).join(',')})`;
+const pidKey = v => String(v||'').trim().toUpperCase();
 // fn over items, at most n at a time, results in input order
 async function pool(items, n, fn){
   const out = new Array(items.length); let next = 0;
   await Promise.all(Array.from({length:Math.min(n, items.length)}, async ()=>{ while(next < items.length){ const k = next++; out[k] = await fn(items[k]); } }));
   return out;
 }
-async function countOf(layer, where, fetchSignal){ return (await ajPost(`${layer}/query`, {where, returnCountOnly:'true', f:'json'}, fetchSignal)).count || 0; }
 async function idsOf(layer, where, fetchSignal){ return (await ajPost(`${layer}/query`, {where, returnIdsOnly:'true', f:'json'}, fetchSignal)).objectIds || []; }
-async function countByPids(layer, field, where, pids, fetchSignal){
-  const n = await pool(chunked(pids, RECORD_PID_CHUNK), RECORD_POOL, c=>countOf(layer, `${inList(field, c)} AND ${where}`, fetchSignal));
-  return n.reduce((t, x)=>t+x, 0);
+// The box around these parcels' points (CAMA: latitude in xcoord, longitude in ycoord) and the lot, padded, as an
+// ArcGIS spatial filter. The City's layers answer a box in well under 2 s; a list of parcel ids in the where can stall
+// the 311 layer for a minute, so the records are fetched by box and kept by parcel id here.
+function boxAround(rows, lat, lng){
+  let x0 = lng, x1 = lng, y0 = lat, y1 = lat;
+  rows.forEach(r=>{ const la = num(r.xcoord), lo = num(r.ycoord); if(la==null || lo==null) return;
+    x0 = Math.min(x0, lo); x1 = Math.max(x1, lo); y0 = Math.min(y0, la); y1 = Math.max(y1, la); });
+  return {geometry:JSON.stringify({xmin:x0-RECORD_PAD_DEG, ymin:y0-RECORD_PAD_DEG, xmax:x1+RECORD_PAD_DEG, ymax:y1+RECORD_PAD_DEG,
+    spatialReference:{wkid:4326}}), geometryType:'esriGeometryEnvelope', inSR:'4326', spatialRel:'esriSpatialRelIntersects'};
 }
-// Confirmed code violations on these parcels since `since`: {total, by:{overgrowth, vehicles, lawn_parking, junk, housing}}.
-// A case citing two sections counts once in total and once under each.
-async function caseCounts(pids, since, fetchSignal){
-  const base = `CaseType='Nuisance' AND DateCreated >= DATE '${since}' AND ${CONFIRMED}`;
-  const housingWhere = `CaseType='Housing' AND DateCreated >= DATE '${since}' AND ${CONFIRMED}`;
-  const [idLists, housing] = await Promise.all([
-    pool(chunked(pids, RECORD_PID_CHUNK), RECORD_POOL, c=>idsOf(CE_LAYER, `${inList('ParcelId', c)} AND ${base}`, fetchSignal)),
-    countByPids(CE_LAYER, 'ParcelId', housingWhere, pids, fetchSignal)]);
-  const ids = idLists.flat(), any = new Set(), by = {};
-  await pool(CASE_KINDS, RECORD_POOL, async k=>{
-    const like = k.pats.map(p=>`DetailedDescription LIKE '%${sq(p)}%'`).join(' OR '), hit = new Set();
-    for(const c of chunked(ids, OID_CHUNK)) (await idsOf(CE_LAYER, `OBJECTID IN (${c.join(',')}) AND (${like})`, fetchSignal)).forEach(id=>{ hit.add(id); any.add(id); });
-    by[k.key] = hit.size;
+// Each record id's kinds, matched on the City's server on ids only (no text comes back): kinds[i].where(...) per chunk.
+async function kindsOf(layer, ids, kinds, whereFor, fetchSignal){
+  const map = new Map();
+  await pool(kinds, RECORD_POOL, async k=>{
+    for(const c of chunked(ids, OID_CHUNK)) (await idsOf(layer, `OBJECTID IN (${c.join(',')}) AND ${whereFor(k)}`, fetchSignal))
+      .forEach(id=>{ if(!map.has(id)) map.set(id, new Set()); map.get(id).add(k.key); });
   });
-  by.housing = housing;
-  return {total:any.size + housing, by};
+  return map;
 }
-// 311 condition complaints on these parcels in [since, until): {total, by:{yard, vehicles, boarded}}. The 311 layer is
-// slow on anything but its object ids (1-2 s a query), so it's asked once per parcel chunk for the condition request
-// types (ids back), and each kind is then matched on those ids.
-const COMPLAINT_TYPES = ['HNS HEALTH AND SANITATION', 'DUMPING IN STREET/ROW', 'BOARDED UP STRUCTURE', 'PARKING ON LAWN WORKDAYS', 'PARKING ON LAWN OFFHOURS'];
-async function complaintCounts(pids, since, until, fetchSignal){
-  const base = `RECEIVED_DATE >= DATE '${since}' AND RECEIVED_DATE < DATE '${until}' AND REQUEST_TYPE IN (${COMPLAINT_TYPES.map(t=>`'${t}'`).join(',')})`;
-  const ids = (await pool(chunked(pids, RECORD_PID_CHUNK), RECORD_POOL, c=>idsOf(SR311_LAYER, `${inList('PID', c)} AND ${base}`, fetchSignal))).flat();
-  const any = new Set(), by = {};
-  await pool(COMPLAINT_KINDS, RECORD_POOL, async k=>{
-    const hit = new Set();
-    for(const c of chunked(ids, OID_CHUNK)) (await idsOf(SR311_LAYER, `OBJECTID IN (${c.join(',')}) AND ${k.where}`, fetchSignal)).forEach(id=>{ hit.add(id); any.add(id); });
-    by[k.key] = hit.size;
+// {total, by} for the records whose parcel is in `pids`. A record with two kinds counts once in total, once under each.
+function tally(rows, pidField, pids, kindMap, keys, wholeKind){
+  const by = {}; keys.forEach(k=>{ by[k] = 0; }); let total = 0;
+  rows.forEach(r=>{
+    if(!pids.has(pidKey(r[pidField]))) return;
+    if(wholeKind && wholeKind(r)){ by[wholeKind(r)]++; total++; return; }
+    const ks = kindMap.get(r.OBJECTID); if(!ks) return;
+    total++; ks.forEach(k=>{ by[k]++; });
   });
-  return {total:any.size, by};
+  return {total, by};
 }
-// The records for the street's parcels and the area's: null outside the City (with no question asked of its records).
-async function conditionRecords(lat, lng, stRows, areaRows, fetchSignal){
+// The City's records for the street's parcels and the area's, last RECORD_MONTHS. {city:false} outside the City's
+// code-enforcement area (asked first, so a town lot sends nothing else to the City).
+async function conditionRecords(lat, lng, stRows, areaRows, fetchSignal, notes){
   const at = {geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint', inSR:'4326', spatialRel:'esriSpatialRelIntersects'};
-  const now = Date.now(), since = isoDay(now - RECORD_MONTHS*30.44*86400000), until = isoDay(now + 86400000);
-  const sP = [...new Set(stRows.map(r=>r.pid))], aP = areaRows ? [...new Set(areaRows.map(r=>r.pid))] : null;
-  // the City check runs alongside the counts (outside the City they come back empty and are dropped)
-  const [city, sc, scomp, demo, ac, acomp] = await Promise.all([
-    ajPost(`${CITY}/${CE_AREA_LAYER}/query`, Object.assign({where:'1=1', returnCountOnly:'true', f:'json'}, at), fetchSignal),
-    caseCounts(sP, since, fetchSignal), complaintCounts(sP, since, until, fetchSignal),
-    sP.length ? countByPids(DEMOLISH_LAYER, 'ParcelId', '1=1', sP, fetchSignal) : 0,
-    aP ? caseCounts(aP, since, fetchSignal) : null, aP ? complaintCounts(aP, since, until, fetchSignal) : null]);
+  const city = await ajPost(`${CITY}/${CE_AREA_LAYER}/query`, Object.assign({where:'1=1', returnCountOnly:'true', f:'json'}, at), fetchSignal);
   if(!(city.count > 0)) return {city:false};
-  return {city:true, months:RECORD_MONTHS, since,
-    street:{parcels:sP.length, cases:sc.total, cases_by:sc.by, complaints:scomp.total, complaints_by:scomp.by, demolition_orders:demo},
-    area: aP ? {parcels:aP.length, cases:ac.total, complaints:acomp.total} : null};
+  const now = Date.now(), since = isoDay(now - RECORD_MONTHS*30.44*86400000), until = isoDay(now + 86400000);
+  const sP = new Set(stRows.map(r=>pidKey(r.pid))), aP = areaRows ? new Set(areaRows.map(r=>pidKey(r.pid))) : null;
+  const box = boxAround(stRows.concat(areaRows||[]), lat, lng);
+  const [ce, sr, demo] = await Promise.all([
+    allRows(CE_LAYER, Object.assign({where:`CaseType IN ('Nuisance','Housing') AND DateCreated >= DATE '${since}' AND ${CONFIRMED}`,
+      orderByFields:'OBJECTID'}, box), 'OBJECTID,ParcelId,CaseType', fetchSignal),
+    allRows(SR311_LAYER, Object.assign({where:`RECEIVED_DATE >= DATE '${since}' AND RECEIVED_DATE < DATE '${until}' AND REQUEST_TYPE IN (${COMPLAINT_TYPES.map(t=>`'${t}'`).join(',')})`,
+      orderByFields:'OBJECTID'}, box), 'OBJECTID,PID', fetchSignal),
+    allRows(DEMOLISH_LAYER, {where:'1=1', orderByFields:'OBJECTID'}, 'OBJECTID,ParcelId', fetchSignal)]);
+  if(ce.truncated || sr.truncated) notes.push('More City records in this area than one lookup returns, so the counts may run low.');
+  const ours = (rows, f) => rows.filter(r=>{ const k = pidKey(r[f]); return sP.has(k) || (aP && aP.has(k)); });
+  const ceRows = ours(ce.rows, 'ParcelId'), srRows = ours(sr.rows, 'PID');
+  const [caseKinds, complaintKinds] = await Promise.all([
+    kindsOf(CE_LAYER, ceRows.filter(r=>r.CaseType==='Nuisance').map(r=>r.OBJECTID), CASE_KINDS,
+      k=>'('+k.pats.map(p=>`DetailedDescription LIKE '%${sq(p)}%'`).join(' OR ')+')', fetchSignal),
+    kindsOf(SR311_LAYER, srRows.map(r=>r.OBJECTID), COMPLAINT_KINDS, k=>k.where, fetchSignal)]);
+  const housing = r => r.CaseType==='Housing' ? 'housing' : null;
+  const caseKeys = CASE_KINDS.map(k=>k.key).concat('housing'), compKeys = COMPLAINT_KINDS.map(k=>k.key);
+  const sc = tally(ceRows, 'ParcelId', sP, caseKinds, caseKeys, housing), scomp = tally(srRows, 'PID', sP, complaintKinds, compKeys);
+  const demolition = demo.rows.filter(r=>sP.has(pidKey(r.ParcelId))).length;
+  const out = {city:true, months:RECORD_MONTHS, since,
+    street:{parcels:sP.size, cases:sc.total, cases_by:sc.by, complaints:scomp.total, complaints_by:scomp.by, demolition_orders:demolition},
+    area:null};
+  if(aP) out.area = {parcels:aP.size, cases:tally(ceRows, 'ParcelId', aP, caseKinds, caseKeys, housing).total,
+    complaints:tally(srRows, 'PID', aP, complaintKinds, compKeys).total};
+  return out;
 }
 // How busy the lot's own street is, from the centreline point in front of the lot:
 //  - aadt: cars a day on the nearest NCDOT traffic segment within TRAFFIC_FT (NCDOT's HPMS file, calendar year 2021;
@@ -365,8 +374,13 @@ function verdictFor(checks, s, area, flags){
   const judged = checks.filter(c=>c.verdict!=='thin' && !info.has(c.key)).length;
   const names = a => a.map(c=>SHORT[c.key]||c.label.toLowerCase()).join(', ');
   const f = flags || {}, extra = [];
-  if(f.busy) extra.push(f.aadt ? `It's a busy road: about ${f.aadt.toLocaleString('en-US')} cars a day (NCDOT, ${AADT_YEAR}).`
-    : `It's a busy road: a City ${f.thoroughfare} thoroughfare.`);
+  if(f.busy){
+    const cars = f.aadt ? `about ${f.aadt.toLocaleString('en-US')} cars a day (NCDOT, ${AADT_YEAR})` : null;
+    const tf = f.thoroughfare==='major' || f.thoroughfare==='freeway' ? `a City ${f.thoroughfare} thoroughfare` : null;
+    // busy on the count leads with the count; busy on the class alone leads with the class (a 5,000-car major road)
+    const parts = (f.aadt >= BUSY_AADT ? [cars, tf] : [tf, cars]).filter(Boolean);
+    extra.push(`It's a busy road: ${parts.join(', ')}.`);
+  }
   if(f.demolition_orders) extra.push(`${f.demolition_orders} parcel${f.demolition_orders===1?' is':'s are'} on the City's demolition-order list.`);
   const add = t => extra.length ? t+' '+extra.join(' ') : t;
   if(s.homes < 3 && !weak.length) return {level:'thin', text:add(`Only ${s.homes} home${s.homes===1?'':'s'} on this stretch of street, too few to compare. Walk it in Street View.`)};
@@ -453,6 +467,7 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
   // v8.38: the City's records and the traffic count, only in the full answer (not mode=view)
   if(!view){ out.params.record_months = RECORD_MONTHS; out.params.busy_aadt = BUSY_AADT; out.records = null; out.traffic = null; }
   const ctx = {};   // camaQuery()'s state for this request
+  let recTimer = null;   // v8.38: the records' deadline, cleared in finally whichever way this ends
   try{
     // 1) the subject: street name, neighbourhood code and a point
     const a = (await camaQuery({pids:[pid]}, CAMA_FIELDS, {ctx, fetchSignal})).rows[0];
@@ -562,10 +577,11 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
 
     // 5) profiles, after one sold-as-vacant check over every home sale either side counts. v8.38: the City's condition
     //    records and the NCDOT traffic count run alongside; either one down costs only itself (an errors entry).
-    const recAbort = new AbortController(), recTimer = setTimeout(()=>recAbort.abort(), RECORDS_MS);
-    const recSignal = () => fetchSignal ? AbortSignal.any([recAbort.signal, fetchSignal()]) : recAbort.signal;
+    const recAbort = new AbortController(); recTimer = setTimeout(()=>recAbort.abort(), RECORDS_MS);
+    // AbortSignal.any is Node 20.3+; without it the connector's per-request signal is dropped here and the deadline still holds
+    const recSignal = () => fetchSignal && AbortSignal.any ? AbortSignal.any([recAbort.signal, fetchSignal()]) : recAbort.signal;
     const late = e => recAbort.signal.aborted ? `didn't answer within ${RECORDS_MS/1000} s` : e.message;
-    const recP = stRows ? conditionRecords(lat, lng, stRows, area ? area.rows : null, recSignal)
+    const recP = stRows ? conditionRecords(lat, lng, stRows, area ? area.rows : null, recSignal, out.notes)
       .catch(e=>{ out.errors.push('records: '+late(e)+' (no City code violations or 311 complaints counted)'); return null; }) : Promise.resolve(null);
     const trafficP = street ? trafficAt(lat, lng, cam, recSignal)
       .catch(e=>{ out.errors.push('traffic: '+late(e)+' (busy road not checked)'); return null; }) : Promise.resolve(null);
@@ -578,15 +594,15 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     if(area) out.neighborhood = Object.assign({label:area.label, kind:area.kind}, profile(area.rows, since, lots));
     if(out.street && out.street.lot_sales_left_out) out.notes.push(`${out.street.lot_sales_left_out} lot purchase${out.street.lot_sales_left_out===1?'':'s'} (sold as vacant) left out of the street's sales.`);
     const [rec, traffic] = await Promise.all([recP, trafficP]);
-    clearTimeout(recTimer);
     out.traffic = traffic;
     if(rec && rec.city === false) out.notes.push('Outside the City of Charlotte’s code-enforcement area, so no City code violations or 311 complaints are counted (the towns keep no open records like these). No records here doesn’t mean a clean street.');
     if(rec && rec.city){
       out.records = rec;
       const per = (k, p) => p.parcels ? Math.round(k/p.parcels*1000)/10 : null;
-      if(out.street) Object.assign(out.street, {cases:rec.street.cases, cases_per100:per(rec.street.cases, rec.street),
+      // record_parcels: distinct parcel ids, the rates' base (the assessor rows can repeat a parcel, one per building)
+      if(out.street) Object.assign(out.street, {record_parcels:rec.street.parcels, cases:rec.street.cases, cases_per100:per(rec.street.cases, rec.street),
         complaints:rec.street.complaints, complaints_per100:per(rec.street.complaints, rec.street)});
-      if(out.neighborhood && rec.area) Object.assign(out.neighborhood, {cases:rec.area.cases, cases_per100:per(rec.area.cases, rec.area),
+      if(out.neighborhood && rec.area) Object.assign(out.neighborhood, {record_parcels:rec.area.parcels, cases:rec.area.cases, cases_per100:per(rec.area.cases, rec.area),
         complaints:rec.area.complaints, complaints_per100:per(rec.area.complaints, rec.area)});
     }
     if(out.street && out.neighborhood){
@@ -602,6 +618,7 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
   }catch(e){
     out.errors.push('fatal: '+e.message);
   }finally{
+    clearTimeout(recTimer);
     // v8.35: say so when any of it came from the county's backup assessor tables
     if(ctx.backup && out.subject && !view) out.notes.unshift(camaBackupNote(ctx));
   }

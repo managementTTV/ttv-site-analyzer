@@ -505,12 +505,17 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     number and title, the same rule as `VIOLATIONS` in mcp.js), plus Housing cases whole. The City's "Parking" case type
     doesn't cite 14-216, so it isn't lawn parking and isn't counted.
   - **311 condition complaints** (`ServiceRequests311`, CC BY 4.0): the condition request types, then `COMPLAINT_KINDS`
-    by type and by keyword in TITLE for the "HNS HEALTH AND SANITATION" catch-all (yard, vehicles, boarded). Shown, never
+    by type and by keyword in TITLE for the "HNS HEALTH AND SANITATION" catch-all (yard: weeds, grass, trash,
+    dumping, debris, junk that isn't a vehicle; vehicles: vehicle, parking, parked; boarded). Shown, never
     judged: the row is `info` and its "Higher" (`more`) never counts as weaker. Who calls 311 varies by street, and new
     neighbours who call more would make a street read worse.
-  - **Counts only.** Ids and counts come back (`returnIdsOnly` / `returnCountOnly`); `Conclusion`, `DetailedDescription`
-    and `TITLE` are matched in the `where` on the City's server and never requested. Flag any `outFields` on these
-    layers, any record text in the answer, or a 311 keyword list that grows past things you see from the street.
+  - **Counts only.** The records are fetched in one box around the street's and the area's parcel points (padded
+    ~700 ft) and kept by parcel id here: Code enforcement returns only `OBJECTID, ParcelId, CaseType`, 311 only
+    `OBJECTID, PID`, demolition orders only `OBJECTID, ParcelId`. Each kind is then matched on the City's server on
+    object ids (`returnIdsOnly`): `Conclusion`, `DetailedDescription` and `TITLE` sit only in the `where` and are never
+    requested. Flag any other `outFields` on these layers, any record text in the answer, or a 311 keyword list that
+    grows past things you see from the street. (A list of parcel ids in the `where` stalls the 311 layer for a minute;
+    a box answers in under 2 s.)
   - **The check row** (`cases_per100`): street vs area per 100 parcels; Weaker = 3+ on the street and at least twice the
     area's rate (an area at 0 compares as "far above"). It joins the verdict like any judged check.
   - **Charlotte only.** Accela layer 25 (Code Enforcement Service Areas) says whether the lot is where the City's
@@ -526,9 +531,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     no traffic (a layer down, or outside the City with no centreline) the in-line sentence is the v8.18 one.
   - **Deadline.** The City's 311 server can stall for a minute, so the records and the traffic count share
     `RECORDS_MS` (10 s) from when they start; past it they give up with an errors entry and the rest of the answer goes
-    out (`no-store`, like any partial answer). The 311 layer is slow on anything but object ids (1-2 s a query), so it's
-    asked once per 500-parcel chunk for ids and each kind is matched on those ids. `vercel.json` gives
-    `api/street.js` a 30 s `maxDuration` (a typical check now takes 5-8 s, up to about 13 s with the deadline).
+    out (`no-store`, like any partial answer). The City check (layer 25) goes first, so a town lot sends nothing else to
+    the City. `vercel.json` gives `api/street.js` a 30 s `maxDuration` (a check takes about 2-6 s; with the deadline
+    the worst case is about 13 s).
   - This changes `/api/street` on purpose (new `records`, `traffic`, `params.record_months` / `busy_aadt`, two check
     rows, the verdict text). `mode=view` is unchanged.
 - **Assessor rows come through `camaQuery()` (v8.35).** One `ctx` per request: once a query falls back to the backup

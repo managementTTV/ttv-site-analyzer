@@ -2921,7 +2921,7 @@ function renderStreetCheck(d){
       :PER[k]?(Math.round(v*10)/10)+' per 100':(Math.round(v*10)/10)+'%';
     const cnt=(k,p)=>k==='sale_psf'?p.sale_count+' sale'+(p.sale_count===1?'':'s'):k==='value_psf'?p.value_count+' homes'
       :k==='below_avg_pct'?p.graded+' graded':k==='new_builds_pct'?p.homes+' homes'
-      :PER[k]?p[PER[k]]+' on '+p.parcels+' parcels':p.parcels+' parcels';
+      :PER[k]?p[PER[k]]+' on '+p.record_parcels+' parcels':p.parcels+' parcels';
     // 'more' is the 311 row's "higher than the area": shown, never counted as weaker (complaints, not findings)
     const CH={weaker:['Weaker','var(--red)'],stronger:['Stronger','var(--green)'],similar:['Similar',dim],thin:['Too few',dim],more:['Higher','var(--amber)']};
     const area=n.kind==='radius'?'Half mile':'Neighbourhood';
@@ -2950,7 +2950,8 @@ function renderStreetCheck(d){
     +' A screening check: it doesn’t change the ARV or any number on The Underwrite, and the thresholds are judgement, not backtested.</div>';
   body.innerHTML=h;
 }
-// v8.38: what the City's records found on the street itself, in words. Counts only; kinds and wording match api/street.js.
+// v8.38: what the City's records found on the street itself, in words. Counts only; the kind keys are api/street.js's
+// CASE_KINDS (+ housing) and COMPLAINT_KINDS, and their words live only here.
 const STREET_CASE_KINDS=[['overgrowth','overgrown yard','overgrown yards'],['vehicles','junked or abandoned vehicle','junked or abandoned vehicles'],
   ['lawn_parking','car parked on the lawn','cars parked on the lawn'],['junk','junk, neglect or dumping case','junk, neglect or dumping cases'],
   ['housing','housing-code repair','housing-code repairs']];
@@ -2960,7 +2961,7 @@ function streetRecordsHtml(d,E){
   const r=d.records;if(!r||!r.city||!r.street)return '';
   const s=r.street,list=(by,kinds)=>kinds.filter(k=>by&&by[k[0]]>0).map(k=>by[k[0]]+' '+(by[k[0]]===1?k[1]:k[2])).join(', ');
   const cases=s.cases?s.cases+' confirmed code violation'+(s.cases===1?'':'s')+' ('+list(s.cases_by,STREET_CASE_KINDS)+')':'no confirmed code violations';
-  const compl=s.complaints?s.complaints+' 311 complaint'+(s.complaints===1?'':'s')+' ('+list(s.complaints_by,STREET_COMPLAINT_KINDS)+')':'no 311 condition complaints';
+  const compl=s.complaints?s.complaints+' complaint'+(s.complaints===1?'':'s')+' to 311 ('+list(s.complaints_by,STREET_COMPLAINT_KINDS)+')':'no condition complaints to 311';
   let h='<div style="font-size:11.5px;color:var(--text-mid);margin-top:6px">On this street, last '+(r.months||24)+' months: '+E(cases)+'; '+E(compl)+'.</div>';
   if(s.demolition_orders)h+='<div style="font-size:11.5px;color:var(--red);margin-top:4px">'+s.demolition_orders+' parcel'+(s.demolition_orders===1?' is':'s are')+' on the City’s demolition-order list.</div>';
   return h+'<div style="font-size:11px;color:var(--text-dim);margin-top:2px">Violations are what an inspector found and the owner or the City fixed; 311 complaints are what someone reported, not checked.</div>';
