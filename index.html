@@ -2153,7 +2153,7 @@ function renderArvCheck(){
   if(v){v.className=t.vet.check?'warn':'ok';
     v.textContent=(t.vet.check?'\u2691 Pat should check this ARV. '+t.vet.reasons.join(' ')
         :'\u2713 No hand check needed: HIGH confidence, not an infill lot'+(t.newBuilds!=null?' ('+t.newBuilds+' new builds within 300 ft)':'')+'.')
-      +' '+(t.psf>0?`The tool said ${fmtPsf(t.psf)}/sf.`:'The tool had no ARV for this lot.');}
+      +(t.psf>0?` The tool said ${fmtPsf(t.psf)}/sf.`:'');}
   const o=arvOverride(),row=$('arv-why-row');
   if(row)row.style.display=o?'':'none';
   if(!o)return;
