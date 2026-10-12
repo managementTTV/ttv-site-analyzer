@@ -152,7 +152,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   $1,000 or more) still count, with a note. Every comps number, whether the table, Apply median, `getReportData()`,
   the PDF or `collectModelInputs().comps`, comes from `readComp()` via `compPPSF()` / `compStats()`. Flag a new
   reader that parses a comp cell another way, or an export that drops `compIssues()`. The notes exist only when
-  there's a problem, so a clean comps table gives the same files as before; since v8.32 `compStats()` also carries
+  there's a problem, so a clean comps table gives the same files as before; since v8.34 `compStats()` also carries
   `cap` (the highest counted sale), so `getReportData()` has one more key.
 - **Plan-comparison ARV overrides are text, read by `readMoneyText()` (v8.12),** the same reader behind `mv()`.
   Blank, unreadable and negative all mean "use the deal's ARV" (`readCmpArv().use` is false), but unreadable and
@@ -237,7 +237,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   once already. Keep the error check in `aj()` and `ajPost()`.
 - **Sale-validity semantics:** blank = arm's length and **Z = builder sale** (the new-build resales
   TTV comps against) are the two market codes, and **TEMP** (recorded, not yet reviewed) counts too,
-  marked unverified (partner decision 2026-10-09, v8.32); everything else is a disqualified transfer.
+  marked unverified (partner decision 2026-10-09, v8.34); everything else is a disqualified transfer.
   Flag a comp filter that drops Z or TEMP, or keeps the rest.
 - Auto-fill is **Mecklenburg-only** by design. Other counties link out to the county
   viewer — don't "fix" that into a broken universal fetch.
@@ -308,7 +308,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 ### Comps (`api/comps.js`, v7.14; team rule v8.23)
 - **Mecklenburg-only**, same rule as the GIS proxy. It joins `TaxParcelSales` to
   `TaxParcel_camadata` on PID because the sales layer carries no building attributes at all.
-- **The assessor join has a backup (v8.32).** `TaxParcel_camadata` came back empty (count 0) from 2026-10-09, and
+- **The assessor join has a backup (v8.34).** `TaxParcel_camadata` came back empty (count 0) from 2026-10-09, and
   every pull found no comps. `camaFetch()` reads the main layer and, for any chunk it gives nothing for, the
   county's `CamaDataTables` (`/3` tb_allparceldata: `gis1` = longitude, `gis2` = latitude; `/1` tb_allbuildings,
   `buildingsequence=1`), mapped to the main layer's field names. A note says when the backup answered. Sales with
@@ -318,14 +318,14 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   (recorded, not yet reviewed by the county; partner decision 2026-10-09). Each row says `unverified: true` for
   TEMP, the page notes it on the row, and `arv.unverified` counts them in the ARV set. Everything else is a
   disqualified transfer. Flag a change that widens this without a reason, or that drops Z or TEMP.
-- **A deed counts once (v8.32, audit C-F2).** The sales layer repeats a multi-parcel deed's whole price on every
+- **A deed counts once (v8.34, audit C-F2).** The sales layer repeats a multi-parcel deed's whole price on every
   parcel. A deed is `legalreference` (book-page, else `transferid`) + date + price. Its parcels come from a
   county-wide look-up of each row's book-page (the other homes of a portfolio often sit outside the box), and a
   parcel is a home when its assessor record has heated area. A deed with two or more homes is a bulk sale and its
   rows are left out (a note counts them); a deed of one home plus parcels with no house counts once, as that
   home's sale (`deed_parcels` on the row). Flag a change that lets
   a bulk deed's total stand as one home's price: it broke the highest-sold cap (Katonah's $4.5M three-parcel deed).
-- **The lot's location never silently goes missing (v8.32, C-F6).** With no assessor record, the subject's
+- **The lot's location never silently goes missing (v8.34, C-F6).** With no assessor record, the subject's
   lat/lng come from its parcel outline (`subject.location_from: 'parcel'`, with a note). If even that fails, a
   flag says the radius and road rule weren't applied. When the roads aren't checked, the flag says so and
   `rule.label` reads "major roads not checked" instead of "this side of the major roads".
@@ -403,19 +403,19 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   Excel export keep working unchanged. Flag a parallel comps model. Since v8.23 the page adds every comp behind
   the suggested ARV (`used: true`), so the table's median is the rule's; with no ARV, the sales that meet the whole
   rule (`meets_rule`), nearest 12. Server text (road and neighbourhood names) goes into the comps box escaped.
-- **One capped ARV everywhere (v8.32, C-F3).** `compStats().cap` is the highest counted Sold $ + Adjustments;
+- **One capped ARV everywhere (v8.34, C-F3).** `compStats().cap` is the highest counted Sold $ + Adjustments;
   `compArv()` caps median × sf at it. The table summary, Apply median / avg, the PDF and the Excel Comps sheet
   (`MIN(MEDIAN(...)*sf, SUMPRODUCT(MAX(C+D)))`) all use it, so on a fresh pull they say what the county box says.
   Flag a reader of `st.median * sf` that skips `compArv()`.
-- **A pull replaces the last pull (v8.32, C-F4).** Pulled rows carry `src:'county'`, `srcPid` (the parcel pulled
-  for) and `cpid` (the comp's parcel). A new pull drops `src:'county'` rows (and untagged pre-v8.32 rows whose notes
+- **A pull replaces the last pull (v8.34, C-F4).** Pulled rows carry `src:'county'`, `srcPid` (the parcel pulled
+  for) and `cpid` (the comp's parcel). A new pull drops `src:'county'` rows (and untagged pre-v8.34 rows whose notes
   end with the tier, `isCountyComp()`), keeps typed rows, and keeps a pulled row you edited (`src:'county-edited'`)
   without adding its sale again. A county row pulled for another parcel is named in `compIssues()`.
-- **The box's Apply belongs to its pull (v8.32, C-F9).** `_countyPull` keeps the pull's search (parcel, product,
+- **The box's Apply belongs to its pull (v8.34, C-F9).** `_countyPull` keeps the pull's search (parcel, product,
   finish, plan sf) and its `retail_psf`. A change to any of them (plan sf, `#comps-product`,
   `#comps-finish`, the parcel) disables Apply and shows the stale line (`checkCountyCompsStale()`, also run from
   `calcAll`). Flag an Apply that bakes a $/sf into its onclick again.
-- **Server errors are errors (v8.32, C-F7).** The server answers 200 with `errors[]`. With no rows and errors the
+- **Server errors are errors (v8.34, C-F7).** The server answers 200 with `errors[]`. With no rows and errors the
   box says the county records didn't answer (red), not "no sales"; with rows it lists them. The empty-result text
   uses the request's window (12 months).
 
@@ -902,9 +902,9 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
   - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$263,493** at the 9.75% default (it was
     $262,309 at 10% through v8.29), lot factor $25,850. Base interest $38,425, profit $117,845 per the report.
-  - **Reference hash (v8.30): `c7e8f10b0bd7`** (v8.19–v8.29: `882293828f24`, the 10% rate). v8.32 adds
+  - **Reference hash (v8.30): `c7e8f10b0bd7`** (v8.19–v8.29: `882293828f24`, the 10% rate). v8.34 adds
     `compStats.cap`, so the hash moves with no change to any figure: on 2026-10-12, with the county's
-    `TaxParcel_camadata` layer empty (which blanks the GIS assessor block), main gave `31e8e99b1fe8` and v8.32
+    `TaxParcel_camadata` layer empty (which blanks the GIS assessor block), main gave `31e8e99b1fe8` and v8.34
     `d5b26a3d3bfb` (`31e8e99b1fe8` with `cap` deleted). Re-record it once the county layer is back or the gis.js
     fallback ships; until then compare main and branch in the same run, and Max land $263,493. Recipe: a fresh page, 2723
     Dellinger Dr / Charlotte / 28269 via `gisLookup()`, land 75000, Base $/sf 265, Dayton Townhomes, Units 3; sha-256

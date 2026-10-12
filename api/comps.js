@@ -7,7 +7,7 @@
 //   TaxParcelSales     -> every recorded transfer with the assessor's sale-validity code
 //   TaxParcel_camadata -> year built, heated area, beds/baths, grade, lat/lng for each parcel
 // The two are joined on PID, because the sales layer carries no building attributes.
-// v8.32: TaxParcel_camadata came back empty (count 0) from 2026-10-09. The same assessor data sits in the county's
+// v8.34: TaxParcel_camadata came back empty (count 0) from 2026-10-09. The same assessor data sits in the county's
 // CamaDataTables (tb_allparceldata + tb_allbuildings), so camaFetch() reads those whenever the main layer gives
 // nothing, and says so in notes. If neither answers, the request reports an error instead of "no sales".
 //
@@ -59,7 +59,7 @@ const PARCEL_LAYER= `${MECK}/TaxParcelBoundaries/MapServer/0`;
 // Newly built parcels often carry no situs address in CAMA yet, so fall back to the county's
 // Master Address Points, which are assigned as soon as the lot is recorded.
 const MAT_LAYER   = `${MECK}/MasterAddressPoints/MapServer/0`;
-// The backup assessor tables (v8.32). tb_allparceldata holds the parcel facts (gis1 = longitude, gis2 = latitude),
+// The backup assessor tables (v8.34). tb_allparceldata holds the parcel facts (gis1 = longitude, gis2 = latitude),
 // tb_allbuildings one row per building (sequence 1 = the main building, which is what TaxParcel_camadata carried).
 const CAMA_PARCELS   = `${MECK}/CamaDataTables/MapServer/3`;
 const CAMA_BUILDINGS = `${MECK}/CamaDataTables/MapServer/1`;
@@ -130,7 +130,7 @@ const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 // Assessor records for a list of PIDs, as a Map pid -> attributes named the way TaxParcel_camadata names them
 // (address, xcoord = latitude, ycoord = longitude, yearbuilt, heatedarea, bedrooms, fullbath, halfbath, grade,
 // landuse_description, gisacres, neighbordesc, bldgtype). Main layer first; for the PIDs it gives nothing for, the
-// backup tables (v8.32). used.backup counts the PIDs the backup answered; errors go to errs.
+// backup tables (v8.34). used.backup counts the PIDs the backup answered; errors go to errs.
 async function camaFetch(pids, errs, used){
   const out = new Map();
   for(let i=0;i<pids.length;i+=60){
@@ -257,7 +257,7 @@ export default async function handler(req, res){
           neighborhood:a.neighbordesc||null, existing_year_built:a.yearbuilt||null,
           existing_heated_sf:a.heatedarea||null, land_use:a.landuse_description||null}); }
     }
-    // C-F6 (v8.32): a lot with no assessor record yet (a fresh split, like the Dellinger sub-lots) used to lose its
+    // C-F6 (v8.34): a lot with no assessor record yet (a fresh split, like the Dellinger sub-lots) used to lose its
     // location, and with it the radius clip and the major-road rule, without a word on the page. Its parcel outline
     // still says where it is, so take the centre of that instead.
     if(subjLat==null || subjLng==null){
@@ -299,7 +299,7 @@ export default async function handler(req, res){
       returnGeometry:'false', f:'json'});
     const allSales = (sj.features||[]).map(f=>f.attributes);
     out.notes.push(`${allSales.length} recorded sales in the ${radius} mi search box since ${since}`);
-    // C-F2 (v8.32): one deed can convey several parcels, and the sales layer repeats the deed's whole price on every
+    // C-F2 (v8.34): one deed can convey several parcels, and the sales layer repeats the deed's whole price on every
     // one of them. A deed is its book-page (legalreference) on one date at one price; transferid when there's no
     // book-page. parcelsOfDeed holds the distinct parcels each deed covers in the search box; step 5b adds the ones
     // outside it.
@@ -334,7 +334,7 @@ export default async function handler(req, res){
     const pids = market.map(a=>a.parcelid);
     const cama = await camaFetch(pids, out.errors, joinUsed);
     if(joinUsed.backup) out.notes.push('County data source down — using backup: the building records came from the county’s backup assessor tables.');
-    // C-F7 (v8.32): sales with no building record at all is the assessor data being down, not "no new builds here"
+    // C-F7 (v8.34): sales with no building record at all is the assessor data being down, not "no new builds here"
     if(!cama.size) out.errors.push(`county_records: no assessor record answered for any of the ${pids.length} sales, so no comp can be built`);
 
     // 4b) fill in addresses the assessor record is missing (common on brand-new lots)
@@ -357,7 +357,7 @@ export default async function handler(req, res){
     // 5) build the comp rows
     const roads = await roadsP;
     const grid = (roads && subjLat!=null && subjLng!=null) ? roadGrid({lat:subjLat,lng:subjLng}, roads) : null;
-    // v8.32: said in flags (which the page shows) and in the rule line, not only in notes
+    // v8.34: said in flags (which the page shows) and in the rule line, not only in notes
     if(!grid) out.flags.push(`Major roads not checked (${roads?'the lot’s location is unknown':'the City road layer didn’t answer'}): sales on both sides of a major road count as this side.`);
     const rows = []; let dropped = 0, predates = 0;
     market.forEach(a=>{
