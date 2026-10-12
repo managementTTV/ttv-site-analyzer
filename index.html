@@ -614,6 +614,14 @@ body[data-screen="1"] #sub-nav-site,body[data-screen="2"] #sub-nav-uw{display:fl
 .lever-arv-head{font-weight:700;font-size:13px;color:var(--ink);margin-bottom:10px}
 .lever-arv-head span{display:block;font-weight:500;font-size:11px;color:var(--text-dim);margin-top:2px}
 .lever-arv-head a{color:var(--ink)}
+/* v8.37: the tool's ARV verdict and Pat's one-tap reason */
+.arv-check{margin-top:4px;font-size:12px;line-height:1.45}
+.arv-check .warn,.arv-check .ok{font-size:12px}
+#arv-why-head{margin-top:8px;font-weight:600;color:var(--ink)}
+.arv-why{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+.arv-why button{font:inherit;font-size:11.5px;padding:3px 10px;border-radius:14px;border:1px solid var(--border-bright);background:var(--paper);color:var(--ink);cursor:pointer}
+.arv-why button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.arv-why input[type=text]{flex:1 1 180px;min-width:140px;font-size:11.5px}
 .board-head,.uw-inputs-head{font-weight:700;font-size:15px;color:var(--ink);margin:22px 0 10px}
 .board-head span,.uw-inputs-head span{font-weight:500;font-size:11.5px;color:var(--text-dim);margin-left:8px}
 .uw-inputs-head{margin-top:30px;padding-top:18px;border-top:1px solid var(--border-bright)}
@@ -748,7 +756,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.34 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.37 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1116,6 +1124,22 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="field"><label for="arv-w">Worst ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-w" placeholder="auto −10%" oninput="calcScenarios()"></div></div>
         <div class="field"><label for="arv-b">Base ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-b" placeholder="your comp $/sf" oninput="calcScenarios()"></div></div>
         <div class="field"><label for="arv-best">Best ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()"></div></div>
+      </div>
+      <div id="arv-check" class="arv-check" style="display:none">
+        <div id="arv-check-vet" role="status"></div>
+        <div id="arv-why-row" style="display:none">
+          <div id="arv-why-head"></div>
+          <div class="arv-why" role="group" aria-label="Why Base ARV differs from the tool&rsquo;s">
+            <button type="button" data-why="infill" onclick="setArvWhy('infill')">Infill</button>
+            <button type="button" data-why="road" onclick="setArvWhy('road')">Across a busy road</button>
+            <button type="button" data-why="older" onclick="setArvWhy('older')">Older stock</button>
+            <button type="button" data-why="street" onclick="setArvWhy('street')">Weaker street</button>
+            <button type="button" data-why="finish" onclick="setArvWhy('finish')">Finish</button>
+            <button type="button" data-why="other" onclick="setArvWhy('other')">Other</button>
+            <input type="text" id="arv-why-note" maxlength="120" placeholder="a few words (optional)" aria-label="Why, in a few words">
+            <input type="hidden" id="arv-why-code">
+          </div>
+        </div>
       </div>
     </div>
     <div id="lever-warn" class="warn" style="display:none" role="status"></div>
@@ -1803,7 +1827,9 @@ function renderShortlist(){
 }
 function addComp(){COMPS.push({addr:'',sqft:'',sold:'',adj:'',date:'',dist:'',mom:'',notes:'',url:''});renderComps();renderShortlist();}
 function removeComp(i){COMPS.splice(i,1);renderComps();}
-function onComp(i,f,v){if(COMPS[i]){if(isCountyComp(COMPS[i]))COMPS[i].src='county-edited';COMPS[i][f]=v;renderComps();}}
+function onComp(i,f,v){if(COMPS[i]){if(isCountyComp(COMPS[i]))COMPS[i].src='county-edited';
+  if(['sqft','sold','adj'].includes(f)){delete COMPS[i].out;delete COMPS[i].outWhy;}   // v8.37: a fixed outlier counts
+  COMPS[i][f]=v;renderComps();}}
 // v8.34 (C-F4): rows a county pull added carry src:'county', the parcel they were pulled for (srcPid) and the comp's own
 // parcel (cpid), so the next pull replaces them instead of stacking a second set on top. A pulled row you edit becomes
 // yours (src:'county-edited'): a pull keeps it and doesn't add that sale again. Rows pulled before v8.34 carry no tag;
@@ -1837,15 +1863,17 @@ function readCompCell(c,f){
 }
 // One comp as the stats see it: {sqft, sold, adj, ppsf, bad:{field:msg}, odd:{field:msg}, left, notes}. ppsf is 0
 // (not counted) when the row is incomplete (no Sq Ft or no Sold $, even with an adjustment typed), has a cell that
-// can't be read, or its adjusted price is $0 or less.
+// can't be read, its adjusted price is $0 or less, or the county pull left it out (out:'odd_sf', v8.37).
 // left: the row is complete enough to count but is left out; notes: the sentences for compIssues().
 function readComp(c){
   const r={bad:{},odd:{},notes:[]};
   Object.keys(COMP_FIELDS).forEach(f=>{const x=readCompCell(c,f);r[f]=x.v;if(x.msg)r.bad[f]=x.msg;});
-  const bad=Object.values(r.bad), ap=r.sold+r.adj;
-  r.ppsf=!bad.length&&r.sqft>0&&r.sold>0&&ap>0?ap/r.sqft:0;
-  r.left=bad.length>0||(r.sqft>0&&r.sold>0&&ap<=0);
+  const bad=Object.values(r.bad), ap=r.sold+r.adj, out=c.out==='odd_sf';
+  r.ppsf=!bad.length&&!out&&r.sqft>0&&r.sold>0&&ap>0?ap/r.sqft:0;
+  r.left=bad.length>0||out||(r.sqft>0&&r.sold>0&&ap<=0);
   if(bad.length)r.notes.push(bad.join('; ')+', so it’s left out of the $/sf stats.');
+  // v8.37 (Q4): the county pull's outlier guard left it out; fixing its Sq Ft or Sold $ makes it count (onComp)
+  else if(out)r.notes.push(`Left out by the county pull: ${c.outWhy||'its county square footage looks wrong'}. Fix its Sq Ft or Sold $ to count it.`);
   else if(r.left)r.notes.push(`Sold $ + Adjustments is ${ap<0?'−'+fmtRuleUSD(-ap):fmtRuleUSD(ap)}, so it’s left out of the $/sf stats.`);
   if(r.sold>0&&r.sold<COMP_FIELDS.sold.typoBelow){
     r.odd.sold=`Sold $ is ${fmtRuleUSD(r.sold)}. Did you mean ${fmtRuleUSD(r.sold*1000)}?`;r.notes.push(r.odd.sold);}
@@ -1899,7 +1927,7 @@ function renderComps(){
       +`<td><input type="text" value="${escAttr(c.sqft)}" placeholder="1,800" onchange="onComp(${i},'sqft',this.value)" style="width:74px"${mark('sqft')}></td>`
       +`<td><input type="text" value="${escAttr(c.sold)}" placeholder="$352,500" onchange="onComp(${i},'sold',this.value)" style="width:98px"${mark('sold')}></td>`
       +`<td><input type="text" value="${escAttr(c.adj)}" placeholder="-40,000" onchange="onComp(${i},'adj',this.value)" style="width:84px"${mark('adj','Signed dollar adjustment added to Sold price (e.g. -40,000 or (40,000))')}></td>`
-      +(r.left?'<td class="ppsf comp-left">left out</td>':`<td class="ppsf${r.odd.ppsf?' comp-odd':''}">${ppsf>0?'$'+ppsf.toFixed(0):'\u2014'}</td>`)
+      +(r.left?`<td class="ppsf comp-left"${c.out&&c.outWhy?` title="${escAttr(c.outWhy)}"`:''}>left out</td>`:`<td class="ppsf${r.odd.ppsf?' comp-odd':''}">${ppsf>0?'$'+ppsf.toFixed(0):'\u2014'}</td>`)
       +`<td><input type="date" value="${escAttr(c.date)}" onchange="onComp(${i},'date',this.value)" style="width:138px"></td>`
       +`<td><input type="text" value="${escAttr(c.dist)}" placeholder="0.4 mi" onchange="onComp(${i},'dist',this.value)" style="width:64px"></td>`
       +`<td><input type="text" value="${escAttr(c.mom)}" placeholder="3" onchange="onComp(${i},'mom',this.value)" style="width:56px"></td>`
@@ -1947,7 +1975,7 @@ async function pullCountyComps(){
   const county=($('county-sel')||{}).value||'';
   if(county&&!/mecklenburg/i.test(county)){ say('County records are wired for <b>Mecklenburg</b> only. For '+county+', pull comps manually or from DealMachine.','var(--amber)'); return; }
   const Q=countyCompsQuery(), sf=Q.sf, product=Q.product, finish=Q.finish;
-  _countyPull=null;
+  _countyPull=null;_arvTool=null;renderArvCheck();
   if(btn){btn.disabled=true;btn.textContent='Pulling\u2026';}
   say('Searching county sales records\u2026');
   const gen=_dealGen;
@@ -1965,6 +1993,15 @@ async function pullCountyComps(){
     const errs=(d.errors||[]).map(String);
     // only the parcel or assessor look-ups failing make an empty answer meaningless; a road or address layer doesn't
     const dataDown=errs.some(e=>/^(county_records|cama|subject_parcel|fatal|No parcel geometry)/.test(e));
+    // v8.37 (Q1/Q2): what this pull said about the parcel's ARV, kept with the deal for the ARV fields and the deal sheet
+    if(d.vet&&!dataDown)_arvTool={pid,psf:d.arv&&d.arv.retail_psf>0?+d.arv.retail_psf:null,level:(d.confidence&&d.confidence.level)||'',
+      newBuilds:d.infill&&d.infill.checked?d.infill.new_builds:null,
+      vet:{check:!!d.vet.check,reasons:(d.vet.reasons||[]).map(String)},ts:Date.now()};
+    renderArvCheck();
+    const vetBox=!d.vet?'':'<div class="'+(d.vet.check?'warn':'ok')+'" style="margin:0 0 8px;font-size:12px">'
+      +(d.vet.check?'<b>\u2691 Pat should check this ARV.</b> '+d.vet.reasons.map(esc).join(' ')
+        :'<b>\u2713 No hand check needed:</b> HIGH confidence, and not an infill lot'
+          +(d.infill&&d.infill.checked?' ('+d.infill.new_builds+' new builds within '+d.infill.radius_ft+' ft)':'')+'.')+'</div>';
     // Every comp behind the suggested ARV goes in the table, so its median is the rule's. With no ARV (no plan sf),
     // the sales that meet the whole team rule, nearest 12, or failing those the window's new builds.
     const used=(d.comps||[]).filter(c=>c.used);
@@ -1985,7 +2022,7 @@ async function pullCountyComps(){
     COMPS.length=0; kept.forEach(c=>COMPS.push(c));
     if(!rows.length){
       renderComps(); scheduleAutosave();
-      say(esc((d.rule&&d.rule.label)||('No new-build sales found within 0.5 mi in the last '+((d.params&&d.params.months)||12)+' months.'))
+      say(vetBox+esc((d.rule&&d.rule.label)||('No new-build sales found within 0.5 mi in the last '+((d.params&&d.params.months)||12)+' months.'))
         +(errs.length?'<div style="color:var(--text-dim);margin-top:4px;font-size:11px">Also: '+errs.map(esc).join(' \u00b7 ')+'</div>':'')
         +(replaced?'<div style="margin-top:4px">The '+replaced+' comps from the last pull were taken out of the table.</div>':'')
         +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):''),'var(--amber)');
@@ -1995,8 +2032,14 @@ async function pullCountyComps(){
     rows.sort((a,b)=>(a.distance_mi??99)-(b.distance_mi??99));
     const take=used.length?rows:rows.slice(0,12);
     const PROD={sfh:'single-family',th:'townhouse',plex:'plex'};
-    take.filter(c=>!editedPids.has(c.pid)&&!editedAddrs.has(addrKey(c.address||c.pid))).forEach(c=>{
-      COMPS.push({src:'county',srcPid:pid,cpid:c.pid,addr:(c.address||c.pid)+(c.builder_sale?' (builder sale)':''),
+    const fresh=c=>!editedPids.has(c.pid)&&!editedAddrs.has(addrKey(c.address||c.pid));
+    // v8.37 (Q4): the sales the outlier guard left out that this search would otherwise have used: listed, not counted
+    const med=d.guard&&d.guard.median_psf;
+    const odd=(d.comps||[]).filter(c=>c.odd_sf&&c.odd_meets&&fresh(c)).sort((a,b)=>(a.distance_mi??99)-(b.distance_mi??99)).slice(0,6);
+    take.filter(fresh).map(c=>[c,null]).concat(odd.map(c=>[c,'odd_sf'])).forEach(([c,out])=>{
+      COMPS.push({src:'county',srcPid:pid,cpid:c.pid,
+        ...(out?{out,outWhy:`$${Math.round(c.psf)}/sf against ${med?'a $'+Math.round(med)+'/sf':'the'} median for this product here, so its county square footage looks wrong`}:{}),
+        addr:(c.address||c.pid)+(c.builder_sale?' (builder sale)':''),
         sqft:c.heated_sf?String(Math.round(c.heated_sf)):'',
         sold:c.sale_price?String(Math.round(c.sale_price)):'',
         adj:'', date:c.sale_date||'',
@@ -2008,6 +2051,7 @@ async function pullCountyComps(){
           c.across?('across '+c.across):'',c.in_window===false?'older than 12 mo':'',
           c.unverified?'unverified (county review pending)':'',
           c.deed_parcels>1?('deed also covers '+(c.deed_parcels-1)+' other parcel'+(c.deed_parcels>2?'s':'')):'',
+          out?'left out: odd county sf':'',
           c.tier==='solid'?'solid':'context'].filter(Boolean).join(' \u00b7 '),
         url:''});
     });
@@ -2015,15 +2059,16 @@ async function pullCountyComps(){
     scheduleAutosave();   // C-L8: a pull changes the deal
     const S=d.summary&&d.summary.solid, N=d.summary&&d.summary.new_build;
     const money=n=>'$'+Math.round(n).toLocaleString();
-    let h='<b>'+take.length+(used.length?' comps behind the suggested ARV added':' new-build comps added')+'</b> from Mecklenburg County records'
+    let h=vetBox+'<b>'+take.length+(used.length?' comps behind the suggested ARV added':' new-build comps added')+'</b> from Mecklenburg County records'
+      +(odd.length?' (plus '+odd.length+' left out for odd county square footage, marked in the table)':'')
       +(replaced?' (they replace the '+replaced+' from the last pull)':'')+' \u00b7 '
       +esc(d.notes&&d.notes[0]?d.notes[0]:'');
     if(errs.length)h+='<div style="color:var(--red);margin-top:4px">\u26a0 Part of the county lookup failed, so check the rows: '+errs.map(esc).join(' \u00b7 ')+'</div>';
     if(d.rule&&d.rule.label)h+='<div style="margin-top:4px">'+esc(d.rule.label)+'</div>';
     // v8.14: say which sales the server left out (lot sales; sales dated before the assessor's year built)
-    {const lo=(d.notes||[]).filter(n=>/lot sales|before the assessor|several homes at once/.test(n));
+    {const lo=(d.notes||[]).filter(n=>/lot sales|before the assessor|several homes at once|odd county square footage/.test(n));
      if(lo.length)h+='<div style="margin-top:4px;color:var(--text-dim);font-size:11px">Left out: '+lo.map(n=>esc(String(n).replace(/\s+(were\s+)?left out$/,''))).join(' \u00b7 ')+'</div>';}
-    {const ac=(d.notes||[]).filter(n=>/ sit across |unverified|using backup|parcel outline/.test(n));
+    {const ac=(d.notes||[]).filter(n=>/ sit across |unverified|using backup|parcel outline|spread is wide/.test(n));
      if(ac.length)h+='<div style="margin-top:2px;color:var(--text-dim);font-size:11px">'+ac.map(esc).join(' \u00b7 ')+'</div>';}
     const win=(d.params&&d.params.months)||12;
     if(N&&N.count)h+='<div style="margin-top:4px">Built '+(d.params.minYear)+'+, last '+win+' months: <b>'+N.count+'</b> sales of any product, median <b>$'+N.median_psf+'/sf</b> (range $'+N.min_psf+'\u2013$'+N.max_psf+') \u00b7 highest sold '+money(N.highest_sold)+'</div>';
@@ -2078,6 +2123,53 @@ function applyCompsArv(stat){
   const A=compArv(st,sfPerUnit>0?sfPerUnit:0,v);
   const f=$('arv-b'); if(f){f.value=A.capped?Math.floor(A.psf):Math.round(A.psf); if(typeof calcScenarios==='function')calcScenarios();}
   if(A.capped&&typeof showToast==='function')showToast(`Capped at the highest sale in the table (${fmt(st.cap)}): $${Math.floor(A.psf)}/sf, not $${Math.round(v)}/sf.`);
+}
+// v8.37 (research/12 Q1-Q2, Brian 2026-10-12): what the last county pull said about this parcel's ARV, saved with the deal:
+// its $/sf (null when it had none), its confidence, the new builds within 300 ft and the vet verdict: "Pat should check"
+// when confidence isn't HIGH (or there's no ARV) or the lot is infill. When Base ARV differs from that $/sf by $1/sf or
+// more, a one-tap reason asks why. The reason is a field of the deal (#arv-why-code, #arv-why-note, saved like any input),
+// and arvCheckNotes() sends the verdict and the reason to the deal sheet's Analyzer Snapshot tab and the PDF.
+let _arvTool=null;   // {pid, psf, level, newBuilds, vet:{check, reasons}, ts}
+const ARV_WHY={infill:'infill',road:'across a busy road',older:'older stock',street:'weaker street',finish:'finish',other:'other'};
+const fmtPsf=v=>'$'+Math.round(v).toLocaleString('en-US');
+function arvToolForDeal(){const g=(typeof window!=='undefined'&&window._lastGis)||null,t=_arvTool;return t&&g&&g.pid&&g.pid===t.pid?t:null;}
+// {tool, base, pct, code, label, note} when Base ARV is $1/sf or more off the tool's $/sf (Apply writes the $/sf rounded,
+// or rounded down when capped, so an applied ARV never counts as a change)
+function arvOverride(){
+  const t=arvToolForDeal();if(!t||!(t.psf>0))return null;
+  const base=mv('arv-b');if(!(base>0)||Math.abs(base-t.psf)<1)return null;
+  const code=(($('arv-why-code')||{}).value||'').trim(),note=(($('arv-why-note')||{}).value||'').replace(/\s+/g,' ').trim().slice(0,120);
+  return {tool:t.psf,base,pct:(base-t.psf)/t.psf*100,code:ARV_WHY[code]?code:'',label:ARV_WHY[code]||'',note};
+}
+function setArvWhy(code){
+  const e=$('arv-why-code');if(!e||!ARV_WHY[code])return;
+  e.value=e.value===code?'':code;renderArvCheck();scheduleAutosave();
+}
+const signPctTxt=p=>(p>0?'+':'\u2212')+Math.abs(p).toFixed(1)+'%';
+function renderArvCheck(){
+  const box=$('arv-check');if(!box)return;
+  const t=arvToolForDeal();box.style.display=t?'':'none';if(!t)return;
+  const v=$('arv-check-vet');
+  if(v){v.className=t.vet.check?'warn':'ok';
+    v.textContent=(t.vet.check?'\u2691 Pat should check this ARV. '+t.vet.reasons.join(' ')
+        :'\u2713 No hand check needed: HIGH confidence, not an infill lot'+(t.newBuilds!=null?' ('+t.newBuilds+' new builds within 300 ft)':'')+'.')
+      +' '+(t.psf>0?`The tool said ${fmtPsf(t.psf)}/sf.`:'The tool had no ARV for this lot.');}
+  const o=arvOverride(),row=$('arv-why-row');
+  if(row)row.style.display=o?'':'none';
+  if(!o)return;
+  const h=$('arv-why-head');
+  if(h)h.textContent=`Base is ${fmtPsf(o.base)}/sf, ${signPctTxt(o.pct)} from the tool. Why? One tap: it\u2019s saved with the deal and sent to the deal sheet.`;
+  box.querySelectorAll('.arv-why button[data-why]').forEach(b=>{const on=b.dataset.why===o.code;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on?'true':'false');});
+  const n=$('arv-why-note');if(n)n.placeholder=o.code==='other'?'what was it?':'a few words (optional)';
+}
+// the lines the deal sheet's Snapshot tab and the PDF get (each well under the sheet's 300-character note limit)
+function arvCheckNotes(){
+  const t=arvToolForDeal();if(!t)return [];
+  const out=[];
+  if(t.vet.check)out.push(('Pat should check this ARV. '+t.vet.reasons.join(' ')).slice(0,290));
+  const o=arvOverride();
+  if(o)out.push(`Base ARV ${fmtPsf(o.base)}/sf vs the tool\u2019s ${fmtPsf(o.tool)}/sf (${signPctTxt(o.pct)}${t.level?', '+t.level.toUpperCase()+' confidence':''}). Why: ${o.label||'not given'}${o.note?' \u2014 '+o.note:''}.`);
+  return out;
 }
 let buildableArea=0, allInExLand=0, sfPerUnit=0, units=1, currentPlanCost=0;
 let lotFactor=0, tapTotal=0;
@@ -5505,6 +5597,7 @@ function buildReportHTML(canvasDataUrl){
   const compNotes=compIssues().map(x=>x.msg).join(' ');
   const compsSheet=secHdr('COMPARABLE SALES')+compsTbl+compSummary
     +noteBox('Check comps',compNotes)
+    +noteBox('ARV check',arvCheckNotes().join(' '))   // v8.37
     +secHdr('UNDERWRITING NOTES')
     +'<div class="notes-box">'
       +'Figures generated by the TTV Site Analyzer and are estimates for internal screening only. '
@@ -5650,7 +5743,7 @@ function sheetHandoffPayload(){
     gis:{pid:g.pid||'',nc_pin:g.nc_pin||'',area_sf:g.area_sf||0,zoning:g.zoning||'',watershed:g.watershed||'',
       swim:g.swim?!!g.swim.i:null,historic:g.historic&&g.historic.i?(g.historic.n||'Yes'):'',bua:g.bua||''},
     comps:M.comps.map(c=>({addr:c.addr,url:c.url,sqft:c.sqft,sold:c.sold,adj:c.adj,date:c.date,dist:c.dist,mom:c.mom,notes:c.notes})),
-    notes:moneyIssues().map(i=>i.msg).concat(M.compNotes||[])};
+    notes:moneyIssues().map(i=>i.msg).concat(M.compNotes||[]).concat(arvCheckNotes())};   // v8.37: the ARV verdict + reason
 }
 function b64url(str){
   const b=new TextEncoder().encode(str);let s='';
@@ -6342,8 +6435,8 @@ function updateHero(d,b,F){
 // hook recalcs by rebinding (originals untouched)
 (function(){
   const _ca=calcAll,_cs=calcScenarios;
-  calcAll=function(){_ca();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ } try{checkCountyCompsStale();renderCompsSummary();}catch(_){ }};
-  calcScenarios=function(){_cs();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ }};
+  calcAll=function(){_ca();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ } try{checkCountyCompsStale();renderCompsSummary();renderArvCheck();}catch(_){ }};
+  calcScenarios=function(){_cs();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ } try{renderArvCheck();}catch(_){ }};
 })();
 // v8: address, zoning and lot share one screen, so refresh the GIS link and property summary as
 // they're typed instead of on the old "enter step 2/4" transitions (rebind; originals untouched)
@@ -6398,7 +6491,8 @@ function serializeDeal(){
     comps:COMPS.map(c=>Object.assign({},c)),
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     gisMismatch:_gisMismatch,   // v8.16: a reopened parcel that isn't this address stays flagged across saves
-    sheetHandoff:_sheetHandoff};   // v8.21: sent to its deal sheet
+    sheetHandoff:_sheetHandoff,   // v8.21: sent to its deal sheet
+    arvTool:_arvTool};   // v8.37: what the last county pull said about the ARV (vet verdict)
 }
 function restoreDeal(d){
   // Check the file before step 0 resets the page: every field entry is an object, at least one is this page's, and
@@ -6418,6 +6512,11 @@ function restoreDeal(d){
     {const h=d.sheetHandoff;   // v8.21: whether this deal was sent to its deal sheet
      _sheetHandoff=h&&typeof h==='object'&&typeof h.street==='string'&&Number.isFinite(+h.ts)&&+h.ts>0
        ?{ts:+h.ts,street:h.street,city:typeof h.city==='string'?h.city:''}:null;}
+    {const t=d.arvTool;   // v8.37: the last pull's ARV verdict, shown only while the County GIS parcel is the one it was for
+     _arvTool=t&&typeof t==='object'&&typeof t.pid==='string'&&t.pid&&t.vet&&typeof t.vet==='object'&&Array.isArray(t.vet.reasons)
+       ?{pid:t.pid,psf:Number.isFinite(+t.psf)&&+t.psf>0?+t.psf:null,level:['high','medium','low'].includes(t.level)?t.level:'',
+         newBuilds:t.newBuilds!=null&&Number.isFinite(+t.newBuilds)?+t.newBuilds:null,
+         vet:{check:!!t.vet.check,reasons:t.vet.reasons.filter(x=>typeof x==='string').map(x=>x.slice(0,200)).slice(0,6)},ts:+t.ts||0}:null;}
     const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else if(f.v!=null)e.value=f.v;}};
     // 0) start from a fresh page's defaults. The blanket restore below only writes fields the file has, so a
     //    field added after the deal was saved would otherwise keep whatever the previous deal left on screen.
@@ -6589,8 +6688,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.34', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.37', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.37',date:'Oct 2026',name:'Know when Pat should check',items:[
+   'Every county comps pull now says whether Pat should check the ARV: when the confidence isn\u2019t HIGH, when there\u2019s no suggested ARV, or when the lot is infill (fewer than 3 homes built 2020+ within 300 ft). On infill lots the tool lands within 5% of the real sale only a third of the time, against nearly 6 in 10 in new-build pockets. The verdict shows in the comps box and under the ARV fields, and goes to the deal sheet.',
+   'Change Base ARV away from the tool\u2019s number and a one-tap \u201cwhy\u201d appears: infill, across a busy road, older stock, weaker street, finish or other, plus a few words if you like. It\u2019s saved with the deal and printed on the deal sheet\u2019s Analyzer Snapshot tab and the PDF, so the later sale price can be matched to it.',
+   'Sales whose $/sf is more than 1.5\u00d7 (or under two thirds of) the area\u2019s median for the product are left out of the county comps. These are nearly always odd county square footage (W Tyvola: $625,000 on 1,300 sf). The ones the search would have used are listed in the table, marked \u201cleft out\u201d with the reason, and don\u2019t count. Fix a row\u2019s Sq Ft or Sold $ and it counts.',
+   'A wide $/sf spread among the comps is now a note in the box, not a warning: it caught few of the big misses.']},
  {v:'8.34',date:'Oct 2026',name:'Comps you can trust',items:[
    'One ARV everywhere. The comps table, Apply median / avg, the PDF and the Excel Comps sheet now cap the suggested ARV at the highest sale in the table, the way the county box always did. On Katonah the box said $767,500 while the table, the PDF and Excel said $836,882; they all say $767,500 now.',
    'Pull comps again and the new pull replaces the last one\u2019s rows instead of adding a second copy under them. Comps you typed stay, and so does a pulled row you edited. A county comp pulled for a different parcel (the address changed) gets a note under the table, on the PDF and in Excel.',

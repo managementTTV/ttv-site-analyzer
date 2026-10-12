@@ -418,6 +418,31 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Server errors are errors (v8.34, C-F7).** The server answers 200 with `errors[]`. With no rows and errors the
   box says the county records didn't answer (red), not "no sales"; with rows it lists them. The empty-result text
   uses the request's window (12 months).
+- **The outlier guard (v8.37, research/12 Q4, Brian 2026-10-12).** Before the team rule runs, a new-build candidate
+  whose $/sf is over `GUARD_X` (1.5) times, or under 1/`GUARD_X` of, the median $/sf of the planned product's new builds
+  in the radius (all 24 months; any product when `product` is `any`) is left out, once `GUARD_MIN_REF` (5) such sales
+  set that median. It is nearly always an odd county heated area (W Tyvola: $625k on 1,300 sf; 3018 Reid Ave). The row
+  gets `odd_sf` ('high' / 'low') and `odd_meets` (whether the chosen step, or the team rule when there's no ARV, would
+  have used it); `out.guard` and a note say how many. The page lists the `odd_meets` rows in the comps table as
+  `out:'odd_sf'` (with `outWhy`), and `readComp()` counts such a row as left out until its Sq Ft, Sold $ or
+  Adjustments is edited (`onComp()` drops `out`). Measured on the research/12 engine: 74 comps over 79 deals, 2 ARVs
+  moved by ~1%; on the 47 of 1,077 test sales it moved, the mean miss vs the real sale went +31% → +10%. Flag a
+  change that lets a guarded row count silently, or drops the table listing.
+- **Infill and the vet verdict (v8.37, research/12 Q2, Brian 2026-10-12).** `out.infill` counts the other parcels
+  built `minYear`+ (2020) whose assessor point is within `INFILL_FT` (300 ft) of the lot's, sold or not
+  (`newBuildsNear()`: the parcel layer around the lot's centre, then `camaFetch()`); fewer than `INFILL_MIN` (3) is
+  infill. On infill lots the tool landed 33% within ±5% of the real sale (58% in new-build projects). `out.vet` =
+  `{check, reasons, rule}`: check when there is no ARV, confidence isn't high, the lot is infill, or the count couldn't
+  be made (`infill.checked` false; never read an unknown count as "not infill"). Every answer, early returns and the
+  fatal catch included, goes through `settle()` so it carries both. The wide-spread (>1.6×) line is a note now, not a
+  flag: it caught 12% of the misses over 10%. The page keeps the pull's verdict as `_arvTool` (saved with the deal as
+  `arvTool`, shown only while `_lastGis.pid` is its parcel) under the ARV fields and in the comps box.
+- **Pat's one-tap "why" (v8.37, research/12 Q1).** When Base ARV is $1/sf or more off `_arvTool.psf` (Apply writes the
+  $/sf rounded, or rounded down when capped, so an applied ARV is never a change), chips ask why (`ARV_WHY`: infill,
+  across a busy road, older stock, weaker street, finish, other) into `#arv-why-code` plus `#arv-why-note`, plain
+  `.page` inputs saved like any other. `arvCheckNotes()` sends the verdict and the reason to the deal sheet as `notes[]`
+  lines (the live Apps Script prints them on the Analyzer Snapshot tab) and to the PDF; the hand-off payload's shape and
+  `v` don't change. A structured field and the central reasons log belong to the Sheet chat's next payload version.
 
 ### Street check (`api/street.js`, v8.18)
 - **What it is:** the lot's own stretch of street (same CAMA `streetname`, `STREET_FT` = 1,000 ft; CAMA drops the

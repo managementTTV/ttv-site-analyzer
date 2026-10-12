@@ -116,6 +116,16 @@ const STEPS = [
   {older:true,  across:true,  finish:false, product:true},
   {older:true,  across:true,  finish:false, product:false},
 ];
+// Outlier guard (v8.37, research/12 Q4, Brian 2026-10-12). A new-build sale whose $/sf is more than GUARD_X times, or under
+// 1/GUARD_X of, the median $/sf of the planned product's new builds in the radius is left out before the rule runs. It is
+// nearly always an odd county heated area (W Tyvola: $625k on 1,300 sf). It needs GUARD_MIN_REF same-product sales to set
+// that median. On our 79 deals it dropped 74 comps and moved 2 ARVs by about 1%; on the 47 of 1,077 test sales where it
+// moved the ARV, the average miss against the real sale fell from +31% to +10%.
+const GUARD_X = 1.5, GUARD_MIN_REF = 5;
+// Infill (v8.37, research/12 Q2): fewer than INFILL_MIN other buildings built minYear+ whose assessor point is within
+// INFILL_FT of the lot's. On those lots the tool landed 33% within ±5% of the real sale (49% within ±10%, 4.3% low),
+// against 58% in new-build projects, so the page tells Pat to check the ARV (vet).
+const INFILL_FT = 300, INFILL_MIN = 3;
 
 // ArcGIS answers a bad field or where-clause with HTTP 200 and an {error:...} body, so check for it.
 async function ajPost(url, params){
@@ -194,6 +204,38 @@ function milesBetween(lat1,lng1,lat2,lng2){
   return 2*R*Math.asin(Math.sqrt(a));
 }
 function isoDate(ms){ return (typeof ms==='number' && ms>0 && ms<4e12) ? new Date(ms).toISOString().slice(0,10) : null; }
+// The infill count (v8.37): the other parcels built minYear+ whose assessor point is within INFILL_FT of the lot's point,
+// sold or not, as research/12 counted them. The parcel layer finds the parcels near the lot's centre (SR 2264 feet, with a
+// margin, since a parcel's assessor point isn't its outline's centre); the assessor records give each one's year built and
+// point. Throws when a layer doesn't answer, so the caller can say the count is unknown instead of "not infill".
+async function newBuildsNear(pid, centre, lat, lng, minYear){
+  const pj = await ajPost(`${PARCEL_LAYER}/query`, {
+    geometry:JSON.stringify({x:centre.x, y:centre.y, spatialReference:{wkid:SR}}), geometryType:'esriGeometryPoint',
+    inSR:String(SR), spatialRel:'esriSpatialRelIntersects', distance:String(INFILL_FT+150), units:'esriSRUnit_Foot',
+    outFields:'pid', returnGeometry:'false', f:'json'});
+  const pids = [...new Set((pj.features||[]).map(f=>f.attributes && f.attributes.pid).filter(p=>p && p!==pid))];
+  const errs = [], cama = pids.length ? await camaFetch(pids, errs, {backup:0}) : new Map();
+  if(pids.length && !cama.size && errs.length) throw new Error(errs.join('; '));
+  let n = 0;
+  cama.forEach(c=>{
+    const yb = num(c.yearbuilt), cLat = num(c.xcoord), cLng = num(c.ycoord);   // xcoord = latitude (see milesBetween)
+    if(yb && yb>=minYear && cLat!=null && cLng!=null && milesBetween(lat,lng,cLat,cLng)*MI_FT <= INFILL_FT) n++;
+  });
+  return {count:n, parcels:pids.length};
+}
+// "Pat should check" (v8.37, research/12 Q2, Brian 2026-10-12): the ARV goes to Pat when confidence isn't HIGH (or there is
+// no ARV), or the lot is infill. On the 1,077 test sales "not HIGH" alone flagged 29% and caught 64% of the misses over
+// 10%; infill adds the weakest group. An infill count that couldn't be made counts as a reason, not as "not infill".
+// The wide-spread line (over 1.6x) only caught 12% of the big misses, so it is a note now, not a reason.
+function vetOf(out){
+  const reasons = [], inf = out.infill;
+  if(!out.arv) reasons.push(out.params.subjectSf ? 'There\u2019s no suggested ARV, so it\u2019s priced by hand.' : 'No plan size was sent, so there\u2019s no suggested ARV.');
+  else if(out.confidence && out.confidence.level!=='high') reasons.push(`Confidence is ${out.confidence.level.toUpperCase()}, not HIGH.`);
+  if(!inf || !inf.checked) reasons.push(`The new builds within ${INFILL_FT} ft couldn\u2019t be counted, so the lot may be infill.`);
+  else if(inf.infill) reasons.push(`Infill lot: ${inf.new_builds} new build${inf.new_builds===1?'':'s'} (built ${inf.min_year}+) within ${INFILL_FT} ft, fewer than ${INFILL_MIN}.`);
+  return {check:reasons.length>0, reasons,
+    rule:`Pat checks the ARV when confidence isn\u2019t HIGH or the lot is infill (fewer than ${INFILL_MIN} new builds within ${INFILL_FT} ft).`};
+}
 // Major-road crossings. Everything goes on a local flat grid in feet around the lot (fine at half a mile): the
 // road segments once per request (roadGrid), then each comp's straight line from the lot (roadCrossed). Only a
 // proper crossing counts: a line that just touches a road's end doesn't. Roads are {name, paths:[[[lng,lat],...]]}.
@@ -237,8 +279,17 @@ export default async function handler(req, res){
                : (q.finish||'').toLowerCase()==='any' ? 'any' : 'standard';
 
   const out = { subject:null, params:{pid,radius,months,wideMonths,minYear,solidYear,minPrice,subjectSf,product,finish},
-                comps:[], summary:null, arv:null, rule:null, flags:[], notes:[], errors:[] };
+                comps:[], summary:null, arv:null, rule:null, guard:null, infill:null, vet:null, flags:[], notes:[], errors:[] };
   if(!pid){ res.status(400).json({error:'pass ?pid= (Mecklenburg parcel id)'}); return; }
+
+  // v8.37: the infill count runs beside the sales search; every answer waits for it and carries the vet verdict
+  let infillP = Promise.resolve(null);
+  const settle = async () => {
+    const nb = await infillP;
+    out.infill = nb ? {checked:true, new_builds:nb.count, infill:nb.count<INFILL_MIN, radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN}
+                    : {checked:false, new_builds:null, infill:null, radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN};
+    out.vet = vetOf(out);
+  };
 
   try{
     // 1) subject parcel: centre point for the search envelope, plus its own record for context
@@ -251,7 +302,7 @@ export default async function handler(req, res){
       if(f) out.subject = {pid, acres:f.attributes && f.attributes.gisacres || null};
     }catch(e){ out.errors.push('subject_parcel: '+e.message); }
     if(!centre){ out.errors.push('No parcel geometry for PID '+pid+' — cannot centre the search.');
-      res.status(200).json(out); return; }
+      await settle(); res.status(200).json(out); return; }
 
     const camaUsed = {backup:0}, joinUsed = {backup:0};
     {
@@ -276,6 +327,8 @@ export default async function handler(req, res){
     }
     if(subjLat==null || subjLng==null)
       out.flags.push(`The lot’s location couldn’t be found, so the ${radius} mi radius wasn’t applied: check every row by hand.`);
+    else infillP = newBuildsNear(pid, centre, subjLat, subjLng, minYear)
+      .catch(e=>{ out.errors.push('infill_check: '+e.message); return null; });
 
     // 2) every recorded sale in the envelope over the window. ArcGIS takes a rectangle, so this
     // is a square whose corners sit radius*sqrt(2) away — rows are filtered to the true radius
@@ -332,7 +385,7 @@ export default async function handler(req, res){
     });
     if(lotSales) out.notes.push(`${lotSales} lot sales (sold as vacant) left out`);
     out.notes.push(`${market.length} market-valid residential sales (blank, Z or TEMP) on distinct parcels`);
-    if(!market.length){ out.summary={count:0}; res.status(200).json(out); return; }
+    if(!market.length){ out.summary={count:0}; await settle(); res.status(200).json(out); return; }
 
     // 4) join the assessor record — the sales layer has no building attributes at all
     const pids = market.map(a=>a.parcelid);
@@ -470,8 +523,23 @@ export default async function handler(req, res){
 
     // 7) the team rule, then the steps out of it (STEPS), then inside the chosen set the neighbourhood / size
     //    cascade. Every new build (minYear+) in the radius is a candidate; the rules narrow it.
-    const candidates = rows.filter(r=>(r.tier==='solid'||r.tier==='context') && usable(r));
+    const allCand = rows.filter(r=>(r.tier==='solid'||r.tier==='context') && usable(r));
     const wantTypes = product==='any' ? null : PRODUCT_TYPES[product].map(t=>PRODUCT_OF_TYPE[t]);
+    // the outlier guard (GUARD_X): over the full new-build pool, before the rule and the cascade (research/12's engine)
+    let candidates = allCand;
+    {
+      const ref = allCand.filter(r=>!wantTypes || wantTypes.includes(r.product)).map(r=>r.psf);
+      const m0 = ref.length>=GUARD_MIN_REF ? median(ref) : null;
+      if(m0){
+        candidates = allCand.filter(r=>{
+          if(r.psf > m0*GUARD_X) r.odd_sf = 'high'; else if(r.psf < m0/GUARD_X) r.odd_sf = 'low'; else return true;
+          return false;
+        });
+      }
+      const k = allCand.length - candidates.length;
+      out.guard = {median_psf:m0, factor:GUARD_X, ref:ref.length, min_ref:GUARD_MIN_REF, dropped:k};
+      if(k) out.notes.push(`${k} sale${k===1?'':'s'} with odd county square footage ($/sf over ${GUARD_X}\u00d7, or under ${Math.round(100/GUARD_X)}% of, the ${PRODUCT_LABEL[product]} median here, $${Math.round(m0)}/sf) left out`);
+    }
     const wantGrades = finish==='any' ? null : FINISH_GRADES[finish];
     const meets = (r, s) => (s.older || r.in_window)
       && (s.across || !r.across)
@@ -528,6 +596,8 @@ export default async function handler(req, res){
       // a tight match from a later step replaces a loose one from an earlier step; otherwise the first one found
       if(first){ basis = {set:first.set, label:first.label}; tier = first.tier; step = first.step; poolUsed = first.pool; }
     }
+    // the rows the guard left out that the chosen step (or the team rule) would otherwise have looked at: the page lists them
+    allCand.forEach(r=>{ if(r.odd_sf) r.odd_meets = meets(r, STEPS[basis ? step : 0]); });
     if(basis){
       const s = STEPS[step], relaxed = relaxedOf(s);
       const ps = basis.set.map(r=>r.psf);
@@ -594,13 +664,16 @@ export default async function handler(req, res){
     const solidWhere = poolUsed && STEPS[step].older ? `in the last ${wideMonths} months` : `in the last ${months} months`;
     if(solidN<=1) out.flags.push(`Only ${solidN} solid comp${solidN===1?'':'s'} (built ${solidYear}+) ${solidWhere}${poolUsed?' among the sales the ARV could use':''}: thin evidence, say so on the sheet.`);
     if(context.length && Math.max(...context.map(r=>r.sale_price))>1000000) out.flags.push('Luxury-tier comp above $1M nearby: outside the normal buy box, flag before underwriting further.');
-    if(basis && spread > 1.6) out.flags.push('Comp $/sf spread is wide (>60% high-to-low): the set is not uniform, pick the comps by hand.');
+    // v8.37: a note, not a flag. It caught 12% of the misses over 10% (research/12); the vet verdict decides who checks.
+    if(basis && spread > 1.6) out.notes.push(`The comps\u2019 $/sf spread is wide (${spread}\u00d7 high to low): worth a look at the rows`);
     if(out.arv && out.arv.capped) out.flags.push('ARV capped at the highest sold comp.');
     if(out.confidence && out.confidence.level!=='high') out.flags.push('Confidence '+out.confidence.level+': '+out.confidence.reason);
 
+    await settle();
     res.status(200).json(out);
   }catch(e){
     out.errors.push('fatal: '+e.message);
+    try{ await settle(); }catch(_){ out.vet = {check:true, reasons:['The comps lookup failed.'], rule:''}; }
     res.status(200).json(out);
   }
 }
