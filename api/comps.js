@@ -129,28 +129,30 @@ async function ajPost(url, params){
 const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 // Assessor records for a list of PIDs, as a Map pid -> attributes named the way TaxParcel_camadata names them
 // (address, xcoord = latitude, ycoord = longitude, yearbuilt, heatedarea, bedrooms, fullbath, halfbath, grade,
-// landuse_description, gisacres, neighbordesc, bldgtype). Main layer first; for a chunk it returns nothing for, the
+// landuse_description, gisacres, neighbordesc, bldgtype). Main layer first; for the PIDs it gives nothing for, the
 // backup tables (v8.32). used.backup counts the PIDs the backup answered; errors go to errs.
 async function camaFetch(pids, errs, used){
   const out = new Map();
   for(let i=0;i<pids.length;i+=60){
     const chunk = pids.slice(i,i+60), list = chunk.map(p=>`'${p}'`).join(',');
-    let got = 0, mainErr = null;
+    let mainErr = null;
     try{
       const j = await ajPost(`${CAMA_LAYER}/query`, {where:`pid IN (${list})`,
         outFields:'pid,address,yearbuilt,heatedarea,bedrooms,fullbath,halfbath,grade,'
                  +'landuse_description,xcoord,ycoord,gisacres,neighbordesc,bldgtype',
         returnGeometry:'false', f:'json'});
-      (j.features||[]).forEach(f=>{ out.set(f.attributes.pid, f.attributes); got++; });
+      (j.features||[]).forEach(f=>out.set(f.attributes.pid, f.attributes));
     }catch(e){ mainErr = 'cama: '+e.message; }
-    if(got) continue;
-    const before = used.backup;
+    // the PIDs the main layer didn't answer: all of them while it's empty, a fresh split now and then otherwise
+    const rest = chunk.filter(p=>!out.has(p));
+    if(!rest.length) continue;
+    const list2 = rest.map(p=>`'${p}'`).join(','), before = used.backup;
     try{
       const [pj, bj] = await Promise.all([
-        ajPost(`${CAMA_PARCELS}/query`, {where:`parcelid IN (${list})`,
+        ajPost(`${CAMA_PARCELS}/query`, {where:`parcelid IN (${list2})`,
           outFields:'parcelid,yearid,streetnumber,streetname,gis1,gis2,num_heatedarea,legalacres,neighborhood_description,landuse_description',
           returnGeometry:'false', f:'json'}),
-        ajPost(`${CAMA_BUILDINGS}/query`, {where:`parcelid IN (${list}) AND buildingsequence=1`,
+        ajPost(`${CAMA_BUILDINGS}/query`, {where:`parcelid IN (${list2}) AND buildingsequence=1`,
           outFields:'parcelid,yearid,yearbuilt,grade,buildingtype,bedrooms,fullbath,halfbath,finishedarea',
           returnGeometry:'false', f:'json'})]);
       const latest = (rows) => { const m = new Map();
@@ -164,7 +166,7 @@ async function camaFetch(pids, errs, used){
           bedrooms:b.bedrooms||null, fullbath:b.fullbath||null, halfbath:b.halfbath||null, grade:b.grade||null,
           landuse_description:a.landuse_description||null, xcoord:num(a.gis2), ycoord:num(a.gis1),
           gisacres:a.legalacres>0 ? a.legalacres : null, neighbordesc:a.neighborhood_description||null,
-          bldgtype:b.buildingtype||null});
+          bldgtype:(b.buildingtype||'').trim()||null});   // about 48k buildings carry a blank ' ' type
         used.backup++;
       });
       if(mainErr && used.backup===before) errs.push(mainErr);   // the backup's answer stands in for a failed main layer
@@ -247,7 +249,7 @@ export default async function handler(req, res){
     if(!centre){ out.errors.push('No parcel geometry for PID '+pid+' — cannot centre the search.');
       res.status(200).json(out); return; }
 
-    const camaUsed = {backup:0};
+    const camaUsed = {backup:0}, joinUsed = {backup:0};
     {
       const a = (await camaFetch([pid], out.errors, camaUsed)).get(pid);
       if(a){ subjLat=num(a.xcoord); subjLng=num(a.ycoord);
@@ -269,7 +271,7 @@ export default async function handler(req, res){
       }catch(e){ out.errors.push('subject_location: '+e.message); }
     }
     if(subjLat==null || subjLng==null)
-      out.flags.push('The lot’s location couldn’t be found, so the 0.5 mi radius and the major-road rule were not applied: check every row by hand.');
+      out.flags.push(`The lot’s location couldn’t be found, so the ${radius} mi radius wasn’t applied: check every row by hand.`);
 
     // 2) every recorded sale in the envelope over the window. ArcGIS takes a rectangle, so this
     // is a square whose corners sit radius*sqrt(2) away — rows are filtered to the true radius
@@ -299,7 +301,8 @@ export default async function handler(req, res){
     out.notes.push(`${allSales.length} recorded sales in the ${radius} mi search box since ${since}`);
     // C-F2 (v8.32): one deed can convey several parcels, and the sales layer repeats the deed's whole price on every
     // one of them. A deed is its book-page (legalreference) on one date at one price; transferid when there's no
-    // book-page. parcelsOfDeed counts the distinct parcels each deed covers in the search box.
+    // book-page. parcelsOfDeed holds the distinct parcels each deed covers in the search box; step 5b adds the ones
+    // outside it.
     const deedOf = a => `${(a.legalreference||'').trim() || ('t'+(a.transferid||''))}|${a.saledate}|${a.saleprice}`;
     const parcelsOfDeed = new Map();
     allSales.forEach(a=>{ const k = deedOf(a); if(!parcelsOfDeed.has(k)) parcelsOfDeed.set(k, new Set()); parcelsOfDeed.get(k).add(a.parcelid); });
@@ -329,8 +332,8 @@ export default async function handler(req, res){
 
     // 4) join the assessor record — the sales layer has no building attributes at all
     const pids = market.map(a=>a.parcelid);
-    const cama = await camaFetch(pids, out.errors, camaUsed);
-    if(camaUsed.backup) out.notes.push('County building records came from the backup assessor tables (the main assessor layer gave nothing).');
+    const cama = await camaFetch(pids, out.errors, joinUsed);
+    if(joinUsed.backup) out.notes.push('County data source down — using backup: the building records came from the county’s backup assessor tables.');
     // C-F7 (v8.32): sales with no building record at all is the assessor data being down, not "no new builds here"
     if(!cama.size) out.errors.push(`county_records: no assessor record answered for any of the ${pids.length} sales, so no comp can be built`);
 
@@ -375,7 +378,8 @@ export default async function handler(req, res){
       // could drive the ARV while the UI says "within 0.5 mi". Rows with no coordinates are kept
       // (rare) and simply can't be distance-checked.
       if(dist!=null && dist > radius){ dropped++; return; }
-      const btype = (c.bldgtype||'').trim().toUpperCase(), grade = (c.grade||'').trim().toUpperCase();
+      // the backup tables write some grades with a class number ("AVERAGE 03"); the finish classes are the words
+      const btype = (c.bldgtype||'').trim().toUpperCase(), grade = (c.grade||'').trim().toUpperCase().replace(/\s+\d+$/,'');
       const saleDate = isoDate(a.saledate);
       rows.push({
         pid:a.parcelid, address:c.address||null,
@@ -385,11 +389,11 @@ export default async function handler(req, res){
         builder_sale:(a.salesvalidity||'').trim().toUpperCase()==='Z',
         // TEMP: recorded, not yet reviewed by the county (may still turn out not to be an arm's-length sale)
         unverified:(a.salesvalidity||'').trim().toUpperCase()==='TEMP',
-        deed:deedOf(a), deed_parcels:parcelsOfDeed.get(deedOf(a)).size,
+        deed:deedOf(a), _lref:(a.legalreference||'').trim(),
         year_built:yb, heated_sf:sf,
         psf: (sf && sf>0) ? +(a.saleprice/sf).toFixed(2) : null,
         beds:c.bedrooms||null, baths:((c.fullbath||0)+0.5*(c.halfbath||0))||null,
-        grade:c.grade||null, type:c.bldgtype||c.landuse_description||null,
+        grade:grade||null, type:btype||c.landuse_description||null,
         product: PRODUCT_OF_TYPE[btype] || null,
         finish: STANDARD_GRADES.includes(grade) ? 'standard' : UPGRADED_GRADES.includes(grade) ? 'upgraded'
               : LUXURY_GRADES.includes(grade) ? 'luxury' : null,
@@ -405,18 +409,36 @@ export default async function handler(req, res){
     // C-F2: a deed that sold two or more of these homes at once is a bulk sale (a portfolio, a builder's takedown): its
     // price is for all of them, so none of them is a retail comp, and left in, its total broke the highest-sold cap. A
     // deed of one home plus parcels with no house on them (a side lot, a common area) counts once, as that home's sale.
+    // 5b) A deed's other homes can sit outside the search box or the radius, or be filtered out above (resold since,
+    // no assessor record, sold before the house was built), so the parcels come from a county-wide look-up of each
+    // row's book-page, and a parcel is a home when its assessor record has heated area.
     {
-      const homesOfDeed = new Map();
-      rows.forEach(r=>{ if(r.deed_parcels>1) homesOfDeed.set(r.deed, (homesOfDeed.get(r.deed)||0)+1); });
-      let bulkDeeds = 0, bulkRows = 0;
-      for(let i=rows.length-1;i>=0;i--){
-        const n = homesOfDeed.get(rows[i].deed);
-        if(n>1){ bulkRows++; rows.splice(i,1); }
+      const deedPids = new Map();
+      rows.forEach(r=>{ if(!deedPids.has(r.deed)) deedPids.set(r.deed, new Set(parcelsOfDeed.get(r.deed))); });
+      const lrefs = [...new Set(rows.map(r=>r._lref).filter(l=>/^[\w-]+$/.test(l)))];
+      const lookups = [];
+      for(let i=0;i<lrefs.length;i+=60){
+        const list = lrefs.slice(i,i+60).map(l=>`'${l}'`).join(',');
+        lookups.push(ajPost(`${SALES_LAYER}/query`, {where:`legalreference IN (${list})`,
+          outFields:'parcelid,legalreference,transferid,saledate,saleprice', returnGeometry:'false', f:'json'})
+          .then(j=>(j.features||[]).forEach(f=>{ const k = deedOf(f.attributes); if(deedPids.has(k)) deedPids.get(k).add(f.attributes.parcelid); }))
+          .catch(e=>out.errors.push('deed_parcels: '+e.message)));
       }
-      homesOfDeed.forEach(n=>{ if(n>1) bulkDeeds++; });
-      if(bulkDeeds) out.notes.push(`${bulkRows} sales on ${bulkDeeds} deed${bulkDeeds===1?'':'s'} that sold several homes at once left out`);
+      await Promise.all(lookups);
+      const multi = [...deedPids.values()].filter(set=>set.size>1);
+      const unknown = [...new Set(multi.flatMap(set=>[...set]))].filter(p=>!cama.has(p));
+      const extra = unknown.length ? await camaFetch(unknown, out.errors, {backup:0}) : new Map();
+      const isHome = p => { const c = cama.get(p) || extra.get(p); return !!(c && num(c.heatedarea) > 0); };
+      const homesOf = new Map();
+      deedPids.forEach((set, k)=>homesOf.set(k, set.size>1 ? [...set].filter(isHome).length : 1));
+      let bulkRows = 0;
+      for(let i=rows.length-1;i>=0;i--){
+        if(homesOf.get(rows[i].deed) > 1){ bulkRows++; rows.splice(i,1); }
+      }
+      if(bulkRows) out.notes.push(`${bulkRows} sale${bulkRows===1?'':'s'} on deeds that sold several homes at once left out`);
+      rows.forEach(r=>{ const n = deedPids.get(r.deed).size; if(n>1) r.deed_parcels = n; });
     }
-    rows.forEach(r=>{ delete r.deed; if(r.deed_parcels<=1) delete r.deed_parcels; });
+    rows.forEach(r=>{ delete r.deed; delete r._lref; });
     rows.sort((a,b)=> (a.distance_mi??99) - (b.distance_mi??99));
     if(dropped) out.notes.push(`${dropped} sales fell in the search box but outside the ${radius} mi radius and were dropped`);
     if(predates) out.notes.push(`${predates} sales recorded before the assessor's year built were left out`);

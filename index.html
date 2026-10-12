@@ -1906,7 +1906,7 @@ function renderCompsSummary(R){
     else{
       const subjSf=(typeof sfPerUnit!=='undefined'?sfPerUnit:0)||0;
       const A=compArv(st,subjSf);
-      const arv=subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf${A.capped?', capped at the highest sale':''}): <b>$${Math.round(A.arv).toLocaleString()}</b>${A.capped?` = $${A.psf.toFixed(0)}/sf`:''}`:'';
+      const arv=subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf${A.capped?', capped at the highest sale':''}): <b>$${Math.round(A.arv).toLocaleString()}</b>${A.capped?` = $${Math.floor(A.psf)}/sf`:''}`:'';
       sum.innerHTML=`Comps: <b>${st.n}</b>${left?` (${left} left out)`:''} &nbsp;\u00b7&nbsp; Median adj $/SF: <b>$${st.median.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Avg: <b>$${st.avg.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Range: <b>$${st.min.toFixed(0)}\u2013$${st.max.toFixed(0)}</b>${arv}`;
     }
   }
@@ -1940,17 +1940,20 @@ async function pullCountyComps(){
     const r=await fetch(url);
     let d=null; try{d=await r.json();}catch(_){ }
     if(gen!==_dealGen)return;   // another deal was opened meanwhile: these comps are the old one's
+    if(gis.addrSig&&gis.addrSig!==gisAddressSignature())return;   // v8.32: the address moved mid-pull: these are the old parcel's
     if(!d){ say('Comps lookup failed: the server answered '+r.status+' with no readable result.','var(--red)'); return; }
     if(d.error){ say('Comps lookup failed: '+esc(d.error),'var(--red)'); return; }
     // v8.32 (C-F7): the server answers 200 with errors[] when a county layer is down. Read with no rows, that used to
     // say "no new-build sales found", which is a market fact the data never showed.
     const errs=(d.errors||[]).map(String);
+    // only the parcel or assessor look-ups failing make an empty answer meaningless; a road or address layer doesn't
+    const dataDown=errs.some(e=>/^(county_records|cama|subject_parcel|fatal|No parcel geometry)/.test(e));
     // Every comp behind the suggested ARV goes in the table, so its median is the rule's. With no ARV (no plan sf),
     // the sales that meet the whole team rule, nearest 12, or failing those the window's new builds.
     const used=(d.comps||[]).filter(c=>c.used);
     const meet=(d.comps||[]).filter(c=>c.meets_rule);
     const rows=used.length?used:meet.length?meet:(d.comps||[]).filter(c=>(c.tier==='solid'||c.tier==='context')&&c.in_window!==false);
-    if(!rows.length&&errs.length){
+    if(!rows.length&&dataDown){
       say('<b>County records didn\u2019t answer</b>, so this is not a \u201cno sales\u201d result. Try again later, or add comps by hand.'
         +'<div style="color:var(--text-dim);margin-top:4px;font-size:11px">'+errs.map(esc).join(' \u00b7 ')+'</div>','var(--red)');
       return;
@@ -1958,11 +1961,15 @@ async function pullCountyComps(){
     // v8.32 (C-F4): this pull replaces the last one's rows. Typed rows and pulled rows you edited stay.
     const kept=COMPS.filter(c=>!isCountyComp(c));
     const editedPids=new Set(kept.filter(c=>c.src==='county-edited'&&c.cpid).map(c=>c.cpid));
+    // a pre-v8.32 pulled row edited since carries no cpid: match it on its address instead
+    const addrKey=a=>String(a||'').replace(/ \(builder sale\)$/,'').trim().toUpperCase();
+    const editedAddrs=new Set(kept.filter(c=>c.src==='county-edited'&&!c.cpid).map(c=>addrKey(c.addr)));
     const replaced=COMPS.length-kept.length;
     COMPS.length=0; kept.forEach(c=>COMPS.push(c));
     if(!rows.length){
       renderComps(); scheduleAutosave();
       say(esc((d.rule&&d.rule.label)||('No new-build sales found within 0.5 mi in the last '+((d.params&&d.params.months)||12)+' months.'))
+        +(errs.length?'<div style="color:var(--text-dim);margin-top:4px;font-size:11px">Also: '+errs.map(esc).join(' \u00b7 ')+'</div>':'')
         +(replaced?'<div style="margin-top:4px">The '+replaced+' comps from the last pull were taken out of the table.</div>':'')
         +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):''),'var(--amber)');
       return;
@@ -1971,7 +1978,7 @@ async function pullCountyComps(){
     rows.sort((a,b)=>(a.distance_mi??99)-(b.distance_mi??99));
     const take=used.length?rows:rows.slice(0,12);
     const PROD={sfh:'single-family',th:'townhouse',plex:'plex'};
-    take.filter(c=>!editedPids.has(c.pid)).forEach(c=>{
+    take.filter(c=>!editedPids.has(c.pid)&&!editedAddrs.has(addrKey(c.address||c.pid))).forEach(c=>{
       COMPS.push({src:'county',srcPid:pid,cpid:c.pid,addr:(c.address||c.pid)+(c.builder_sale?' (builder sale)':''),
         sqft:c.heated_sf?String(Math.round(c.heated_sf)):'',
         sold:c.sale_price?String(Math.round(c.sale_price)):'',
@@ -1999,7 +2006,7 @@ async function pullCountyComps(){
     // v8.14: say which sales the server left out (lot sales; sales dated before the assessor's year built)
     {const lo=(d.notes||[]).filter(n=>/lot sales|before the assessor|several homes at once/.test(n));
      if(lo.length)h+='<div style="margin-top:4px;color:var(--text-dim);font-size:11px">Left out: '+lo.map(n=>esc(String(n).replace(/\s+(were\s+)?left out$/,''))).join(' \u00b7 ')+'</div>';}
-    {const ac=(d.notes||[]).filter(n=>/ sit across |unverified|backup assessor|parcel outline/.test(n));
+    {const ac=(d.notes||[]).filter(n=>/ sit across |unverified|using backup|parcel outline/.test(n));
      if(ac.length)h+='<div style="margin-top:2px;color:var(--text-dim);font-size:11px">'+ac.map(esc).join(' \u00b7 ')+'</div>';}
     const win=(d.params&&d.params.months)||12;
     if(N&&N.count)h+='<div style="margin-top:4px">Built '+(d.params.minYear)+'+, last '+win+' months: <b>'+N.count+'</b> sales of any product, median <b>$'+N.median_psf+'/sf</b> (range $'+N.min_psf+'\u2013$'+N.max_psf+') \u00b7 highest sold '+money(N.highest_sold)+'</div>';
@@ -2018,7 +2025,7 @@ async function pullCountyComps(){
     (d.flags||[]).filter(f=>!(d.rule&&f===d.rule.label)).forEach(f=>{h+='<div style="color:var(--amber);margin-top:4px">\u26a0 '+esc(f)+'</div>';});
     h+='<div style="color:var(--text-dim);font-size:11px;margin-top:6px">County deed records only \u2014 no MLS status, concessions or photos. Recording lags closing by 1\u20133 weeks. Check each row before you lean on it.</div>';
     say(h);
-    if(d.arv)_countyPull={sig:countyPullSig(Q,pid),psf:d.arv.retail_psf};
+    if(d.arv)_countyPull={sig:countyPullSig(Q,pid),psf:d.arv.retail_psf,capped:!!d.arv.capped};
   }catch(e){ if(gen===_dealGen)say('Comps lookup failed: '+e.message,'var(--red)'); }
   finally{ if(btn){btn.disabled=false;btn.innerHTML='\ud83d\udce1 Pull new-build comps (Meck)';} }
 }
@@ -2044,15 +2051,16 @@ function checkCountyCompsStale(){
 }
 function applyCountyArv(){
   if(countyPullStale()){checkCountyCompsStale();return;}
-  const f=$('arv-b'), psf=_countyPull.psf; if(f&&psf>0){ f.value=Math.round(psf); if(typeof calcScenarios==='function')calcScenarios(); }
+  // a capped $/sf rounds down, so Base ARV × sf stays at or under the cap the box states
+  const f=$('arv-b'), psf=_countyPull.psf; if(f&&psf>0){ f.value=_countyPull.capped?Math.floor(psf):Math.round(psf); if(typeof calcScenarios==='function')calcScenarios(); }
 }
 // C-F3: the median or average, capped like the suggested ARV: never past the highest sale in the table
 function applyCompsArv(stat){
   const st=compStats(), v=stat==='median'?st.median:st.avg;
   if(!(v>0)){alert(compIssues().length?'No comp can be counted yet: see the note under the comps table.':'Add at least one comp with Sq Ft and Sold price first.');return;}
   const A=compArv(st,sfPerUnit>0?sfPerUnit:0,v);
-  const f=$('arv-b'); if(f){f.value=Math.round(A.psf); if(typeof calcScenarios==='function')calcScenarios();}
-  if(A.capped&&typeof showToast==='function')showToast(`Capped at the highest sale in the table (${fmt(st.cap)}): $${Math.round(A.psf)}/sf, not $${Math.round(v)}/sf.`);
+  const f=$('arv-b'); if(f){f.value=A.capped?Math.floor(A.psf):Math.round(A.psf); if(typeof calcScenarios==='function')calcScenarios();}
+  if(A.capped&&typeof showToast==='function')showToast(`Capped at the highest sale in the table (${fmt(st.cap)}): $${Math.floor(A.psf)}/sf, not $${Math.round(v)}/sf.`);
 }
 let buildableArea=0, allInExLand=0, sfPerUnit=0, units=1, currentPlanCost=0;
 let lotFactor=0, tapTotal=0;

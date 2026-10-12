@@ -152,7 +152,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   $1,000 or more) still count, with a note. Every comps number, whether the table, Apply median, `getReportData()`,
   the PDF or `collectModelInputs().comps`, comes from `readComp()` via `compPPSF()` / `compStats()`. Flag a new
   reader that parses a comp cell another way, or an export that drops `compIssues()`. The notes exist only when
-  there's a problem, so a clean comps table gives the same report data and files as before.
+  there's a problem, so a clean comps table gives the same files as before; since v8.32 `compStats()` also carries
+  `cap` (the highest counted sale), so `getReportData()` has one more key.
 - **Plan-comparison ARV overrides are text, read by `readMoneyText()` (v8.12),** the same reader behind `mv()`.
   Blank, unreadable and negative all mean "use the deal's ARV" (`readCmpArv().use` is false), but unreadable and
   negative also get a red cell and a note under the comparison table. They were `type="number"`, which hands back
@@ -318,9 +319,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   TEMP, the page notes it on the row, and `arv.unverified` counts them in the ARV set. Everything else is a
   disqualified transfer. Flag a change that widens this without a reason, or that drops Z or TEMP.
 - **A deed counts once (v8.32, audit C-F2).** The sales layer repeats a multi-parcel deed's whole price on every
-  parcel. A deed is `legalreference` (book-page, else `transferid`) + date + price. A deed that sold two or more
-  of the homes in the rows is a bulk sale and all its rows are left out (a note counts them); a deed of one home
-  plus parcels with no house counts once, as that home's sale (`deed_parcels` on the row). Flag a change that lets
+  parcel. A deed is `legalreference` (book-page, else `transferid`) + date + price. Its parcels come from a
+  county-wide look-up of each row's book-page (the other homes of a portfolio often sit outside the box), and a
+  parcel is a home when its assessor record has heated area. A deed with two or more homes is a bulk sale and its
+  rows are left out (a note counts them); a deed of one home plus parcels with no house counts once, as that
+  home's sale (`deed_parcels` on the row). Flag a change that lets
   a bulk deed's total stand as one home's price: it broke the highest-sold cap (Katonah's $4.5M three-parcel deed).
 - **The lot's location never silently goes missing (v8.32, C-F6).** With no assessor record, the subject's
   lat/lng come from its parcel outline (`subject.location_from: 'parcel'`, with a note). If even that fails, a
@@ -899,7 +902,11 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
   - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$263,493** at the 9.75% default (it was
     $262,309 at 10% through v8.29), lot factor $25,850. Base interest $38,425, profit $117,845 per the report.
-  - **Reference hash (v8.30): `c7e8f10b0bd7`** (v8.19–v8.29: `882293828f24`, the 10% rate). Recipe: a fresh page, 2723
+  - **Reference hash (v8.30): `c7e8f10b0bd7`** (v8.19–v8.29: `882293828f24`, the 10% rate). v8.32 adds
+    `compStats.cap`, so the hash moves with no change to any figure: on 2026-10-12, with the county's
+    `TaxParcel_camadata` layer empty (which blanks the GIS assessor block), main gave `31e8e99b1fe8` and v8.32
+    `d5b26a3d3bfb` (`31e8e99b1fe8` with `cap` deleted). Re-record it once the county layer is back or the gis.js
+    fallback ships; until then compare main and branch in the same run, and Max land $263,493. Recipe: a fresh page, 2723
     Dellinger Dr / Charlotte / 28269 via `gisLookup()`, land 75000, Base $/sf 265, Dayton Townhomes, Units 3; sha-256
     of `JSON.stringify(getReportData())` with `date`, `gis.ts` and `gis.mpt` deleted, first 12 hex. Run Dellinger
     before any rect case (a rect run first changes `lotW`/`lotD`).
