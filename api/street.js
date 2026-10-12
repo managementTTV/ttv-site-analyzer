@@ -23,7 +23,7 @@
 //
 // Sources, all Mecklenburg County / City of Charlotte public ArcGIS (no key):
 //   TaxParcel_camadata   -> land use, vacant/improved, grade, year built, heated sf, building value, last sale
-//                           (v8.34: read through api/gis.js camaQuery(), which falls back to the county's backup
+//                           (v8.35: read through api/gis.js camaQuery(), which falls back to the county's backup
 //                           assessor tables, CamaDataTables, while this layer gives nothing; it has been empty since
 //                           2026-10-09)
 //   TaxParcelSales       -> the sold-as-vacant flag on those last sales (a builder's lot purchase isn't a home sale)
@@ -400,7 +400,7 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
   }catch(e){
     out.errors.push('fatal: '+e.message);
   }finally{
-    // v8.34: say so when any of it came from the county's backup assessor tables
+    // v8.35: say so when any of it came from the county's backup assessor tables
     if(ctx.backup && out.subject && !view) out.notes.unshift(camaBackupNote(ctx));
   }
   return out;
