@@ -2764,7 +2764,6 @@ function renderGisResult(d){
   const cm=d.cama,st=d.site;
   if(cm){
     h+='<div style="font-weight:bold;color:'+teal+';margin:8px 0 4px">\ud83c\udfe0 Assessor record</div>';
-    if(cm.backup)h+='<div style="font-size:11px;color:'+dim+';padding:0 0 3px">From the county\u2019s backup tables: its main assessor list is down or has no record for this lot yet (v8.35).</div>';
     if(cm.owner)h+=row('Owner',cm.owner+(cm.owner2?' & '+cm.owner2:''));
     if(cm.land_use)h+=row('Land use',cm.land_use+(cm.vacant?' \u00b7 VACANT':''));
     if(cm.year_built)h+=row('Existing structure',cm.year_built+(cm.heated_sf?' \u00b7 '+Math.round(cm.heated_sf).toLocaleString()+' sf heated':'')+(cm.beds?' \u00b7 '+cm.beds+'bd/'+cm.baths+'ba':'')+(cm.grade?' \u00b7 '+cm.grade:''));
@@ -6510,7 +6509,7 @@ const APP_VERSION='8.35', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
  {v:'8.35',date:'Oct 2026',name:'County records back on (backup source)',items:[
    'Since about Oct 9 the county\u2019s main assessor list has been empty, so the Assessor record card was blank and the Street Check said \u201cNo assessor record\u201d. Both now read the county\u2019s backup tables when the main list gives nothing, and switch back by themselves once the county fixes it.',
-   'When the backup is in use, the Assessor record card and the Street Check say so.',
+   'When the backup is in use, the County GIS notes and the Street Check say so.',
    'The Street Check now counts each lot once. The old list had one row per building, so a lot with two buildings counted twice; neighbourhood counts can run a few percent lower.',
  ]},
  {v:'8.33',date:'Oct 2026',name:'No more silent wrong numbers',items:[
