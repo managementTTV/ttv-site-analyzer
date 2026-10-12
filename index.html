@@ -748,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.35 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.38 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -2916,10 +2916,14 @@ function renderStreetCheck(d){
     h+='<div style="border-left:3px solid '+col+';padding:6px 10px;margin:4px 0 6px;font-size:12.5px;background:rgba(94,128,149,0.06)">'+E(d.verdict.text)+'</div>';
   }
   if(s&&n){
-    const fmt=(k,v)=>v==null?'—':(k==='sale_psf'||k==='value_psf')?'$'+Math.round(v).toLocaleString()+'/sf':(Math.round(v*10)/10)+'%';
+    const PER={cases_per100:'cases',complaints_per100:'complaints'};   // v8.38 City records rows: a rate per 100 parcels
+    const fmt=(k,v)=>v==null?'—':(k==='sale_psf'||k==='value_psf')?'$'+Math.round(v).toLocaleString()+'/sf'
+      :PER[k]?(Math.round(v*10)/10)+' per 100':(Math.round(v*10)/10)+'%';
     const cnt=(k,p)=>k==='sale_psf'?p.sale_count+' sale'+(p.sale_count===1?'':'s'):k==='value_psf'?p.value_count+' homes'
-      :k==='below_avg_pct'?p.graded+' graded':k==='new_builds_pct'?p.homes+' homes':p.parcels+' parcels';
-    const CH={weaker:['Weaker','var(--red)'],stronger:['Stronger','var(--green)'],similar:['Similar',dim],thin:['Too few',dim]};
+      :k==='below_avg_pct'?p.graded+' graded':k==='new_builds_pct'?p.homes+' homes'
+      :PER[k]?p[PER[k]]+' on '+p.parcels+' parcels':p.parcels+' parcels';
+    // 'more' is the 311 row's "higher than the area": shown, never counted as weaker (complaints, not findings)
+    const CH={weaker:['Weaker','var(--red)'],stronger:['Stronger','var(--green)'],similar:['Similar',dim],thin:['Too few',dim],more:['Higher','var(--amber)']};
     const area=n.kind==='radius'?'Half mile':'Neighbourhood';
     h+='<div style="font-size:11px;color:'+dim+'">This street: '+E(s.label)+' · '+s.homes+' homes on '+s.parcels+' parcels. '
       +area+': '+E(n.label)+' · '+n.homes.toLocaleString()+' homes.</div>';
@@ -2931,11 +2935,35 @@ function renderStreetCheck(d){
     if(s.nonres_uses&&s.nonres_uses.length)h+='<div style="font-size:11.5px;color:var(--text-mid);margin-top:6px">Commercial on this street: '
       +s.nonres_uses.map(u=>E(u.n+' '+u.use.toLowerCase())).join(', ')+'.</div>';
   }
+  h+=streetRecordsHtml(d,E);
+  if(d.traffic){   // v8.38: how busy the lot's own street is
+    const t=d.traffic,tf=t.thoroughfare?'a City '+t.thoroughfare+' thoroughfare':'';
+    const txt=t.aadt?'about '+t.aadt.toLocaleString()+' cars a day (NCDOT, '+t.aadt_year+')'+(tf?'; '+tf:'')
+      :tf?tf+' (no NCDOT count)':'no NCDOT count and not a City thoroughfare: a neighbourhood street';
+    h+='<div style="font-size:11.5px;color:'+(t.busy?'var(--amber)':'var(--text-mid)')+';margin-top:4px">'+(t.busy?'Busy road: ':'Traffic: ')+E(txt)+'.</div>';
+  }
   if(d.notes&&d.notes.length)h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">'+d.notes.map(E).join(' ')+'</div>';
   if(d.errors&&d.errors.length)h+='<div style="font-size:11px;color:var(--red);margin-top:4px">'+d.errors.map(E).join('; ')+'</div>';
   h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">Mecklenburg County assessor records: buildings, lots and land use only. Sales are each home’s last market sale in '
-    +((d.params&&d.params.months)||60)+' months. A screening check: it doesn’t change the ARV or any number on The Underwrite, and the thresholds are judgement, not backtested.</div>';
+    +((d.params&&d.params.months)||60)+' months.'+(d.records?' City of Charlotte code-enforcement and 311 records, counted, never who lives there.':'')
+    +(d.traffic?' NCDOT traffic counts and the City’s thoroughfare map.':'')
+    +' A screening check: it doesn’t change the ARV or any number on The Underwrite, and the thresholds are judgement, not backtested.</div>';
   body.innerHTML=h;
+}
+// v8.38: what the City's records found on the street itself, in words. Counts only; kinds and wording match api/street.js.
+const STREET_CASE_KINDS=[['overgrowth','overgrown yard','overgrown yards'],['vehicles','junked or abandoned vehicle','junked or abandoned vehicles'],
+  ['lawn_parking','car parked on the lawn','cars parked on the lawn'],['junk','junk, neglect or dumping case','junk, neglect or dumping cases'],
+  ['housing','housing-code repair','housing-code repairs']];
+const STREET_COMPLAINT_KINDS=[['yard','overgrown or junky yard','overgrown or junky yards'],['vehicles','junk, abandoned or lawn-parked car','junk, abandoned or lawn-parked cars'],
+  ['boarded','boarded-up house','boarded-up houses']];
+function streetRecordsHtml(d,E){
+  const r=d.records;if(!r||!r.city||!r.street)return '';
+  const s=r.street,list=(by,kinds)=>kinds.filter(k=>by&&by[k[0]]>0).map(k=>by[k[0]]+' '+(by[k[0]]===1?k[1]:k[2])).join(', ');
+  const cases=s.cases?s.cases+' confirmed code violation'+(s.cases===1?'':'s')+' ('+list(s.cases_by,STREET_CASE_KINDS)+')':'no confirmed code violations';
+  const compl=s.complaints?s.complaints+' 311 complaint'+(s.complaints===1?'':'s')+' ('+list(s.complaints_by,STREET_COMPLAINT_KINDS)+')':'no 311 condition complaints';
+  let h='<div style="font-size:11.5px;color:var(--text-mid);margin-top:6px">On this street, last '+(r.months||24)+' months: '+E(cases)+'; '+E(compl)+'.</div>';
+  if(s.demolition_orders)h+='<div style="font-size:11.5px;color:var(--red);margin-top:4px">'+s.demolition_orders+' parcel'+(s.demolition_orders===1?' is':'s are')+' on the City’s demolition-order list.</div>';
+  return h+'<div style="font-size:11px;color:var(--text-dim);margin-top:2px">Violations are what an inspector found and the owner or the City fixed; 311 complaints are what someone reported, not checked.</div>';
 }
 
 // ═══════════════════ PAGE 2 — LOT MODE ═══════════════════
@@ -6589,8 +6617,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.35', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.38', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.38',date:'Oct 2026',name:'Street Check: City records and busy roads',items:[
+   'The Street Check now counts what the City of Charlotte found on the street in the last 24 months: confirmed code violations (overgrown yards, junked or abandoned cars, cars parked on the lawn, junk and dumping, housing-code repairs) and 311 complaints about the same things, each against the neighbourhood per 100 parcels. Twice the neighbourhood\u2019s rate of violations, with 3 or more, reads Weaker. 311 complaints are shown but never counted against a street: they\u2019re what someone reported, not what an inspector found.',
+   'It also says how busy the lot\u2019s own street is, from NCDOT\u2019s traffic counts and the City\u2019s thoroughfare map, and whether any parcel on the street has a City demolition order. A busy road (10,000+ cars a day, or a major thoroughfare) or a demolition order turns an In line street into Watch.',
+   'Charlotte only: outside the City the card says no records were counted, since the towns keep none like these. Display only, as before: nothing here changes the ARV or any number on The Underwrite.',
+ ]},
  {v:'8.35',date:'Oct 2026',name:'County records back on (backup source)',items:[
    'Since about Oct 9 the county\u2019s main assessor list has been empty, so the Assessor record card was blank and the Street Check said \u201cNo assessor record\u201d. Both now read the county\u2019s backup tables when the main list gives nothing, and switch back by themselves once the county fixes it.',
    'When the backup is in use, the County GIS notes and the Street Check say so.',
