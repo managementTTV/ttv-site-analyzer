@@ -232,6 +232,18 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   proxy queries Mecklenburg County's own public servers (`meckgis` CAMA / building footprints /
   tree canopy, `meckaerial` LiDAR DEM) through `Promise.allSettled`, so one layer being down costs
   one field, not the lookup. Flag a change that makes any of these awaited serially or fatal.
+- **The assessor record has a backup (v8.35).** `TaxParcel_camadata` (the county's ready-made join of its assessor
+  tables onto the parcel map) has answered with no rows since 2026-10-09. `camaQuery()` in `api/gis.js` asks it first
+  and, when it gives nothing or fails, reads `CamaDataTables` (`/3` tb_allparceldata, one row per tax parcel; `/1`
+  tb_allbuildings, `buildingsequence=1`) and renames their fields to camadata's (`CAMA_FROM_PARCELS`,
+  `CAMA_FROM_BUILDINGS`, `CAMA_BUILT`), so callers read the same row either way and it goes back to camadata by itself.
+  Searches by PID or by distance go through `TaxParcel_Camaownershipvalues`, which pairs the map PID camadata used
+  (`pid`; a condo's common parcel, 11907C96) with the tables' tax PID (`camapid`; each unit, 11907640) and carries the
+  parcel shapes. `api/street.js` uses it too; `api/comps.js` has its own `camaFetch()` (v8.34). The answer says when the
+  backup answered (`cama.backup`, `camaBackupNote()`), "down" only when camadata itself has no rows. Owner fields: only
+  the two names camadata gave. Checked against 26 saved pre-outage `/api/gis` answers (20 identical on every field; the
+  rest are addresses the county has since assigned, a renamed commercial area and a condo's other unit). Flag a change
+  that drops the backup, maps a field differently in one caller, or pulls more owner data from the tables.
 - **`aj()` throws on an ArcGIS error body.** ArcGIS answers a bad field or `where` with HTTP 200 and
   an `{error:{...}}` payload; treating that as "no features" silently blanked the whole CAMA block
   once already. Keep the error check in `aj()` and `ajPost()`.
@@ -485,6 +497,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **One street check, two callers (2026-10-01).** The handler only validates and sends; the work is `streetCheck()`,
   which `api/mcp.js` also calls. `/api/street` output must stay byte-identical when either side changes (see Street
   Data connector). `keep.rows` / `keep.subject` carry CAMA owner fields for the same-site rule: never send them.
+- **Assessor rows come through `camaQuery()` (v8.35).** One `ctx` per request: once a query falls back to the backup
+  tables, the rest of the request stays there, and the notes open with `camaBackupNote()`. camadata held one row per
+  building, so a lot with two buildings counted twice; the backup holds one row per lot, which runs neighbourhood
+  counts 1-5% lower. Against the 76 street checks saved on 2026-10-01 the backup gave the same verdict on 75 (the other
+  went from "weaker" to "thin": one street sale fewer) and the same check verdict on 453 of 456.
 
 ### Street Data connector (`api/mcp.js`, MCP, 2026-10-01)
 - **What it is:** "TTV Street Data", a read-only remote MCP server for claude.ai. An org admin adds it once as a custom
@@ -902,11 +919,13 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
   - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$263,493** at the 9.75% default (it was
     $262,309 at 10% through v8.29), lot factor $25,850. Base interest $38,425, profit $117,845 per the report.
-  - **Reference hash (v8.30): `c7e8f10b0bd7`** (v8.19–v8.29: `882293828f24`, the 10% rate). v8.34 adds
-    `compStats.cap`, so the hash moves with no change to any figure: on 2026-10-12, with the county's
-    `TaxParcel_camadata` layer empty (which blanks the GIS assessor block), main gave `31e8e99b1fe8` and v8.34
-    `d5b26a3d3bfb` (`31e8e99b1fe8` with `cap` deleted). Re-record it once the county layer is back or the gis.js
-    fallback ships; until then compare main and branch in the same run, and Max land $263,493. Recipe: a fresh page, 2723
+  - **Reference hash (v8.35, 2026-10-12): `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
+    county's backup tables (`gis.cama.source` "… (backup tables)"). History, no figure moving at any step:
+    `c7e8f10b0bd7` (v8.30 on 10/08, main layer up); `31e8e99b1fe8` (v8.31–v8.33 while `TaxParcel_camadata` was empty
+    and the assessor block blank); `d5b26a3d3bfb` (v8.34 adds `compStats.cap`); `ae9025aadcaa` (v8.35 brings the
+    block back from the backup; `f88547f59dfe` on both v8.34 and v8.35 with `gis.cama` deleted). When the county
+    repairs its layer the block's `source` (and the county's newer address for the lot) moves the hash again:
+    re-record it then. Until then compare main and branch in the same run. Recipe: a fresh page, 2723
     Dellinger Dr / Charlotte / 28269 via `gisLookup()`, land 75000, Base $/sf 265, Dayton Townhomes, Units 3; sha-256
     of `JSON.stringify(getReportData())` with `date`, `gis.ts` and `gis.mpt` deleted, first 12 hex. Run Dellinger
     before any rect case (a rect run first changes `lotW`/`lotD`).

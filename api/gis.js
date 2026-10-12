@@ -52,9 +52,12 @@ async function aj(url, fetchSignal){
   return j;
 }
 // ArcGIS geometry operations need POST — the payloads (polygon rings) blow past URL limits.
-async function ajPost(url, params){
+// fetchSignal: optional, as in aj() (v8.35: camaQuery() passes api/street.js's through).
+async function ajPost(url, params, fetchSignal){
   const body = new URLSearchParams(params).toString();
-  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+  const init = {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body};
+  if(fetchSignal) init.signal = fetchSignal();
+  const r = await fetch(url, init);
   if(!r.ok) throw new Error('HTTP '+r.status+' '+url);
   const j = await r.json();
   if(j && j.error) throw new Error('ArcGIS '+(j.error.code||'')+': '+(j.error.message||''));
@@ -67,6 +70,157 @@ async function byPolygon(layerUrl, ring, outFields='*', returnGeometry=false){
     spatialRel:'esriSpatialRelIntersects', outFields, returnGeometry:String(!!returnGeometry), f:'json'};
   if(returnGeometry) params.outSR = String(SR);
   return ajPost(layerUrl+'/query', params);
+}
+
+// v8.35: the county's assessor (CAMA) records, for this file and api/street.js (api/comps.js has its own copy,
+// camaFetch(), from v8.34).
+// TaxParcel_camadata is the county's ready-made join of its assessor tables onto the parcel map. From 2026-10-09 it has
+// answered with no rows (the layer and its fields are still listed; checked again 2026-10-12), while the tables it is
+// built from still answer in CamaDataTables: 3 = tb_allparceldata, one row per tax parcel, and 1 = tb_allbuildings, one
+// row per building (sequence 1 is the main building, the one camadata carried). camaQuery() asks camadata first; when
+// that gives nothing or fails, it reads the two tables and renames their fields to camadata's, so a caller reads the same
+// row either way, and it goes back to camadata by itself once the county repairs it. Condo units: camadata files each
+// unit under the common parcel's map PID (11907C96), the tables under the unit's own tax PID (11907640).
+// TaxParcel_Camaownershipvalues pairs the two (pid / camapid) and carries the parcel shapes, so searches by PID or by
+// distance go through it.
+const CAMA_LAYER = `${MECK}/TaxParcel_camadata/MapServer/0`;
+const CAMA_PAIRS = `${MECK}/TaxParcel_Camaownershipvalues/MapServer/0`;
+const CAMA_PARCELS = `${MECK}/CamaDataTables/MapServer/3`, CAMA_BUILDINGS = `${MECK}/CamaDataTables/MapServer/1`;
+const CAMA_PAGE = 2000, CAMA_CHUNK = 500;   // the county's maxRecordCount; tax PIDs per IN list (POST, so no URL limit)
+// camadata field <- backup field. Owners: only the two names camadata gave (no mailing address, no third owner).
+const CAMA_FROM_PARCELS = {streetname:'streetname', streetnumber:'streetnumber', legaldesc:'legaldescription',
+  ownrlstnme:'owner1lastname', ownrfrstnme:'owner1firstname', ownr2lstnme:'owner2lastname', ownr2frstnme:'owner2firstname',
+  lusecode:'landusecode', landuse_description:'landuse_description', legalacres:'legalacres', neighborhood:'neighborhood',
+  neighbordesc:'neighborhood_description', vacorimprov:'txt_vacantorimproved', saleprice:'saleprice', saledate:'saledate',
+  validsale:'salesvalidity', naldesc:'naldesc', typeofdeed:'cde_typeofdeed', grantor:'nme_grantor', deed_book:'deed_book',
+  deed_page:'deed_page', totlandval:'totallandvalue', totalbldgval:'totalbuildingvalue', totalvalue:'totalvalue',
+  totmarkval:'totalmarketvalue'};
+const CAMA_FROM_BUILDINGS = {yearbuilt:'yearbuilt', effyearblt:'effectiveyearbuilt', totalarea:'totalarea', finarea:'finishedarea',
+  bedrooms:'bedrooms', fullbath:'fullbath', halfbath:'halfbath', grade:'grade', bldgtype:'buildingtype',
+  storyheight:'storyheight', extwall:'extwall', foundation:'foundation', resunits:'residentialunits'};
+// Built from more than one field: [parcel fields, building fields, (parcel row, building row or null) -> value].
+// address: tb_allparceldata's location_address is camadata's address ("15004 ANNAN CT CHARLOTTE NC"); a lot with no
+// house number has a leading space. heatedarea: the parcel's heated area, else the main building's finished area.
+// xcoord / ycoord: camadata keeps latitude in xcoord and longitude in ycoord; the table keeps them, as text, in gis2 / gis1.
+const camaNum = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+const CAMA_BUILT = {
+  address:[['location_address'], [], a=>String(a.location_address||'').trim()||null],
+  heatedarea:[['num_heatedarea'], ['finishedarea'], (a,b)=>a.num_heatedarea!=null ? a.num_heatedarea : (b && b.finishedarea!=null ? b.finishedarea : null)],
+  xcoord:[['gis2'], [], a=>camaNum(a.gis2)],
+  ycoord:[['gis1'], [], a=>camaNum(a.gis1)],
+};
+// fn over each CAMA_CHUNK slice of list, a few at a time (the county's servers, and api/mcp.js's time budget)
+async function camaChunks(list, fn){
+  const chunks = []; for(let i=0; i<list.length; i+=CAMA_CHUNK) chunks.push(list.slice(i, i+CAMA_CHUNK));
+  for(let i=0; i<chunks.length; i+=4) await Promise.all(chunks.slice(i, i+4).map(fn));
+}
+// Every row matching a query, a page of CAMA_PAGE at a time, up to maxPages.
+async function camaPages(url, params, outFields, maxPages, fetchSignal){
+  const rows = [];
+  for(let p=0; p<maxPages; p++){
+    const j = await ajPost(url+'/query', Object.assign({outFields, returnGeometry:'false',
+      resultOffset:String(p*CAMA_PAGE), resultRecordCount:String(CAMA_PAGE), f:'json'}, params), fetchSignal);
+    (j.features||[]).forEach(f=>rows.push(f.attributes));
+    if(!j.exceededTransferLimit && (j.features||[]).length < CAMA_PAGE) return {rows, truncated:false};
+  }
+  return {rows, truncated:true};
+}
+// Is camadata itself down (no rows at all, or no answer), rather than just missing one parcel? Rechecked every 5 minutes
+// on a warm instance; a failed check isn't kept, so a timeout doesn't stick.
+let _camaDown = null;
+async function camaMainDown(fetchSignal){
+  if(_camaDown && Date.now()-_camaDown.at < 300000) return _camaDown.down;
+  try{
+    const j = await ajPost(CAMA_LAYER+'/query', {where:'1=1', returnCountOnly:'true', f:'json'}, fetchSignal);
+    _camaDown = {at:Date.now(), down:!(j.count>0)};
+    return _camaDown.down;
+  }catch(e){ return true; }
+}
+// What the notes say when the rows came from the backup tables (ctx.down: the main layer itself is down).
+export function camaBackupNote(ctx){
+  return ctx.down ? 'County assessor layer down, so the assessor data comes from the county’s backup tables.'
+    : 'The county’s main assessor layer has no record for this lot yet, so it comes from the county’s backup tables.';
+}
+
+// One assessor query, in camadata's terms. q: {pids:[...]}, or {where, near:{lat, lng, ft}}, or {where}; where uses the
+// field names camadata and tb_allparceldata share (streetname, neighborhood). near = every parcel within ft of the point.
+// fields: camadata field names (comma-separated). opt: {ctx, maxPages, fetchSignal}. ctx is one object per request:
+// once a query falls back, ctx.backup keeps the rest of the request on the backup tables, ctx.down says whether
+// camadata itself is down, and ctx.mainErr keeps camadata's error (dropped when the backup answers).
+// Returns {rows, truncated, backup}; throws only when the backup fails too.
+export async function camaQuery(q, fields, opt){
+  const {ctx={}, maxPages=1, fetchSignal} = opt || {};
+  const want = String(fields).split(',').map(f=>f.trim()).filter(Boolean);
+  const sqv = s => String(s).replace(/'/g, "''");
+  const near = q.near ? {geometry:`${q.near.lng},${q.near.lat}`, geometryType:'esriGeometryPoint', inSR:'4326',
+    spatialRel:'esriSpatialRelIntersects', distance:String(q.near.ft), units:'esriSRUnit_Foot'} : {};
+  const pidWhere = q.pids ? `pid IN (${q.pids.map(p=>`'${sqv(p)}'`).join(',')})` : null;
+  let downP = null;
+  if(!ctx.backup){
+    try{
+      const r = await camaPages(CAMA_LAYER, Object.assign({where:pidWhere||q.where||'1=1', orderByFields:'objectid_1'}, near),
+        want.join(','), maxPages, fetchSignal);
+      if(r.rows.length) return Object.assign(r, {backup:false});
+    }catch(e){ ctx.mainErr = 'cama: '+e.message; }
+    ctx.backup = true;
+    downP = camaMainDown(fetchSignal).then(d=>{ ctx.down = d; });   // only for the note's wording: runs alongside the reads
+  }
+  try{ return await camaBackup(q, want, pidWhere, near, maxPages, fetchSignal); }
+  finally{ if(downP) await downP; }
+}
+// The backup half of camaQuery(). A search by PID or distance first gets its (map PID, tax PID) pairs.
+// Rows from a where-only search (a neighbourhood) carry the tax PID: for a condo unit that is the unit's own PID, not
+// the common parcel's map PID camadata gave (TTV's lots are rarely condos; the pairs look-up would double the requests).
+async function camaBackup(q, want, pidWhere, near, maxPages, fetchSignal){
+  const sqv = s => String(s).replace(/'/g, "''");
+  const pf = ['parcelid','yearid'], bf = ['parcelid','yearid'];
+  want.forEach(f=>{ if(CAMA_FROM_PARCELS[f]) pf.push(CAMA_FROM_PARCELS[f]); else if(CAMA_FROM_BUILDINGS[f]) bf.push(CAMA_FROM_BUILDINGS[f]);
+    else if(CAMA_BUILT[f]){ pf.push(...CAMA_BUILT[f][0]); bf.push(...CAMA_BUILT[f][1]); } });
+  const pOut = [...new Set(pf)].join(','), bOut = [...new Set(bf)].join(','), needB = bf.length > 2;
+  let pairs = null, truncated = false;
+  if(q.pids || q.near){
+    try{
+      const r = await camaPages(CAMA_PAIRS, Object.assign({where:pidWhere||'1=1', orderByFields:'objectid'}, near), 'pid,camapid', maxPages, fetchSignal);
+      const seen = new Set();   // the pairs layer repeats a few (pid, camapid) pairs (15713217): one row each
+      pairs = r.rows.filter(a=>a.pid && a.camapid && !seen.has(a.pid+'|'+a.camapid) && seen.add(a.pid+'|'+a.camapid))
+        .map(a=>({pid:a.pid, tax:a.camapid}));
+      truncated = r.truncated;
+    }catch(e){ if(q.near) throw new Error('cama_backup: '+e.message); pairs = []; }
+    // a PID the pairs layer doesn't have (or a pairs layer that didn't answer): look it up as its own tax PID
+    if(q.pids) q.pids.forEach(p=>{ if(!pairs.some(x=>x.pid===p)) pairs.push({pid:p, tax:p}); });
+  }
+  const P = new Map(), B = new Map();
+  const latest = (m, a) => { const o = m.get(a.parcelid); if(!o || (a.yearid||0) > (o.yearid||0)) m.set(a.parcelid, a); };
+  const inList = chunk => chunk.map(p=>`'${sqv(p)}'`).join(',');
+  const buildings = chunk => camaPages(CAMA_BUILDINGS, {where:`parcelid IN (${inList(chunk)}) AND buildingsequence=1`,
+    orderByFields:'objectid'}, bOut, 1, fetchSignal).then(r=>r.rows.forEach(a=>latest(B, a)));
+  try{
+    if(pairs){
+      await camaChunks([...new Set(pairs.map(x=>x.tax))], chunk=>Promise.all([
+        camaPages(CAMA_PARCELS, {where:`parcelid IN (${inList(chunk)})`+(q.where?` AND (${q.where})`:''), orderByFields:'objectid'},
+          pOut, 1, fetchSignal).then(r=>r.rows.forEach(a=>latest(P, a))),
+        needB ? buildings(chunk) : null]));
+    } else {
+      const r = await camaPages(CAMA_PARCELS, {where:q.where||'1=1', orderByFields:'objectid'}, pOut, maxPages, fetchSignal);
+      r.rows.forEach(a=>latest(P, a)); truncated = r.truncated;
+      if(needB) await camaChunks([...P.keys()], buildings);
+    }
+  }catch(e){ throw new Error('cama_backup: '+e.message); }
+
+  const row = (pid, a) => {
+    const b = B.get(a.parcelid) || null, o = {};
+    want.forEach(f=>{
+      if(f==='pid') o.pid = pid;
+      else if(CAMA_FROM_PARCELS[f]) o[f] = a[CAMA_FROM_PARCELS[f]]!==undefined ? a[CAMA_FROM_PARCELS[f]] : null;
+      else if(CAMA_FROM_BUILDINGS[f]) o[f] = b && b[CAMA_FROM_BUILDINGS[f]]!==undefined ? b[CAMA_FROM_BUILDINGS[f]] : null;
+      else if(CAMA_BUILT[f]) o[f] = CAMA_BUILT[f][2](a, b);
+      else o[f] = null;   // a camadata field the backup has no mapping for yet: add it to the maps above
+    });
+    return o;
+  };
+  // pairs keep the pairs layer's order; P (rows that also matched q.where) decides which are kept
+  const rows = pairs ? pairs.filter(x=>P.has(x.tax)).map(x=>row(x.pid, P.get(x.tax))) : [...P.values()].map(a=>row(a.parcelid, a));
+  return {rows, truncated, backup:true};
 }
 const _fields = {};
 async function fields(id){ if(_fields[id]) return _fields[id]; const m = await aj(`${BASE}/${id}?f=json`); _fields[id] = (m.fields||[]); return _fields[id]; }
@@ -524,16 +678,16 @@ export default async function handler(req, res){
     const pid = out.parcel && out.parcel.pid;
     const ring = out.parcel && out.parcel.geometry && out.parcel.geometry.rings && out.parcel.geometry.rings[0];
     if(pid){
+      const camaCtx = {};
       const results = await Promise.allSettled([
-        // 4a) CAMA: owner, land use, year built, heated sf, last sale, assessed values
-        aj(`${MECK}/TaxParcel_camadata/MapServer/0/query?where=${encodeURIComponent("pid='"+pid+"'")}`
-          +'&outFields=pid,address,legaldesc,ownrlstnme,ownrfrstnme,ownr2lstnme,ownr2frstnme,'
-          +'lusecode,landuse_description,legalacres,gisacres,neighbordesc,vacorimprov,'
+        // 4a) CAMA: owner, land use, year built, heated sf, last sale, assessed values (v8.35: from the county's backup
+        // tables when TaxParcel_camadata gives nothing; see camaQuery())
+        camaQuery({pids:[pid]}, 'pid,address,legaldesc,ownrlstnme,ownrfrstnme,ownr2lstnme,ownr2frstnme,'
+          +'lusecode,landuse_description,legalacres,neighbordesc,vacorimprov,'
           +'saleprice,saledate,validsale,naldesc,typeofdeed,grantor,deed_book,deed_page,'
           +'totlandval,totalbldgval,totalvalue,totmarkval,'
           +'yearbuilt,effyearblt,heatedarea,totalarea,finarea,bedrooms,fullbath,halfbath,'
-          +'grade,bldgtype,storyheight,extwall,foundation,resunits'
-          +'&returnGeometry=false&f=json'),
+          +'grade,bldgtype,storyheight,extwall,foundation,resunits', {ctx:camaCtx}),
         // 4b) building footprints on the lot (teardown square footage)
         ring ? byPolygon(`${MECK}/BuildingFootprints/MapServer/0`, ring, 'layer,sourceyear', true) : Promise.resolve(null),
         // 4c) tree canopy polygons over the lot (clipped below)
@@ -547,8 +701,8 @@ export default async function handler(req, res){
       raw.county = debug ? {cama:camaR.status, footprints:fpR.status, canopy:canopyR.status, dem:demR.status} : undefined;
 
       // 4a) assessor record
-      if(camaR.status==='fulfilled' && camaR.value && camaR.value.features && camaR.value.features.length){
-        const a = camaR.value.features[0].attributes;
+      if(camaR.status==='fulfilled' && camaR.value.rows.length){
+        const a = camaR.value.rows[0];
         const asDate = v => (typeof v==='number' && v>0 && v<4e12) ? new Date(v).toISOString().slice(0,10) : null;
         const nm = (l,f) => [f,l].map(x=>(x||'').trim()).filter(Boolean).join(' ') || null;
         const validity = (a.validsale||'').trim();
@@ -572,9 +726,18 @@ export default async function handler(req, res){
           land_value:a.totlandval||null, building_value:a.totalbldgval||null,
           total_value:a.totalvalue||null, market_value:a.totmarkval||null,
           legal_acres:a.legalacres||null, neighborhood:a.neighbordesc||null,
-          source:'Mecklenburg County CAMA'
+          source:camaR.value.backup ? 'Mecklenburg County CAMA (backup tables)' : 'Mecklenburg County CAMA'
         };
-      } else if(camaR.status==='rejected'){ out.errors.push('cama: '+camaR.reason.message); }
+        if(camaR.value.backup){
+          out.cama.backup = true; out.notes.push(camaBackupNote(camaCtx));
+          res.setHeader('Cache-Control','s-maxage=3600, stale-while-revalidate');   // back on camadata within the hour once it's repaired
+        }
+      } else if(camaR.status==='rejected'){
+        res.setHeader('Cache-Control','no-store');   // both sources failed: don't keep a blank assessor block for a day
+        if(camaCtx.mainErr) out.errors.push(camaCtx.mainErr);
+        out.errors.push(camaR.reason.message);
+      }
+      else if(camaCtx.down) out.notes.push('No assessor record for PID '+pid+': the county\u2019s main assessor layer is down and its backup tables have none either. Enter structure size by hand.');
       else { out.notes.push('No CAMA record for PID '+pid+' — newly created lot? Enter structure size by hand.'); }
 
       const site = {};
