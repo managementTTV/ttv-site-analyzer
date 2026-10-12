@@ -23,13 +23,16 @@
 //
 // Sources, all Mecklenburg County / City of Charlotte public ArcGIS (no key):
 //   TaxParcel_camadata   -> land use, vacant/improved, grade, year built, heated sf, building value, last sale
+//                           (v8.34: read through api/gis.js camaQuery(), which falls back to the county's backup
+//                           assessor tables, CamaDataTables, while this layer gives nothing; it has been empty since
+//                           2026-10-09)
 //   TaxParcelSales       -> the sold-as-vacant flag on those last sales (a builder's lot purchase isn't a home sale)
 //   TaxParcelBoundaries  -> the subject's centre when the CAMA record has no coordinates
 //   Accela 1             -> address points, to tell N Davidson St from S Davidson St (CAMA drops the direction)
 //   Accela 2 / 3         -> City / State maintained street centrelines (camera spot for Street View)
 // Mecklenburg-only by design, same as api/gis.js and api/comps.js. Hit /api/street?pid=04118535
+import { camaQuery, camaBackupNote } from './gis.js';
 const MECK = 'https://meckgis.mecklenburgcountync.gov/server/rest/services';
-const CAMA_LAYER   = `${MECK}/TaxParcel_camadata/MapServer/0`;
 const SALES_LAYER  = `${MECK}/TaxParcelSales/MapServer/0`;
 const PARCEL_LAYER = `${MECK}/TaxParcelBoundaries/MapServer/0`;
 const CITY = 'https://gis.charlottenc.gov/arcgis/rest/services/Accela/Accela/MapServer';
@@ -111,7 +114,9 @@ async function allRows(layer, params, outFields, fetchSignal){
   }
   return {rows, truncated:true};
 }
-const camaRows = (params, fetchSignal) => allRows(CAMA_LAYER, Object.assign({orderByFields:'objectid_1'}, params), CAMA_FIELDS, fetchSignal);
+// Assessor rows for q ({where}, {near:{lat, lng, ft}} or both; see camaQuery()), paged like allRows(). ctx: the
+// request's camaQuery() state, so once one query falls back to the backup tables the rest do too.
+const camaRows = (q, ctx, fetchSignal) => camaQuery(q, CAMA_FIELDS, {ctx, maxPages:MAX_PAGES, fetchSignal});
 const within = (lat, lng, ft) => ({geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint', inSR:'4326',
   spatialRel:'esriSpatialRelIntersects', distance:String(ft), units:'esriSRUnit_Foot'});
 
@@ -267,11 +272,11 @@ export default async function handler(req, res){
 export async function streetCheck(pid, ft, view, keep, fetchSignal){
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
+  const ctx = {};   // camaQuery()'s state for this request
   try{
     // 1) the subject: street name, neighbourhood code and a point
-    const sj = await ajPost(`${CAMA_LAYER}/query`, {where:`pid='${sq(pid)}'`, outFields:CAMA_FIELDS, returnGeometry:'false', f:'json'}, fetchSignal);
-    const a = (sj.features||[])[0] && sj.features[0].attributes;
-    if(!a){ out.errors.push('No assessor record for PID '+pid+'.'); return out; }
+    const a = (await camaQuery({pids:[pid]}, CAMA_FIELDS, {ctx, fetchSignal})).rows[0];
+    if(!a){ out.errors.push('No assessor record for PID '+pid+(ctx.down ? ': the county\u2019s main assessor layer is down and its backup tables have none either.' : '.')); return out; }
     if(keep) keep.subject = a;
     let lat = num(a.xcoord), lng = num(a.ycoord);   // camadata stores latitude in xcoord, longitude in ycoord
     if(lat==null || lng==null){
@@ -301,10 +306,10 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     //    has a code (else the parcels right around it, to borrow one)
     const useCode = nb.code && !COMMERCIAL_AREA.test(nb.name||'');
     const [stR, lineR, nbR, nearR] = await Promise.allSettled([
-      street ? camaRows(Object.assign({where:`streetname='${sq(street)}'`}, within(lat, lng, ft)), fetchSignal) : Promise.resolve(null),
+      street ? camaRows({where:`streetname='${sq(street)}'`, near:{lat, lng, ft}}, ctx, fetchSignal) : Promise.resolve(null),
       street ? centrelines(street, lat, lng, fetchSignal) : Promise.resolve(null),
-      useCode ? camaRows({where:`neighborhood='${sq(nb.code)}'`}, fetchSignal) : Promise.resolve(null),
-      nb.code ? Promise.resolve(null) : camaRows(Object.assign({where:'1=1'}, within(lat, lng, NEAR_FT)), fetchSignal),
+      useCode ? camaRows({where:`neighborhood='${sq(nb.code)}'`}, ctx, fetchSignal) : Promise.resolve(null),
+      nb.code ? Promise.resolve(null) : camaRows({near:{lat, lng, ft:NEAR_FT}}, ctx, fetchSignal),
     ]);
     if(stR.status==='rejected') out.errors.push('street: '+stR.reason.message);
     if(nbR.status==='rejected') out.errors.push('neighborhood: '+nbR.reason.message);
@@ -356,7 +361,7 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
       const best = Object.entries(count).sort((x,y)=>y[1].n-x[1].n)[0];
       if(best){ nb.code=best[0]; nb.name=best[1].name||null; nb.inferred=true;
         out.notes.push(`The lot has no assessor neighbourhood yet (a new lot), so it takes ${nb.name||nb.code}, the most common one within ${NEAR_FT} ft.`);
-        try{ areaRows = await camaRows({where:`neighborhood='${sq(nb.code)}'`}, fetchSignal); }catch(e){ out.errors.push('neighborhood: '+e.message); }
+        try{ areaRows = await camaRows({where:`neighborhood='${sq(nb.code)}'`}, ctx, fetchSignal); }catch(e){ out.errors.push('neighborhood: '+e.message); }
       }
     }
     if(areaRows){
@@ -369,7 +374,7 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     else if(!nb.code) out.notes.push('No assessor neighbourhood for this lot or its neighbours, so the street is compared with everything within half a mile.');
     if(!area && stRows){
       try{
-        const ar = await camaRows(Object.assign({where:'1=1'}, within(lat, lng, AREA_FT)), fetchSignal);
+        const ar = await camaRows({near:{lat, lng, ft:AREA_FT}}, ctx, fetchSignal);
         area = {label:'Everything within half a mile', kind:'radius', rows:ar.rows.filter(r=>r.pid!==pid)};
         if(ar.truncated) out.notes.push(`More than ${(PAGE*MAX_PAGES).toLocaleString()} parcels within half a mile; the first ${(PAGE*MAX_PAGES).toLocaleString()} were used.`);
       }catch(e){ out.errors.push('area: '+e.message); }
@@ -394,6 +399,9 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     if(street && !out.streetview.camera && !lineErr) out.notes.push(NO_CENTRELINE);
   }catch(e){
     out.errors.push('fatal: '+e.message);
+  }finally{
+    // v8.34: say so when any of it came from the county's backup assessor tables
+    if(ctx.backup && out.subject && !view) out.notes.unshift(camaBackupNote(ctx));
   }
   return out;
 }

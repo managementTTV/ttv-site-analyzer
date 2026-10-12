@@ -231,6 +231,18 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   proxy queries Mecklenburg County's own public servers (`meckgis` CAMA / building footprints /
   tree canopy, `meckaerial` LiDAR DEM) through `Promise.allSettled`, so one layer being down costs
   one field, not the lookup. Flag a change that makes any of these awaited serially or fatal.
+- **The assessor record has a backup (v8.35).** `TaxParcel_camadata` (the county's ready-made join of its assessor
+  tables onto the parcel map) has answered with no rows since 2026-10-09. `camaQuery()` in `api/gis.js` asks it first
+  and, when it gives nothing or fails, reads `CamaDataTables` (`/3` tb_allparceldata, one row per tax parcel; `/1`
+  tb_allbuildings, `buildingsequence=1`) and renames their fields to camadata's (`CAMA_FROM_PARCELS`,
+  `CAMA_FROM_BUILDINGS`, `CAMA_BUILT`), so callers read the same row either way and it goes back to camadata by itself.
+  Searches by PID or by distance go through `TaxParcel_Camaownershipvalues`, which pairs the map PID camadata used
+  (`pid`; a condo's common parcel, 11907C96) with the tables' tax PID (`camapid`; each unit, 11907640) and carries the
+  parcel shapes. `api/street.js` uses it too; `api/comps.js` has its own `camaFetch()` (v8.34). The answer says when the
+  backup answered (`cama.backup`, `camaBackupNote()`), "down" only when camadata itself has no rows. Owner fields: only
+  the two names camadata gave. Checked against 26 saved pre-outage `/api/gis` answers (20 identical on every field; the
+  rest are addresses the county has since assigned, a renamed commercial area and a condo's other unit). Flag a change
+  that drops the backup, maps a field differently in one caller, or pulls more owner data from the tables.
 - **`aj()` throws on an ArcGIS error body.** ArcGIS answers a bad field or `where` with HTTP 200 and
   an `{error:{...}}` payload; treating that as "no features" silently blanked the whole CAMA block
   once already. Keep the error check in `aj()` and `ajPost()`.
@@ -450,6 +462,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **One street check, two callers (2026-10-01).** The handler only validates and sends; the work is `streetCheck()`,
   which `api/mcp.js` also calls. `/api/street` output must stay byte-identical when either side changes (see Street
   Data connector). `keep.rows` / `keep.subject` carry CAMA owner fields for the same-site rule: never send them.
+- **Assessor rows come through `camaQuery()` (v8.35).** One `ctx` per request: once a query falls back to the backup
+  tables, the rest of the request stays there, and the notes open with `camaBackupNote()`. camadata held one row per
+  building, so a lot with two buildings counted twice; the backup holds one row per lot, which runs neighbourhood
+  counts 1-5% lower. Against the 76 street checks saved on 2026-10-01 the backup gave the same verdict on 75 (the other
+  went from "weaker" to "thin": one street sale fewer) and the same check verdict on 453 of 456.
 
 ### Street Data connector (`api/mcp.js`, MCP, 2026-10-01)
 - **What it is:** "TTV Street Data", a read-only remote MCP server for claude.ai. An org admin adds it once as a custom
