@@ -2893,7 +2893,9 @@ function onCanvasScaleInput(){
   const v=parseFloat(($('canvas-scale-ft')||{}).value),canvas=$('lot-editor-canvas');
   if(_lotFromCounty&&canvas&&v>0&&_scaleFtDrawn>0&&v!==_scaleFtDrawn&&polyPoints.length>=3){
     const k=_scaleFtDrawn/v,cx=canvas.width/2,cy=canvas.height/2,map=p=>({x:cx+(p.x-cx)*k,y:cy+(p.y-cy)*k});
+    const keepNote=_edgeNote&&_edgeNote.pts===polyPoints;
     polyPoints=polyPoints.map(map);
+    if(keepNote)_edgeNote.pts=polyPoints;   // still the county's lot, so its edge note stays
     if(planOverlay.positioned){const q=map({x:planOverlay.x,y:planOverlay.y});planOverlay.x=q.x;planOverlay.y=q.y;}
     extraStructures.forEach(st=>{if(st.placed){const q=map({x:st.x||0,y:st.y||0});st.x=q.x;st.y=q.y;}});
   }
@@ -3690,6 +3692,7 @@ function cornerStreetSide(){return ($('corner-street-side')||{}).value==='right'
 // left where they were, a centred plan would now overlap the corner side's band.
 function onCornerSideChange(){planOverlay.positioned=false;extraStructures.forEach(st=>{st.placed=false;});calcBuildable();}
 function calcBuildable(){
+  updateAttachedBuild();   // v8.33: a group's gap is 2 × the side setback, so a setback edit re-lays the overlay
   const minW=pv('sb-minw');
   const br=$('buildable-result');
 
@@ -5027,7 +5030,7 @@ function calcScenarios(){
     // v8.33 (audit M10): a ceiling at or below $0 is shown as the number, in red, with "doesn't work": the deal misses the
     // profit rule even with free land. It used to read a bare "—", like a deal with no ARV. The minus is U+2212, so the
     // offer letter's reader (which only takes a figure above $0) never pre-fills it.
-    const neg=v=>v<0?'−'+fmt(-v):fmt(v);
+    const neg=v=>Math.round(v)<0?'−'+fmt(-v):fmt(Math.max(0,v));
     ruleNote=(maxLand>0?'':' · doesn’t work: misses the rule even at $0 land')
       +` · binding rule: ${binding} · ${ruleL.floor}-only ceiling ${neg(landA)}`;
     const ml=$('max-land-display');if(ml){ml.textContent=neg(maxLand);ml.style.color=maxLand>0?'':'var(--red)';}
@@ -5074,6 +5077,7 @@ function renderUpgradeNote(){
 }
 
 // ═══════════════════ INIT ═══════════════════
+_countySeen=$('county-sel').value;   // v8.33: a county the browser restored on reload counts as the one in place
 buildPlanDropdown();
 renderUpgrades();
 renderComps();
@@ -5249,7 +5253,7 @@ function buildReportHTML(canvasDataUrl){
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'%'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
       +metric('Cash Required',F(d.fin.cash),'at close',true)
-      +metric('Max Land (Base, profit rule)',d.maxLand,profitRuleLabels(d.fin.profitRule).text,true)
+      +metric('Max Land (Base, profit rule)',d.maxLand,(/^\u2212/.test(d.maxLand)?'Doesn\u2019t work: misses the rule even at $0 land. ':'')+profitRuleLabels(d.fin.profitRule).text,true)
     +'</div>'
     +'<div class="two-col">'
       +'<div>'+secHdr('DEAL SUMMARY')
