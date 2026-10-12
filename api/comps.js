@@ -7,6 +7,9 @@
 //   TaxParcelSales     -> every recorded transfer with the assessor's sale-validity code
 //   TaxParcel_camadata -> year built, heated area, beds/baths, grade, lat/lng for each parcel
 // The two are joined on PID, because the sales layer carries no building attributes.
+// v8.34: TaxParcel_camadata came back empty (count 0) from 2026-10-09. The same assessor data sits in the county's
+// CamaDataTables (tb_allparceldata + tb_allbuildings), so camaFetch() reads those whenever the main layer gives
+// nothing, and says so in notes. If neither answers, the request reports an error instead of "no sales".
 //
 // SOP rules encoded here (Deal Analyst SOP, LAND DEALS / STEP 3):
 //   - comps built 2020+ give market context; comps built 2025+ are the "solid" set
@@ -56,12 +59,19 @@ const PARCEL_LAYER= `${MECK}/TaxParcelBoundaries/MapServer/0`;
 // Newly built parcels often carry no situs address in CAMA yet, so fall back to the county's
 // Master Address Points, which are assigned as soon as the lot is recorded.
 const MAT_LAYER   = `${MECK}/MasterAddressPoints/MapServer/0`;
+// The backup assessor tables (v8.34). tb_allparceldata holds the parcel facts (gis1 = longitude, gis2 = latitude),
+// tb_allbuildings one row per building (sequence 1 = the main building, which is what TaxParcel_camadata carried).
+const CAMA_PARCELS   = `${MECK}/CamaDataTables/MapServer/3`;
+const CAMA_BUILDINGS = `${MECK}/CamaDataTables/MapServer/1`;
 
 // Sale-validity codes. Blank = no disqualification (arm's length). Z = builder sale, which is
 // exactly the new-build resale TTV is pricing — the assessor excludes those from ratio studies,
-// but for us they are the best comps on the board. Every other code is a disqualified transfer
-// (multi-parcel conveyance, related parties, foreclosure, <=$3,000, etc.).
-const MARKET_VALIDITY = ['', 'Z'];
+// but for us they are the best comps on the board. TEMP = recorded but not yet reviewed by the county: the
+// partners decided (2026-10-09) to count these, marked "unverified" on each row, because the review runs
+// months behind (about half of the latest month's sales are TEMP) and the team rule only looks back 12.
+// Every other code is a disqualified transfer (multi-parcel conveyance, related parties, foreclosure,
+// <=$3,000, etc.).
+const MARKET_VALIDITY = ['', 'Z', 'TEMP'];
 // Residential land-use codes worth comping against a new single-family / townhome build.
 const RES_USE = /^R(1\d\d|2\d\d|3\d\d)$/;
 // Size matching. Backtest showed +/-20% of the subject's heated area is the sweet spot; widening
@@ -117,6 +127,57 @@ async function ajPost(url, params){
   return j;
 }
 const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+// Assessor records for a list of PIDs, as a Map pid -> attributes named the way TaxParcel_camadata names them
+// (address, xcoord = latitude, ycoord = longitude, yearbuilt, heatedarea, bedrooms, fullbath, halfbath, grade,
+// landuse_description, gisacres, neighbordesc, bldgtype). Main layer first; for the PIDs it gives nothing for, the
+// backup tables (v8.34). used.backup counts the PIDs the backup answered; errors go to errs.
+async function camaFetch(pids, errs, used){
+  const out = new Map();
+  for(let i=0;i<pids.length;i+=60){
+    const chunk = pids.slice(i,i+60), list = chunk.map(p=>`'${p}'`).join(',');
+    let mainErr = null;
+    try{
+      const j = await ajPost(`${CAMA_LAYER}/query`, {where:`pid IN (${list})`,
+        outFields:'pid,address,yearbuilt,heatedarea,bedrooms,fullbath,halfbath,grade,'
+                 +'landuse_description,xcoord,ycoord,gisacres,neighbordesc,bldgtype',
+        returnGeometry:'false', f:'json'});
+      // one row per building; a lot with two buildings comes back twice and the last row wins (audit C-L4, as before
+      // v8.34). The backup reads building 1 only.
+      (j.features||[]).forEach(f=>out.set(f.attributes.pid, f.attributes));
+    }catch(e){ mainErr = 'cama: '+e.message; }
+    // the PIDs the main layer didn't answer: all of them while it's empty, a fresh split now and then otherwise
+    const rest = chunk.filter(p=>!out.has(p));
+    if(!rest.length) continue;
+    const list2 = rest.map(p=>`'${p}'`).join(','), before = used.backup;
+    try{
+      const [pj, bj] = await Promise.all([
+        ajPost(`${CAMA_PARCELS}/query`, {where:`parcelid IN (${list2})`,
+          outFields:'parcelid,yearid,location_address,streetnumber,streetname,gis1,gis2,num_heatedarea,legalacres,neighborhood_description,landuse_description',
+          returnGeometry:'false', f:'json'}),
+        ajPost(`${CAMA_BUILDINGS}/query`, {where:`parcelid IN (${list2}) AND buildingsequence=1`,
+          outFields:'parcelid,yearid,yearbuilt,grade,buildingtype,bedrooms,fullbath,halfbath,finishedarea',
+          returnGeometry:'false', f:'json'})]);
+      const latest = (rows) => { const m = new Map();
+        (rows.features||[]).forEach(f=>{ const a=f.attributes, p=m.get(a.parcelid); if(!p || (a.yearid||0) > (p.yearid||0)) m.set(a.parcelid, a); });
+        return m; };
+      const P = latest(pj), B = latest(bj);
+      P.forEach((a, pid)=>{
+        const b = B.get(pid) || {};
+        // location_address is the main layer's own address format ("15004 ANNAN CT CHARLOTTE NC"); a pre-v8.34 row
+        // and a backup row for the same sale then read the same
+        out.set(pid, {pid, address:(a.location_address||'').trim() || [a.streetnumber, a.streetname].filter(Boolean).join(' ').trim() || null,
+          yearbuilt:b.yearbuilt||null, heatedarea:a.num_heatedarea!=null ? a.num_heatedarea : (b.finishedarea||null),
+          bedrooms:b.bedrooms||null, fullbath:b.fullbath||null, halfbath:b.halfbath||null, grade:b.grade||null,
+          landuse_description:a.landuse_description||null, xcoord:num(a.gis2), ycoord:num(a.gis1),
+          gisacres:a.legalacres>0 ? a.legalacres : null, neighbordesc:a.neighborhood_description||null,
+          bldgtype:(b.buildingtype||'').trim()||null});   // about 48k buildings carry a blank ' ' type
+        used.backup++;
+      });
+      if(mainErr && used.backup===before) errs.push(mainErr);   // the backup's answer stands in for a failed main layer
+    }catch(e){ if(mainErr) errs.push(mainErr); errs.push('cama_backup: '+e.message); }
+  }
+  return out;
+}
 function median(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); const m=s.length>>1;
   return s.length%2 ? s[m] : +((s[m-1]+s[m])/2).toFixed(2); }
 function ringCentroid(rings){
@@ -192,16 +253,29 @@ export default async function handler(req, res){
     if(!centre){ out.errors.push('No parcel geometry for PID '+pid+' — cannot centre the search.');
       res.status(200).json(out); return; }
 
-    try{
-      const cj = await ajPost(`${CAMA_LAYER}/query`, {where:`pid='${pid}'`,
-        outFields:'pid,address,xcoord,ycoord,yearbuilt,heatedarea,neighbordesc,landuse_description',
-        returnGeometry:'false', f:'json'});
-      const a = (cj.features||[])[0] && cj.features[0].attributes;
+    const camaUsed = {backup:0}, joinUsed = {backup:0};
+    {
+      const a = (await camaFetch([pid], out.errors, camaUsed)).get(pid);
       if(a){ subjLat=num(a.xcoord); subjLng=num(a.ycoord);
         out.subject = Object.assign(out.subject||{pid}, {address:a.address||null,
           neighborhood:a.neighbordesc||null, existing_year_built:a.yearbuilt||null,
           existing_heated_sf:a.heatedarea||null, land_use:a.landuse_description||null}); }
-    }catch(e){ out.errors.push('subject_cama: '+e.message); }
+    }
+    // C-F6 (v8.34): a lot with no assessor record yet (a fresh split, like the Dellinger sub-lots) used to lose its
+    // location, and with it the radius clip and the major-road rule, without a word on the page. Its parcel outline
+    // still says where it is, so take the centre of that instead.
+    if(subjLat==null || subjLng==null){
+      try{
+        const pj = await ajPost(`${PARCEL_LAYER}/query`, {where:`pid='${pid}'`, outFields:'pid',
+          returnGeometry:'true', outSR:'4326', f:'json'});
+        const f = (pj.features||[])[0], c = f && f.geometry && ringCentroid(f.geometry.rings);
+        if(c){ subjLat = c.y; subjLng = c.x;
+          out.subject.location_from = 'parcel';
+          out.notes.push('The lot has no assessor record yet, so its location comes from the parcel outline.'); }
+      }catch(e){ out.errors.push('subject_location: '+e.message); }
+    }
+    if(subjLat==null || subjLng==null)
+      out.flags.push(`The lot’s location couldn’t be found, so the ${radius} mi radius wasn’t applied: check every row by hand.`);
 
     // 2) every recorded sale in the envelope over the window. ArcGIS takes a rectangle, so this
     // is a square whose corners sit radius*sqrt(2) away — rows are filtered to the true radius
@@ -225,10 +299,17 @@ export default async function handler(req, res){
       geometry:env, geometryType:'esriGeometryEnvelope', inSR:String(SR),
       spatialRel:'esriSpatialRelIntersects',
       where:`saledate >= DATE '${since}' AND saleprice > ${minPrice}`,
-      outFields:'parcelid,saleprice,saledate,salesvalidity,landuse,soldasvacantflag,naldesc',
+      outFields:'parcelid,saleprice,saledate,salesvalidity,landuse,soldasvacantflag,naldesc,legalreference,transferid',
       returnGeometry:'false', f:'json'});
     const allSales = (sj.features||[]).map(f=>f.attributes);
     out.notes.push(`${allSales.length} recorded sales in the ${radius} mi search box since ${since}`);
+    // C-F2 (v8.34): one deed can convey several parcels, and the sales layer repeats the deed's whole price on every
+    // one of them. A deed is its book-page (legalreference) on one date at one price; transferid when there's no
+    // book-page. parcelsOfDeed holds the distinct parcels each deed covers in the search box; step 5b adds the ones
+    // outside it.
+    const deedOf = a => `${(a.legalreference||'').trim() || ('t'+(a.transferid||''))}|${a.saledate}|${a.saleprice}`;
+    const parcelsOfDeed = new Map();
+    allSales.forEach(a=>{ const k = deedOf(a); if(!parcelsOfDeed.has(k)) parcelsOfDeed.set(k, new Set()); parcelsOfDeed.get(k).add(a.parcelid); });
 
     // 3) keep arm's-length + builder sales of residential parcels, newest row per parcel
     const byParcel = new Map();
@@ -250,23 +331,15 @@ export default async function handler(req, res){
       return true;
     });
     if(lotSales) out.notes.push(`${lotSales} lot sales (sold as vacant) left out`);
-    out.notes.push(`${market.length} market-valid residential sales (blank or Z) on distinct parcels`);
+    out.notes.push(`${market.length} market-valid residential sales (blank, Z or TEMP) on distinct parcels`);
     if(!market.length){ out.summary={count:0}; res.status(200).json(out); return; }
 
     // 4) join the assessor record — the sales layer has no building attributes at all
     const pids = market.map(a=>a.parcelid);
-    const cama = new Map();
-    for(let i=0;i<pids.length;i+=60){
-      const chunk = pids.slice(i,i+60);
-      const where = 'pid IN ('+chunk.map(p=>`'${p}'`).join(',')+')';
-      try{
-        const j = await ajPost(`${CAMA_LAYER}/query`, {where,
-          outFields:'pid,address,yearbuilt,heatedarea,bedrooms,fullbath,halfbath,grade,'
-                   +'landuse_description,xcoord,ycoord,gisacres,neighbordesc,bldgtype',
-          returnGeometry:'false', f:'json'});
-        (j.features||[]).forEach(f=>cama.set(f.attributes.pid, f.attributes));
-      }catch(e){ out.errors.push('cama_join: '+e.message); }
-    }
+    const cama = await camaFetch(pids, out.errors, joinUsed);
+    if(joinUsed.backup) out.notes.push('County data source down — using backup: the building records came from the county’s backup assessor tables.');
+    // C-F7 (v8.34): sales with no building record at all is the assessor data being down, not "no new builds here"
+    if(!cama.size) out.errors.push(`county_records: no assessor record answered for any of the ${pids.length} sales, so no comp can be built`);
 
     // 4b) fill in addresses the assessor record is missing (common on brand-new lots)
     const missing = pids.filter(p=>{ const c=cama.get(p); return c && !(c.address||'').trim(); });
@@ -288,7 +361,8 @@ export default async function handler(req, res){
     // 5) build the comp rows
     const roads = await roadsP;
     const grid = (roads && subjLat!=null && subjLng!=null) ? roadGrid({lat:subjLat,lng:subjLng}, roads) : null;
-    if(!grid) out.notes.push(`Major roads not checked (${roads?'the lot has no assessor location':'the City road layer didn’t answer'}): sales on both sides count as this side.`);
+    // v8.34: said in flags (which the page shows) and in the rule line, not only in notes
+    if(!grid) out.flags.push(`Major roads not checked (${roads?'the lot’s location is unknown':'the City road layer didn’t answer'}): sales on both sides of a major road count as this side.`);
     const rows = []; let dropped = 0, predates = 0;
     market.forEach(a=>{
       const c = cama.get(a.parcelid); if(!c) return;
@@ -308,7 +382,8 @@ export default async function handler(req, res){
       // could drive the ARV while the UI says "within 0.5 mi". Rows with no coordinates are kept
       // (rare) and simply can't be distance-checked.
       if(dist!=null && dist > radius){ dropped++; return; }
-      const btype = (c.bldgtype||'').trim().toUpperCase(), grade = (c.grade||'').trim().toUpperCase();
+      // the backup tables write some grades with a class number ("AVERAGE 03"); the finish classes are the words
+      const btype = (c.bldgtype||'').trim().toUpperCase(), grade = (c.grade||'').trim().toUpperCase().replace(/\s+\d+$/,'');
       const saleDate = isoDate(a.saledate);
       rows.push({
         pid:a.parcelid, address:c.address||null,
@@ -316,10 +391,13 @@ export default async function handler(req, res){
         in_window: !!saleDate && saleDate >= teamSince,   // inside the team rule's 12 months
         validity:(a.salesvalidity||'').trim() || null,
         builder_sale:(a.salesvalidity||'').trim().toUpperCase()==='Z',
+        // TEMP: recorded, not yet reviewed by the county (may still turn out not to be an arm's-length sale)
+        unverified:(a.salesvalidity||'').trim().toUpperCase()==='TEMP',
+        deed:deedOf(a), _lref:(a.legalreference||'').trim(),
         year_built:yb, heated_sf:sf,
         psf: (sf && sf>0) ? +(a.saleprice/sf).toFixed(2) : null,
         beds:c.bedrooms||null, baths:((c.fullbath||0)+0.5*(c.halfbath||0))||null,
-        grade:c.grade||null, type:c.bldgtype||c.landuse_description||null,
+        grade:grade||null, type:btype||c.landuse_description||null,
         product: PRODUCT_OF_TYPE[btype] || null,
         finish: STANDARD_GRADES.includes(grade) ? 'standard' : UPGRADED_GRADES.includes(grade) ? 'upgraded'
               : LUXURY_GRADES.includes(grade) ? 'luxury' : null,
@@ -332,6 +410,39 @@ export default async function handler(req, res){
         tier: (yb && yb>=solidYear) ? 'solid' : (yb && yb>=minYear) ? 'context' : 'older'
       });
     });
+    // C-F2: a deed that sold two or more of these homes at once is a bulk sale (a portfolio, a builder's takedown): its
+    // price is for all of them, so none of them is a retail comp, and left in, its total broke the highest-sold cap. A
+    // deed of one home plus parcels with no house on them (a side lot, a common area) counts once, as that home's sale.
+    // 5b) A deed's other homes can sit outside the search box or the radius, or be filtered out above (resold since,
+    // no assessor record, sold before the house was built), so the parcels come from a county-wide look-up of each
+    // row's book-page, and a parcel is a home when its assessor record has heated area.
+    {
+      const deedPids = new Map();
+      rows.forEach(r=>{ if(!deedPids.has(r.deed)) deedPids.set(r.deed, new Set(parcelsOfDeed.get(r.deed))); });
+      const lrefs = [...new Set(rows.map(r=>r._lref).filter(l=>/^[\w-]+$/.test(l)))];
+      const lookups = [];
+      for(let i=0;i<lrefs.length;i+=60){
+        const list = lrefs.slice(i,i+60).map(l=>`'${l}'`).join(',');
+        lookups.push(ajPost(`${SALES_LAYER}/query`, {where:`legalreference IN (${list})`,
+          outFields:'parcelid,legalreference,transferid,saledate,saleprice', returnGeometry:'false', f:'json'})
+          .then(j=>(j.features||[]).forEach(f=>{ const k = deedOf(f.attributes); if(deedPids.has(k)) deedPids.get(k).add(f.attributes.parcelid); }))
+          .catch(e=>out.errors.push('deed_parcels: '+e.message)));
+      }
+      await Promise.all(lookups);
+      const multi = [...deedPids.values()].filter(set=>set.size>1);
+      const unknown = [...new Set(multi.flatMap(set=>[...set]))].filter(p=>!cama.has(p));
+      const extra = unknown.length ? await camaFetch(unknown, out.errors, {backup:0}) : new Map();
+      const isHome = p => { const c = cama.get(p) || extra.get(p); return !!(c && num(c.heatedarea) > 0); };
+      const homesOf = new Map();
+      deedPids.forEach((set, k)=>homesOf.set(k, set.size>1 ? [...set].filter(isHome).length : 1));
+      let bulkRows = 0;
+      for(let i=rows.length-1;i>=0;i--){
+        if(homesOf.get(rows[i].deed) > 1){ bulkRows++; rows.splice(i,1); }
+      }
+      if(bulkRows) out.notes.push(`${bulkRows} sale${bulkRows===1?'':'s'} on deeds that sold several homes at once left out`);
+      rows.forEach(r=>{ const n = deedPids.get(r.deed).size; if(n>1) r.deed_parcels = n; });
+    }
+    rows.forEach(r=>{ delete r.deed; delete r._lref; });
     rows.sort((a,b)=> (a.distance_mi??99) - (b.distance_mi??99));
     if(dropped) out.notes.push(`${dropped} sales fell in the search box but outside the ${radius} mi radius and were dropped`);
     if(predates) out.notes.push(`${predates} sales recorded before the assessor's year built were left out`);
@@ -425,7 +536,7 @@ export default async function handler(req, res){
       rows.forEach(r=>{ r.used = used.has(r.pid); });
       const RELAX_TEXT = {older:`sales up to ${wideMonths} months old`, across:'sales across a major road',
         finish:'any finish', product:'any product'};
-      const ruleText = `last ${months} months, within ${radius} mi, this side of the major roads, ${PRODUCT_LABEL[product]}, ${FINISH_LABEL[finish]}`;
+      const ruleText = `last ${months} months, within ${radius} mi, ${grid?'this side of the major roads':'major roads not checked'}, ${PRODUCT_LABEL[product]}, ${FINISH_LABEL[finish]}`;
       Object.assign(out.rule, {step, relaxed, label: relaxed.length
         ? `Too few sales meet the team rule (${ruleText}), so this widens to ${relaxed.map(k=>RELAX_TEXT[k]).join(', ')}.`
         : `Team rule: ${ruleText}.`});
@@ -451,13 +562,15 @@ export default async function handler(req, res){
           ? `${n} sales meet the team rule, in the lot’s own assessor neighbourhood${tier==='neighborhood+size'?' and size band':''}.`
           : `${n} sales meet the team rule, but ${subjNbh?`fewer than ${MIN_IN_BAND} of them are in the lot’s assessor neighbourhood (${subjNbh})`:'the lot has no assessor neighbourhood yet'}, so this is ${basis.label}. Weighted lower: check the rows.`
       };
+      const unv = basis.set.filter(r=>r.unverified).length;
+      if(unv) out.notes.push(`${unv} of the ${n} comps behind the ARV ${unv===1?'is':'are'} unverified: recorded, not yet reviewed by the county`);
       const mpsf = median(ps);
       const raw = mpsf*subjectSf;
       const cap = Math.max(...basis.set.map(r=>r.sale_price));
       const capped = raw > cap;
       out.arv = {
         tier, step,
-        basis:basis.label, comps_used:n, median_psf:mpsf,
+        basis:basis.label, comps_used:n, unverified:unv, median_psf:mpsf,
         subject_sf:subjectSf,
         arv_by_psf:Math.round(raw),
         highest_sold_comp:cap,
