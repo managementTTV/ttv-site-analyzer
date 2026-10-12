@@ -748,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.31 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.33 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -822,6 +822,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
             <option value="Shelby">Shelby (Cleveland)</option>
             <option value="Kannapolis">Kannapolis</option>
             <option value="Monroe">Monroe (Union)</option>
+            <option value="Rowan">Rowan (Salisbury)</option>
           </select>
         </div>
         <div class="field"><label>Zoning District</label>
@@ -923,8 +924,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <!-- TOOLBAR -->
         <div class="lot-editor-toolbar">
           <label>Canvas width =</label>
-          <input type="number" id="canvas-scale-ft" value="200" min="10" oninput="calcBuildable()">
-          <label>ft &nbsp;|&nbsp; Measurements update live as you drag</label>
+          <input type="number" id="canvas-scale-ft" value="200" min="10" oninput="onCanvasScaleInput()">
+          <label>ft &nbsp;|&nbsp; <span id="scale-hint">Measurements update live as you drag</span></label>
           <button class="btn-ghost btn" style="padding:4px 10px;font-size:11px;margin-left:auto" onclick="resetPolyToDefault()">Reset Shape</button>
         </div>
 
@@ -1214,7 +1215,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         </div>
         <div class="fr2" style="margin-top:14px">
           <div class="field"><label>Units</label><input type="number" id="units" value="1" min="1" max="20" oninput="onUnitsChange()"></div>
-          <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div></div>
+          <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div><p class="note" id="gc-fee-note" style="display:none;margin-top:4px"></p></div>
         </div>
       </div>
       <div class="card">
@@ -1247,6 +1248,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="card">
         <div class="card-title"><span class="dot"></span>Upgrades (per unit)</div>
         <div class="upg-grid" id="upg-grid"></div>
+        <p class="warn" id="upg-note" style="display:none;margin-top:6px"></p>
         <div class="upg-total-bar"><span style="font-size:11px;color:var(--text-mid)">Selected Upgrades Total</span><span style="font-family:var(--f-num);font-size:14px;color:var(--amber)" id="upg-total">$0</span></div>
         <button class="btn btn-ghost" style="margin-top:12px;width:100%" onclick="openInclusions()">View standard build inclusions</button>
       </div>
@@ -1606,6 +1608,8 @@ const CITY_COUNTY={
   'mooresville':'Iredell','statesville':'Iredell','troutman':'Iredell',
   'shelby':'Shelby','kings mountain':'Shelby',
   'monroe':'Monroe','indian trail':'Monroe','weddington':'Monroe','stallings':'Monroe',
+  // v8.33: Rowan's tap row (Salisbury-Rowan Utilities) was unreachable while Rowan wasn't in the county list
+  'salisbury':'Rowan','china grove':'Rowan','landis':'Rowan','spencer':'Rowan','east spencer':'Rowan','granite quarry':'Rowan','rockwell':'Rowan',
 };
 // ═══════════════════ MASTER PLAN LIBRARY (single source of truth) ═══════════════════
 // Source: "Slate Cost Plus Pricing" sheet — Cost Plus 14 column.
@@ -1694,9 +1698,18 @@ function recomputePlanCosts(feePct){
   });
 }
 recomputePlanCosts(14); // lock costs to base-derived values at load (matches legacy 14%)
+// v8.33 (audit M3): the GC fee %. A blank field (or one the browser can't read) means the field's default (14%, the
+// Slate fee), with a note saying so; pv() turned a blank into 0%, so the old isNaN→14 fallback never ran. A typed 0 stays 0.
+function gcFeePct(){
+  const e=$('gc-build-fee'),dflt=parseFloat(e&&e.defaultValue)||14;
+  const blank=!e||String(e.value).trim()==='';
+  const pct=blank?dflt:pv('gc-build-fee');
+  const n=$('gc-fee-note');
+  if(n){n.textContent=blank?`Blank: the default ${dflt}% applies.`:'';n.style.display=blank?'':'none';}
+  return pct;
+}
 function applyGcBuildFee(){
-  const fee=pv('gc-build-fee');
-  recomputePlanCosts(isNaN(fee)?14:fee);
+  recomputePlanCosts(gcFeePct());
   const sel=$('plan-sel');
   const curName=(sel&&sel.value)?sel.value.split('|')[0]:'';
   buildPlanDropdown();
@@ -1735,6 +1748,10 @@ const UPGRADES=[
   {id:'blinds',name:'Faux Wood Blinds',cost:600},{id:'brushed-ni',name:'Brushed Nickel Hardware',cost:622},
   {id:'matte-blk',name:'Matte Black Hardware',cost:823},{id:'shiplap',name:'Shiplap Kitchen Island',cost:455},
 ];
+// v8.33 (audit M11): pairs that replace each other (one floor, one hardware finish). Ticking one unticks the other, so the
+// cost isn't counted twice.
+const UPGRADE_EXCLUSIVE=[['lvp','hw'],['brushed-ni','matte-blk']];
+const upgradeRival=id=>{const p=UPGRADE_EXCLUSIVE.find(x=>x.includes(id));return p?p.find(x=>x!==id):null;};
 
 // ═══════════════════ STATE ═══════════════════
 /* ── Plan drawings (#5): images served statically from /plans ── */
@@ -2183,6 +2200,7 @@ function gisMatchFits(street,matched){
 let _gisLot=null;        // {label, streets[], zips[], cities[]}: the address(es) the site data on screen belongs to
 let _clearedSite=null;   // what clearGisSite() took off, for putBackGisSite()
 let _gisMismatch=null;   // {matched}: a reopened deal whose saved County GIS parcel isn't its address (saved with the deal)
+const LF_AUTO_FIELDS=['demo-sqft','clearing','grading'];   // v8.33: the lot-factor fields applyCountyDefaults() fills
 const SITE_FIELDS=['sb-front','sb-rear','sb-sides','sb-corner','sb-minw','sb-garage','lot-w','lot-d','lot-sf','buildable-override','lot-sf-poly'];
 // pt: the county's own spelling of the address (the proxy's match.point), so a correction toward it isn't a move. A ZIP or
 // city left blank at tie time is unknown, so typing it in isn't a move either.
@@ -2203,15 +2221,18 @@ function clearGisSite(){
   const t=_gisLot;_gisLot=null;
   const fields={};SITE_FIELDS.forEach(id=>{const e=$(id);if(e)fields[id]=e.value;});
   const zs=$('zone-sel'),zo=zs.options[zs.selectedIndex];
-  _clearedSite={lotMode,pts:polyPoints.map(p=>({x:p.x,y:p.y})),edges:edgeDesignations.slice(),scale:$('canvas-scale-ft').value,
+  _clearedSite={lotMode,pts:polyPoints.map(p=>({x:p.x,y:p.y})),edges:edgeDesignations.slice(),scale:$('canvas-scale-ft').value,fromCounty:_lotFromCounty,
     structures:extraStructures,   // v8.26: the lot's garage / ADU go with it, and come back with Put them back
     zone:zs.value,zoneText:zo?zo.textContent:'',fields,corner:$('corner-lot').checked,cornerSide:$('corner-street-side').value,abuts:$('n2-abuts-n1').checked,
     zrn:_zoneRestoreNote,mismatch:_gisMismatch,label:t&&t.label};
-  polyPoints=[];edgeDesignations=[];dropLotEnvelope();_gisMismatch=null;extraStructures=[];
+  polyPoints=[];edgeDesignations=[];dropLotEnvelope();_gisMismatch=null;extraStructures=[];_lotFromCounty=false;
   zs.value='';Object.keys(fields).forEach(id=>{$(id).value='';});$('corner-lot').checked=false;$('corner-street-side').value='left';
+  // v8.33 (N1.6): the lot factor the county auto-filled for that parcel goes back to the defaults too (typed values stay)
+  _clearedSite.lf={};LF_AUTO_FIELDS.forEach(id=>{const e=$(id);if(e&&!isManual(id)){_clearedSite.lf[id]=e.value;e.value=fieldDefault(e);}});
+  try{calcLF();}catch(_){ }
   onZoneChange();   // no zone: hides the setback panel and its notes
   redrawEditor();calcBuildable();
-  setGisStatus(`The address moved off ${t&&t.label||'the last parcel'}, so that parcel’s lot, zone and setbacks were cleared. Run the County GIS auto-fill for this address, or enter the lot by hand.`,'warn');
+  setGisStatus(`The address moved off ${t&&t.label||'the last parcel'}, so that parcel’s lot, zone and setbacks (and the lot factor the county filled for it) were cleared. Run the County GIS auto-fill for this address, or enter the lot by hand.`,'warn');
 }
 function putBackGisSite(){
   const c=_clearedSite;if(!c)return;_clearedSite=null;
@@ -2220,7 +2241,8 @@ function putBackGisSite(){
   zs.value=c.zone;$('n2-abuts-n1').checked=c.abuts;_zoneRestoreNote=c.zrn;onZoneChange();
   Object.keys(c.fields).forEach(id=>{$(id).value=c.fields[id];});showLooseSetbacks();   // the values as they were, adjusted setbacks included
   $('corner-lot').checked=c.corner;$('corner-street-side').value=c.cornerSide||'left';$('canvas-scale-ft').value=c.scale;
-  polyPoints=c.pts;edgeDesignations=c.edges;_gisMismatch=c.mismatch;extraStructures=c.structures||[];
+  Object.keys(c.lf||{}).forEach(id=>{const e=$(id);if(e&&!isManual(id))e.value=c.lf[id];});try{calcLF();}catch(_){ }
+  polyPoints=c.pts;edgeDesignations=c.edges;_gisMismatch=c.mismatch;extraStructures=c.structures||[];_lotFromCounty=!!c.fromCounty;
   if(lotMode!==c.lotMode){setLotMode(c.lotMode);
     if(c.lotMode==='poly'&&c.pts.length<3){polyPoints=[];edgeDesignations=[];dropLotEnvelope();}}   // setLotMode('poly') seeds a default shape
   if(lotMode==='poly')redrawEditor();
@@ -2304,17 +2326,26 @@ function updateLinks(){
     html+=`<div class="link-row"><span class="link-row-label">🛰 Google Maps</span><a class="link-btn" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank">Open →</a></div>`;
   $('link-rows').innerHTML=html;
 }
+let _countySeen='';   // v8.33: the county the zone list was last built for
 function onCountyChange(){
   const county=$('county-sel').value;
   const sel=$('zone-sel');
-  sel.innerHTML='<option value="">— Select Zone —</option>';
-  if(county&&COUNTY_ZONES[county])
-    COUNTY_ZONES[county].forEach(z=>{const o=document.createElement('option');o.value=`${county}|${z}`;o.textContent=z;sel.appendChild(o);});
+  const zones=county&&COUNTY_ZONES[county];
+  sel.innerHTML=`<option value="">${county&&!zones?'— No zone list: enter setbacks —':'— Select Zone —'}</option>`;
+  if(zones)zones.forEach(z=>{const o=document.createElement('option');o.value=`${county}|${z}`;o.textContent=z;sel.appendChild(o);});
   $('meck-context').style.display=county==='Mecklenburg'?'':'none';
+  // v8.33 (audit entry 18 leftover b / S-F14e): switching from one county to another drops the old zone, so its setbacks
+  // go too; they used to keep driving the envelope from the hidden panel. Picking a county for the first time (the city
+  // fill, a deal being opened) keeps setbacks already typed.
+  const moved=!!_countySeen&&_countySeen!==county;_countySeen=county;
+  if(moved)['sb-front','sb-rear','sb-sides','sb-corner','sb-minw','sb-garage'].forEach(id=>{$(id).value='';});
   applyTapDefaults();
   updateLinks();
-  $('zone-info').style.display='none';
+  // a county with no zone list (Rowan) shows the setback fields to type in; renderZoneNote() says why
+  $('zone-info').style.display=county&&!zones?'':'none';
   $('zone-udo-link').style.display='none';
+  renderZoneNote();
+  if(moved)calcBuildable();
   calcAll();
 }
 // v8.15: a zone row's rear setback. N2-B / N2-C townhome rows depend on whether the site abuts a Neighborhood 1 Place
@@ -2347,6 +2378,8 @@ function renderZoneNote(){
   // the row's base zone: "N2-A · townhomes 5+" is still N2-A, so a CD / HDO note survives picking the townhome row
   const raw=(window._lastGis&&window._lastGis.zoning)||'', sx=zoneSuffix(raw), zb=zone.split(' \u00b7 ')[0];
   // a zone with no SETBACKS row (a GIS or saved stub): say so, since its setback fields are blank or the last zone's
+  {const c=(($('county-sel')||{}).value)||'';
+   if(!key&&c&&!COUNTY_ZONES[c])lines.push(`The app has no zone list for ${c} yet. Enter the setbacks from the town’s or county’s zoning code; the fit check waits for them.`);}
   if(key&&!sb){
     const zs=zoneSuffix(zone), bz=zs?zs.base:zone, mk=SETBACKS['Mecklenburg|'+bz], base={base:bz};
     lines.push(mk&&county!=='Mecklenburg'
@@ -2366,7 +2399,9 @@ function renderZoneNote(){
 }
 // v8.16: with no zone picked, the setback panel shows while any setback has a value, since those still drive the envelope
 // (a town parcel County GIS has no zoning for, whose setbacks the analyst typed)
-function showLooseSetbacks(){if(!$('zone-sel').value)$('zone-info').style.display=['sb-front','sb-rear','sb-sides','sb-corner'].some(id=>$(id).value!=='')?'':'none';}
+// (v8.33: and always for a county with no zone list, where typing them is the only way in)
+function showLooseSetbacks(){if(!$('zone-sel').value){const c=$('county-sel').value;
+  $('zone-info').style.display=(c&&!COUNTY_ZONES[c])||['sb-front','sb-rear','sb-sides','sb-corner'].some(id=>$(id).value!=='')?'':'none';}}
 function onZoneChange(){
   const key=$('zone-sel').value;
   if(_zoneRestoreNote&&_zoneRestoreNote.key!==key)_zoneRestoreNote=null;
@@ -2440,6 +2475,16 @@ function setGisZoning(zoneVal,sameParcel){
   sel.value=opt.value;onZoneChange();return true;
 }
 // ── v8.19 BUILDABLE ENVELOPE ──────────────────────────────────────────────
+// v8.33: the setbacks the envelope needs that are blank: a zone with no setbacks row (CG, TOD-UC, MUDD…), a county with
+// no zone list, or a county change. A blank reads as 0 ft below, so while any is blank fitStatus() gives no verdict
+// ('nosb') and the fit check says what to enter. A typed 0 is an answer. Corner Side isn't needed: blank means the side.
+function missingSetbacks(){
+  return [['sb-front','front'],['sb-rear','rear'],['sb-sides','side']].filter(([id])=>{const e=$(id);return !e||String(e.value).trim()==='';}).map(x=>x[1]);
+}
+function missingSetbacksText(){
+  const m=missingSetbacks(),list=m.length>1?m.slice(0,-1).join(', ')+' and '+m[m.length-1]:m[0];
+  return `Fit not checked: the ${list} setback${m.length>1?'s are':' is'} blank, and a blank would count the whole lot as buildable. Enter ${m.length>1?'them':'it'} from the zoning code (type 0 if it really is zero).`;
+}
 // The setback for one edge designation. A blank Corner Side field falls back to the side setback.
 function edgeSetbackFt(des){
   if(des==='front')return pv('sb-front');
@@ -2576,6 +2621,7 @@ function loadParcelPolygon(rings,edgeInfo){
     x:Math.round((offX+(p[0]-minX)/fpp)*100)/100,
     y:Math.round((offY+(spanY-(p[1]-minY))/fpp)*100)/100   // flip Y so north is up on screen
   }));
+  _lotFromCounty=true;          // v8.33 (G17): its corners are the county's, at true size
   setLotMode('poly');           // polyPoints already set, so it won't re-seed a default
   initEdgeDesignations();        // its lowest-edge front stands in when no street edge was found (G14: all sides before)
   const fi=fi0!=null?m.edgeOf[fi0]:edgeDesignations.indexOf('front');
@@ -2626,6 +2672,7 @@ function applyGisData(d,sig){
   if(d.parcel&&d.parcel.geometry&&d.parcel.geometry.rings&&loadParcelPolygon(d.parcel.geometry.rings,d.parcel.edges))filled.push('lot polygon + area'+(d.parcel.edges&&d.parcel.edges.front_index!=null?' + front edge':''));
   const lf=applyCountyDefaults(d);
   if(lf.length)filled.push('lot factor \u2014 '+lf.join(', '));
+  const lfMissed=lf.missed&&lf.missed.length?` No county figure for ${lf.missed.join(', ')}: left at the default, so enter ${lf.missed.length>1?'them':'it'} by hand.`:'';
   // v8.16: a close match (a part left out, or a different ZIP / city) is loaded, with what differs said up front
   const warn=m&&m.status==='close'?(m.message||'County GIS matched a slightly different address.')+' Check it’s the right parcel. ':'';
   const noLot=d.parcel&&d.parcel.geometry?'':(flagged?` The lot on screen came with the County GIS parcel at ${flagged.matched}, which isn\u2019t this address: check it or draw the lot.`
@@ -2635,7 +2682,7 @@ function applyGisData(d,sig){
   // Charlotte's zoning layer doesn't cover the towns (Huntersville, Matthews, Cornelius\u2026): say so, and show the setbacks
   const noZone=d.zoning&&d.zoning.value?'':' County GIS has no zoning for this parcel (a town outside Charlotte\u2019s zoning map?): pick the zone and enter the setbacks from the town\u2019s code.';
   if(noZone&&!$('zone-sel').value)$('zone-info').style.display='';
-  setGisStatus(warn+(filled.length?('Filled: '+filled.join(', ')+'. Review & adjust below.'):'Lookup complete.')+noLot+noZone,warn||noZone||flagged?'warn':'');
+  setGisStatus(warn+(filled.length?('Filled: '+filled.join(', ')+'. Review & adjust below.'):'Lookup complete.')+noLot+noZone+lfMissed,warn||noZone||flagged||lfMissed?'warn':'');
   // the site data now on screen belongs to this address (G16)
   {const [st,ci,zp]=sig.split('|');tieGisLot((m&&m.matched)||(d.parcel&&d.parcel.matched_address)||st.toUpperCase(),st,zp,ci,m&&m.point);}
   const mp=m&&m.point;   // the county's own spelling, so a reopened deal ties to it too
@@ -2670,6 +2717,7 @@ function applyCountyDefaults(d){
     if(cama&&cama.vacant===true){sf=0;src='county says vacant';}
     else if(cama&&cama.heated_sf>0){sf=Math.round(cama.heated_sf);src='assessor heated area';}
     else if(site&&site.footprint_sf>0){sf=Math.round(site.footprint_sf);src='mapped footprint';}
+    else if(site&&site.footprint_sf===0){sf=0;src='no building mapped';}   // v8.33: an answer too, so N1.6's reset doesn't flag it
     if(sf!=null){$('demo-sqft').value=sf;filled.push('demo '+sf.toLocaleString()+' sf ('+src+')');}
   }
   if(site&&site.canopy_class&&untouched('clearing')){
@@ -2680,8 +2728,23 @@ function applyCountyDefaults(d){
     const v=SLOPE_GRADING[site.slope_class];
     if(v!=null){$('grading').value=v;filled.push('grading '+site.slope_class+' ('+site.slope_pct+'% slope)');}
   }
-  if(filled.length){try{calcLF();}catch(_){ }}
+  // v8.33 (audit N1.6): a field this lookup has no figure for, and that nobody typed, goes back to its default instead of
+  // keeping the last parcel's auto-filled value; the status line names it so it gets entered by hand
+  const missed=[];
+  [['demo-sqft','demo'],['clearing','clearing'],['grading','grading']].forEach(([id,lbl])=>{   // LF_AUTO_FIELDS
+    if(!untouched(id)||filled.some(f=>f.indexOf(lbl+' ')===0))return;
+    const e=$(id),dv=fieldDefault(e);if(e.value!==dv)e.value=dv;
+    missed.push(lbl);
+  });
+  try{calcLF();}catch(_){ }
+  filled.missed=missed;
   return filled;
+}
+// a field's shipped default: a select's default option, an input's value attribute
+function fieldDefault(e){
+  if(!e)return'';
+  if(e.tagName==='SELECT'){const o=Array.from(e.options).find(x=>x.defaultSelected)||e.options[0];return o?o.value:'';}
+  return e.defaultValue;
 }
 function renderGisResult(d){
   const box=$('gis-result');if(!box)return;
@@ -2716,6 +2779,7 @@ function renderGisResult(d){
   }
   h+=row('Easements','Verify on recorded plat',dim);
   if(d.errors&&d.errors.length)h+=row('Errors',d.errors.join('; '),red);
+  if(d.notes&&d.notes.length)h+=row('Notes',escHtml(d.notes.join('; ')),amber);   // v8.33 (N1.6): e.g. "No CAMA record … enter by hand"
   h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">Zoning &amp; lot loaded into the form above \u2014 override anything off-benchmark. Parcel shown is the current GIS shape; for a subdivision, draw the intended sublot.</div>';
   box.innerHTML=h;box.style.display='';
 }
@@ -2814,11 +2878,28 @@ let polyDragOffX = 0, polyDragOffY = 0;
 let edgeDesignations = []; // 'front'|'rear'|'side'|'corner' per edge i
 let _edgeNote = null;      // v8.19: {pts,warn,text} from loadParcelPolygon, shown while polyPoints is still that lot
 
+// v8.33 (audit G17): a lot loaded from County GIS has its true size, so on it the Canvas width box only zooms the drawing
+// (onCanvasScaleInput() moves the corners to match). On a hand-drawn lot the box still sets the scale, as before.
+let _lotFromCounty=false;
+let _scaleFtDrawn=0;   // the canvas width (ft) the corners were last drawn at; set by redrawEditor()
 function getScaleFtPerPx(){
   const canvas = $('lot-editor-canvas');
   if(!canvas) return 1;
-  const canvasWidthFt = parseFloat(($('canvas-scale-ft')||{value:'200'}).value) || 200;
+  // a blank or 0 box (mid-typing) keeps the last drawn scale instead of jumping to 200 ft
+  const canvasWidthFt = parseFloat(($('canvas-scale-ft')||{value:'200'}).value) || _scaleFtDrawn || 200;
   return canvasWidthFt / canvas.width;
+}
+function onCanvasScaleInput(){
+  const v=parseFloat(($('canvas-scale-ft')||{}).value),canvas=$('lot-editor-canvas');
+  if(_lotFromCounty&&canvas&&v>0&&_scaleFtDrawn>0&&v!==_scaleFtDrawn&&polyPoints.length>=3){
+    const k=_scaleFtDrawn/v,cx=canvas.width/2,cy=canvas.height/2,map=p=>({x:cx+(p.x-cx)*k,y:cy+(p.y-cy)*k});
+    const keepNote=_edgeNote&&_edgeNote.pts===polyPoints;
+    polyPoints=polyPoints.map(map);
+    if(keepNote)_edgeNote.pts=polyPoints;   // still the county's lot, so its edge note stays
+    if(planOverlay.positioned){const q=map({x:planOverlay.x,y:planOverlay.y});planOverlay.x=q.x;planOverlay.y=q.y;}
+    extraStructures.forEach(st=>{if(st.placed){const q=map({x:st.x||0,y:st.y||0});st.x=q.x;st.y=q.y;}});
+  }
+  calcBuildable();
 }
 
 function pxToFt(px){ return px * getScaleFtPerPx(); }
@@ -2843,6 +2924,7 @@ function initPolyEditor(){
   const canvas = $('lot-editor-canvas');
   if(!canvas) return;
   polyPoints = polySeedShape(n, canvas.width, canvas.height);
+  _lotFromCounty=false;   // v8.33: a hand-drawn lot again
   initEdgeDesignations();
   redrawEditor();
   calcBuildable();
@@ -2908,6 +2990,8 @@ function resetPolyToDefault(){
 
 function redrawEditor(){
   const canvas=$('lot-editor-canvas');if(!canvas)return;
+  {const v=parseFloat(($('canvas-scale-ft')||{}).value);if(v>0)_scaleFtDrawn=v;
+   const h=$('scale-hint');if(h)h.textContent=_lotFromCounty?'County lot: this box only zooms; the lot keeps its true size':'Measurements update live as you drag';}
   const ctx=canvas.getContext('2d');
   const W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);
@@ -3608,6 +3692,7 @@ function cornerStreetSide(){return ($('corner-street-side')||{}).value==='right'
 // left where they were, a centred plan would now overlap the corner side's band.
 function onCornerSideChange(){planOverlay.positioned=false;extraStructures.forEach(st=>{st.placed=false;});calcBuildable();}
 function calcBuildable(){
+  updateAttachedBuild();   // v8.33: a group's gap is 2 × the side setback, so a setback edit re-lays the overlay
   const minW=pv('sb-minw');
   const br=$('buildable-result');
 
@@ -3669,6 +3754,8 @@ function calcBuildable(){
       }
     }
   }
+  // v8.33: with a setback blank the envelope above is the whole lot (or most of it); say so where the area is shown
+  if(br&&buildableArea>0&&missingSetbacks().length)br.insertAdjacentHTML('beforeend',`<div class="err" style="margin-top:8px">${missingSetbacksText()}</div>`);
   calcBUA();renderFitCheck();renderPlanFitMsg();updateSummaryBar();renderSublot();updateSketchBtn();
   if(lotMode==='rect')drawDiagram();   // the poly branch drew the editor above (buildableArea comes from it)
 }
@@ -3779,8 +3866,10 @@ function calcBUA(){
   const hsEl=$('bua-hardscape'), hardscape=hsEl&&hsEl.value.trim()!==''?pv('bua-hardscape'):(parseFloat(hsEl&&hsEl.defaultValue)||500);
   const extras=extraStructuresSf();   // v8.26: a garage or ADU is built-upon area too
   const estBUA=footprint+hardscape+extras;
-  const pct=buaLimit>0?Math.min(estBUA/buaLimit,1):0;
-  const fill=$('bua-fill');if(fill){fill.style.width=(pct*100)+'%';fill.style.background=pct>1?'var(--red)':pct>0.9?'var(--amber)':'var(--green)';}
+  // v8.33 (audit G19, display only): the bar's width stops at 100%, but its colour reads the real share, so it turns
+  // red over the limit (pct was capped at 1 before the pct>1 check, so it never could)
+  const pct=buaLimit>0?estBUA/buaLimit:0;
+  const fill=$('bua-fill');if(fill){fill.style.width=(Math.min(pct,1)*100)+'%';fill.style.background=pct>1?'var(--red)':pct>0.9?'var(--amber)':'var(--green)';}
   const res=$('bua-result');
   const incl=[footprint&&L.units>1?`${fmtN(footprint)} sf for ${L.units} units`:'',extras?fmtN(extras)+' sf other structures':''].filter(Boolean);
   if(res)res.innerHTML=`<div style="font-family:var(--f-num);font-size:11px;color:var(--text-dim)">Limit: ${fmtN(buaLimit)} sf<br>Est. used: ${fmtN(estBUA)} sf${incl.length?' (incl. '+incl.join(', ')+')':''}<br>Remaining: ${fmtN(Math.max(0,buaLimit-estBUA))} sf</div>`;
@@ -3890,23 +3979,30 @@ function drawFootprint(ctx,cx,cy,pw,ph,rad,fits,label,dims,style){
   ctx.restore();
 }
 function drawStructuresOnCanvas(ctx){
-  const sc=planOverlay.scale||1;
+  const sc=planOverlay.scale||1,nosb=missingSetbacks().length>0;   // v8.33: blank setbacks: no verdict (fitStatus 'nosb')
   if(planOverlay.active&&planOverlay.fpW>0&&planOverlay.fpH>0&&(planOverlay.buildRect||planOverlay.buildPoly)){
     if(!planOverlay.positioned){
       const br=planOverlay.buildRect;
       if(br){planOverlay.x=br.cx!=null?br.cx:br.x+br.w/2;planOverlay.y=br.cy!=null?br.cy:br.y+br.h/2;planOverlay.positioned=true;}
     }
     if(planOverlay.positioned){
-      const pw=planOverlay.fpW*sc,ph=planOverlay.fpH*sc,rad=(planOverlay.rotation||0)*Math.PI/180;
-      const fits=footprintFits(planOverlay.x,planOverlay.y,pw,ph,rad);
-      drawFootprint(ctx,planOverlay.x,planOverlay.y,pw,ph,rad,fits,planOverlay.planName||'',`${planOverlay.fpW}'×${planOverlay.fpH}'`,PLAN_STYLE);
-      const fe=$('ov-fits');if(fe){fe.textContent=fits?'✓ Fits':'✗ Outside';fe.className=fits?'overlay-fit-ok':'overlay-fit-warn';}
+      const ph=planOverlay.fpH*sc,rad=(planOverlay.rotation||0)*Math.PI/180,g=planOverlay.group;
+      // v8.33: every building of a group, centred along the (rotated) width; one building or a row is a group of one
+      const n=g?g.n:1,bw=g?g.w:planOverlay.fpW,step=(bw+(g?g.gap:0))*sc,cos=Math.cos(rad),sin=Math.sin(rad);
+      let fits=!nosb;
+      for(let i=0;i<n;i++){
+        const off=(i-(n-1)/2)*step,cx=planOverlay.x+off*cos,cy=planOverlay.y+off*sin;
+        const f=!nosb&&footprintFits(cx,cy,bw*sc,ph,rad);fits=fits&&f;
+        drawFootprint(ctx,cx,cy,bw*sc,ph,rad,f,i?`#${i+1}`:planOverlay.planName||'',`${bw}'×${planOverlay.fpH}'`,PLAN_STYLE);
+      }
+      const fe=$('ov-fits');
+      if(fe){fe.textContent=nosb?'⚠ Setbacks missing':fits?(n>1?`✓ All ${n} fit`:'✓ Fits'):'✗ Outside';fe.className=fits?'overlay-fit-ok':'overlay-fit-warn';}
     }
   }
   extraStructures.forEach((st,i)=>{
     if(!st.placed)placeStructure(st,i+(planOverlay.active?1:0));
     const p=structToPx(st),pw=st.w*sc,ph=st.d*sc,rad=(st.rot||0)*Math.PI/180;
-    st._fits=footprintFits(p.x,p.y,pw,ph,rad);
+    st._fits=!nosb&&footprintFits(p.x,p.y,pw,ph,rad);
     drawFootprint(ctx,p.x,p.y,pw,ph,rad,st._fits,st.name||'Structure',`${st.w}'×${st.d}'`,EXTRA_STYLE);
   });
   renderStructuresList();
@@ -3916,7 +4012,7 @@ const escHtml=t=>String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&
 function extraStructuresSf(){return extraStructures.reduce((t,st)=>t+(st.w>0&&st.d>0?st.w*st.d:0),0);}
 function renderStructuresList(){
   const el=$('structures-list');if(!el)return;
-  const sig=extraStructures.map(st=>[st.id,st.name,st.w,st.d,st.rot||0,st._fits?1:0].join('|')).join(';');
+  const nosb=missingSetbacks().length>0,sig=(nosb?'nosb;':'')+extraStructures.map(st=>[st.id,st.name,st.w,st.d,st.rot||0,st._fits?1:0].join('|')).join(';');
   if(el.dataset.sig===sig)return;   // drawn on every canvas redraw; only rebuild the buttons when something listed changed
   el.dataset.sig=sig;
   if(!extraStructures.length){
@@ -3925,7 +4021,7 @@ function renderStructuresList(){
   }
   const tot=extraStructuresSf();
   el.innerHTML=extraStructures.map(st=>`<div class="struct-row"><b>${escHtml(st.name)}</b><span>${st.w}'W × ${st.d}'D · ${fmtN(st.w*st.d)} sf · ${st.rot||0}°</span>
-    <span class="${st._fits?'overlay-fit-ok':'overlay-fit-warn'}">${st._fits?'✓ fits':'✗ outside'}</span>
+    <span class="${st._fits?'overlay-fit-ok':'overlay-fit-warn'}">${st._fits?'✓ fits':nosb?'setbacks missing':'✗ outside'}</span>
     <button class="rot-preset" onclick="rotateStructure('${st.id}',-90)" title="Rotate left">&#10226; 90°</button>
     <button class="rot-preset" onclick="rotateStructure('${st.id}',90)" title="Rotate right">&#10227; 90°</button>
     <button class="rot-preset" onclick="removeStructure('${st.id}')">Remove</button></div>`).join('')
@@ -3973,6 +4069,7 @@ function renderFitCheck(){
   if(lotMode==='poly'&&polyDragIdx>=0){_fitHeld=true;return;}
   if(!buildableArea||buildableArea<=0){grid.innerHTML='';if(empty)empty.style.display='';return;}
   if(empty)empty.style.display='none';
+  if(missingSetbacks().length){grid.innerHTML=`<div class="err" style="grid-column:1/-1">${missingSetbacksText()}</div>`;return;}   // v8.33
   const currentPlanVal=($('plan-sel')||{}).value||'';
   const isCorner=$('corner-lot')&&$('corner-lot').checked;
   const polyFt=(lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3)
@@ -4254,18 +4351,22 @@ function onUnitsChange(){
 }
 function bumpUnits(delta){const u=$('units');if(!u)return;const cur=Math.max(1,parseInt(u.value)||1);u.value=Math.min(20,Math.max(1,cur+delta));onUnitsChange();}
 // An attached row (a townhome, or a custom footprint since v8.31) is plotted as the ROW: width = per-unit width × units.
-// Separate buildings are plotted one at a time, and the label says so.
+// Separate buildings (v8.33, chat-4 leftover) are plotted all together, side by side with the layout's gap, and each one
+// is fit-tested: the overlay used to draw and test one of N. fpW is the group's whole width, so a drag grabs any of them.
 function updateAttachedBuild(){
-  if(!planOverlay.active){planOverlay.attached=false;return;}
+  if(!planOverlay.active){planOverlay.attached=false;planOverlay.group=null;return;}
   const L=dealLayout(),u=L.units,name=planNameFromVal(($('plan-sel')||{}).value||'');
+  planOverlay.fpW=L.w;planOverlay.fpH=L.d;
   if(L.attached){
-    planOverlay.attached=true;planOverlay.unitW=L.unitW;
-    planOverlay.fpW=L.w;planOverlay.fpH=L.d;
+    planOverlay.attached=true;planOverlay.unitW=L.unitW;planOverlay.group=null;
     planOverlay.planName=name+(u>1?` ×${u} (attached row)`:'');
     const off=$('ov-footprint');if(off)off.textContent=`${L.w}'W×${L.d}'D  (${u}×${L.unitW}')`;
   }else{
     planOverlay.attached=false;
-    planOverlay.planName=name+(L.bldgs>1?` (1 of ${L.bldgs} buildings)`:'');
+    const bw=L.bldgs>0?+((L.w-(L.bldgs-1)*L.gap)/L.bldgs).toFixed(2):L.w;   // one building's width
+    planOverlay.group=L.bldgs>1?{n:L.bldgs,w:bw,gap:L.gap}:null;
+    planOverlay.planName=name+(L.bldgs>1?` (${L.bldgs} buildings)`:'');
+    const off=$('ov-footprint');if(off)off.textContent=L.bldgs>1?`${L.w}'W×${L.d}'D  (${L.bldgs}×${bw}'${L.gap?`, ${L.gap} ft apart`:''})`:`${L.w}'W×${L.d}'D`;
   }
   const ofn=$('ov-plan-name');if(ofn)ofn.textContent=planOverlay.planName;
 }
@@ -4312,7 +4413,7 @@ function renderSubplot(p){
   const detail=`<div style="font-family:var(--f-num);font-size:10px;color:var(--text-dim);margin-bottom:2px">${p.n} · ${unitW}'/unit × ${unitD}' deep · row ${bldgLen.toFixed(0)}'×${unitD}'${maxByLen?` · ~${maxByLen} units max by length`:''}</div>`;
   const chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">
       ${maxLen?chip(!over,over?`over ${maxLen}' max`:`≤ ${maxLen}' max`):''}
-      ${fit?chip(fit.status!=='no',fit.status==='fits'?'fits envelope':fit.status==='tight'?'tight — verify':'exceeds envelope'):''}
+      ${fit?chip(fit.status==='fits'||fit.status==='tight',fit.status==='fits'?'fits envelope':fit.status==='tight'?'tight — verify':fit.status==='nosb'?'setbacks missing':'exceeds envelope'):''}
       ${parentOK!=null?chip(parentOK,parentOK?'parent meets zone min':'parent below zone min'):''}</div>`;
   // v8.15: in N2 the UDO treats a row of 5+ attached units as Multi-Family Attached (its own setbacks), and a 2-4 unit
   // row as a duplex / triplex / quadraplex built to the N1-E standards. Point the analyst at the matching zone row.
@@ -4512,7 +4613,8 @@ function renderPlanFitMsg(){
   // separate buildings turned 90° stand one behind the other, not side by side: say so
   const rot=multi&&!L.attached?'turned 90° (one behind the other, not side by side)':'rotated 90°';
   let html='';
-  if(fs.status==='fits')html=fs.rotated?`<div class="warn">⚠ ${multi?What+' fits':'Fits'} if ${rot}.</div>`:`<div class="ok">✓ ${multi?What:'This '+noun} fits the buildable envelope.</div>`;
+  if(fs.status==='nosb')html=`<div class="err">✗ ${missingSetbacksText()}</div>`;   // v8.33
+  else if(fs.status==='fits')html=fs.rotated?`<div class="warn">⚠ ${multi?What+' fits':'Fits'} if ${rot}.</div>`:`<div class="ok">✓ ${multi?What:'This '+noun} fits the buildable envelope.</div>`;
   else if(fs.status==='tight'){
     // fitStatus() marks 'rotated' on fits only (its result goes into planComp and the report), so the rect path's
     // turned-only case is read off the same envelope here; poly "tight" is the 5 ft clearance rule
@@ -4716,18 +4818,19 @@ function calcFinancing(){
 
   // Holding cost per scenario
   const terms=getTerms();
-  const labels={w:'Worst',b:'Base',best:'Best'};
+  // v8.33: the sidebar's ids are hold-worst / hold-base / hold-best; `hold-${k}` found only Best, so Worst and Base stayed "—"
+  const ids={w:'worst',b:'base',best:'best'};
   ['w','b','best'].forEach(k=>{
     const term=terms[k];
     const h=holdingCost(loan,term);
-    const tbl=$(  `hold-${k==='best'?'best':k}`);
+    const tbl=$(`hold-${ids[k]}`);
     const rows=[
       ['Interest',h.interest],[`Points (${pv('fin-points')}%)`,h.points],
       ['Doc / Origination Fee',h.docFee],['Property Taxes',h.taxes],
       ['Purchase Closing (1%)',purchaseClosing],
     ].filter(r=>r[1]>0);
     if(tbl)tbl.innerHTML=rows.map(r=>`<tr><td>${r[0]}</td><td>${fmt(r[1])}</td></tr>`).join('');
-    const tot=$(`hold-${k==='best'?'best':k}-total`);
+    const tot=$(`hold-${ids[k]}-total`);
     if(tot)tot.textContent=fmt(h.total+purchaseClosing);
     // Update term labels on exit page
     const lbl=$(`term-${k}-label`);if(lbl)lbl.textContent=term;
@@ -4924,9 +5027,14 @@ function calcScenarios(){
     const landB=rhsB/lhsCoeff;
     const maxLand=Math.min(landA,landB);
     const binding=landB<landA?`${ruleL.pct} of all-in`:`${ruleL.floor} floor`;
-    ruleNote=` · binding rule: ${binding} · ${ruleL.floor}-only ceiling ${landA>0?fmt(landA):'—'}`;
-    const ml=$('max-land-display');if(ml)ml.textContent=maxLand>0?fmt(maxLand):'—';
-  }else{const ml=$('max-land-display');if(ml)ml.textContent=basePSF>0?'Pick a plan':'Enter ARV $/sf';}
+    // v8.33 (audit M10): a ceiling at or below $0 is shown as the number, in red, with "doesn't work": the deal misses the
+    // profit rule even with free land. It used to read a bare "—", like a deal with no ARV. The minus is U+2212, so the
+    // offer letter's reader (which only takes a figure above $0) never pre-fills it.
+    const neg=v=>Math.round(v)<0?'−'+fmt(-v):fmt(Math.max(0,v));
+    ruleNote=(maxLand>0?'':' · doesn’t work: misses the rule even at $0 land')
+      +` · binding rule: ${binding} · ${ruleL.floor}-only ceiling ${neg(landA)}`;
+    const ml=$('max-land-display');if(ml){ml.textContent=neg(maxLand);ml.style.color=maxLand>0?'':'var(--red)';}
+  }else{const ml=$('max-land-display');if(ml){ml.textContent=basePSF>0?'Pick a plan':'Enter ARV $/sf';ml.style.color='';}}
   const mls=$('max-land-sub');if(mls)mls.textContent=`Base case ≥ ${ruleL.text}${ruleNote}`;
 }
 
@@ -4950,13 +5058,26 @@ function renderUpgrades(){
     </div>`).join('');
   grid.querySelectorAll('.upg-item').forEach(el=>{
     el.addEventListener('click',()=>{
-      const id=el.dataset.id;selectedUpgrades.has(id)?selectedUpgrades.delete(id):selectedUpgrades.add(id);
-      el.classList.toggle('on');calcAll();
+      const id=el.dataset.id;
+      if(selectedUpgrades.has(id))selectedUpgrades.delete(id);
+      else{selectedUpgrades.add(id);const r=upgradeRival(id);if(r)selectedUpgrades.delete(r);}   // v8.33 (M11)
+      grid.querySelectorAll('.upg-item').forEach(x=>x.classList.toggle('on',selectedUpgrades.has(x.dataset.id)));
+      renderUpgradeNote();calcAll();
     });
   });
+  renderUpgradeNote();
+}
+// A deal saved before v8.33 can hold both of a pair: it opens as saved (both counted), and this says to untick one
+function renderUpgradeNote(){
+  const n=$('upg-note');if(!n)return;
+  const both=UPGRADE_EXCLUSIVE.filter(p=>p.every(id=>selectedUpgrades.has(id)))
+    .map(p=>p.map(id=>(UPGRADES.find(u=>u.id===id)||{}).name).join(' and '));
+  n.textContent=both.length?`${both.join('; ')} replace each other, but both are ticked, so both are counted. Untick one.`:'';
+  n.style.display=both.length?'':'none';
 }
 
 // ═══════════════════ INIT ═══════════════════
+_countySeen=$('county-sel').value;   // v8.33: a county the browser restored on reload counts as the one in place
 buildPlanDropdown();
 renderUpgrades();
 renderComps();
@@ -5008,7 +5129,7 @@ function buildPlanComparison(psf){
     const p=PLANS.find(x=>x.n===curName);
     if(p){slots.push({rank:null,source:'selected',plan:p});used.add(p.n);}
   }
-  const rankFit=s=>s==='fits'?0:s==='tight'?1:s==='na'?2:3;
+  const rankFit=s=>s==='fits'?0:s==='tight'?1:s==='na'||s==='nosb'?2:3;
   const pool=PLANS.filter(p=>!used.has(p.n)&&p.w>0&&p.d>0).map(p=>({p,f:fitStatus(p.w,p.d)}))
     .sort((a,b)=>{const r=rankFit(a.f.status)-rankFit(b.f.status);if(r)return r;return (b.p.sf||0)-(a.p.sf||0);});
   let pi=0;
@@ -5132,7 +5253,7 @@ function buildReportHTML(canvasDataUrl){
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'%'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
       +metric('Cash Required',F(d.fin.cash),'at close',true)
-      +metric('Max Land (Base, profit rule)',d.maxLand,profitRuleLabels(d.fin.profitRule).text,true)
+      +metric('Max Land (Base, profit rule)',d.maxLand,(/^\u2212/.test(d.maxLand)?'Doesn\u2019t work: misses the rule even at $0 land. ':'')+profitRuleLabels(d.fin.profitRule).text,true)
     +'</div>'
     +'<div class="two-col">'
       +'<div>'+secHdr('DEAL SUMMARY')
@@ -5250,8 +5371,8 @@ function buildReportHTML(canvasDataUrl){
     })();
 
   /* ── SHEET 4: PLAN COMPARISON ── */
-  const fitTxt=f=>f.status==='fits'?(f.rotated?'Fits (rotated)':'✓ Fits'):f.status==='tight'?'⚠ Tight':f.status==='no'?'✗ Too large':'—';
-  const fitCls=f=>f.status==='fits'?'pc-fit':f.status==='tight'?'pc-tight':f.status==='no'?'pc-no':'';
+  const fitTxt=f=>f.status==='fits'?(f.rotated?'Fits (rotated)':'✓ Fits'):f.status==='tight'?'⚠ Tight':f.status==='no'?'✗ Too large':f.status==='nosb'?'⚠ Setbacks missing':'—';
+  const fitCls=f=>f.status==='fits'?'pc-fit':f.status==='tight'||f.status==='nosb'?'pc-tight':f.status==='no'?'pc-no':'';
   let planComp;
   if(!d.planComp.length){planComp=secHdr('PLAN COMPARISON')+'<div class="note-box">No plans available to compare.</div>';}
   else{
@@ -5925,6 +6046,9 @@ function buildOfferHTML(address,amount,date){
 function fitStatus(fpW,fpD){
   if(!(fpW>0&&fpD>0))return{status:'na'};
   const polyFt=(lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3)?planOverlay.buildPolyFt:null;
+  // v8.33 (corrections log 18, leftover a): blank setbacks read as 0 ft, so the whole lot was "buildable". No verdict
+  // until they're entered (Brian, 2026-10-12: block, don't just warn)
+  if((polyFt||buildableArea>0)&&missingSetbacks().length)return{status:'nosb'};
   if(lotMode==='poly'&&polyFt){
     const r=planFitsInPolyFt(fpW,fpD);
     return{status:r==='fits'?'fits':(r==='tight'?'tight':'no')};
@@ -6032,7 +6156,7 @@ function renderCompare(){
   cols.forEach(c=>{if(c.deal.scen.b.arv>0&&c.deal.scen.b.total>winV){winV=c.deal.scen.b.total;winI=c.i;}});
   const wc=i=>i===winI?' class="cmp-win-col"':'';
   const money=(v)=>'<span'+(v<0?' class="cmp-neg"':'')+'>'+fmt(v)+'</span>';
-  const fitTxt=p=>{const f=fitStatus(p.w,p.d);return f.status==='fits'?(f.rotated?'Fits (rotated)':'\u2713 Fits'):f.status==='tight'?'Tight \u2014 verify':f.status==='no'?'\u2717 Too large':'No footprint data';};
+  const fitTxt=p=>{const f=fitStatus(p.w,p.d);return f.status==='fits'?(f.rotated?'Fits (rotated)':'\u2713 Fits'):f.status==='tight'?'Tight \u2014 verify':f.status==='no'?'\u2717 Too large':f.status==='nosb'?'Setbacks missing':'No footprint data';};
   const th=cols.map(c=>'<th'+wc(c.i)+'>'+c.plan.n+(c.i===winI?'<span class="cmp-winbadge">BEST BASE PROFIT</span>':'')+'</th>').join('');
   const row=(lbl,fn)=>'<tr><td>'+lbl+'</td>'+cols.map(c=>'<td'+wc(c.i)+'>'+fn(c)+'</td>').join('')+'</tr>';
   const sect=t=>'<tr class="cmp-sect"><td colspan="'+(cols.length+1)+'">'+t+'</td></tr>';
@@ -6181,7 +6305,7 @@ function serializeDeal(){
     address:[($('addr-street')||{}).value,($('addr-city')||{}).value].filter(Boolean).join(', '),
     fields,lotMode,plan:planName,
     polyPoints:polyPoints.map(p=>({x:p.x,y:p.y})),
-    edges:edgeDesignations.slice(),
+    edges:edgeDesignations.slice(),lotFromCounty:_lotFromCounty,
     choices:CHOICES.slice(),
     tapSig:_tapSig,rankSig:_rankSig,   // what the entry-time defaults last applied, so a reopen replays one still due
     tapManual:{w:isManual('tap-water'),s:isManual('tap-sewer')},   // v8.14: typed tap quotes stay typed on reopen
@@ -6272,12 +6396,15 @@ function restoreDeal(d){
     renderTapHint();   // v8.14: the tap note as it stood when saved (typed quotes are flagged again by now)
     // 4) lot geometry: the file's own polygon, or none; never the previous deal's
     polyPoints=(d.polyPoints||[]).map(p=>({x:p.x,y:p.y}));
+    // v8.33 (G17): saved since v8.33; an older deal's lot counts as the county's when it was saved with a County GIS parcel
+    // and isn't the untouched starting shape
+    _lotFromCounty=('lotFromCounty' in d)?!!d.lotFromCounty:!!(d.lotMode==='poly'&&polyPoints.length>=3&&d.gis&&d.gis.pid&&!polyIsPlaceholder());
     edgeDesignations=(d.edges||[]).slice();
     if(d.lotMode==='poly'&&polyPoints.length>=3){setLotMode('poly');redrawEditor();}
     else setLotMode('rect');
-    // 5) plan library at the saved GC fee, read the way applyGcBuildFee() reads it (blank is 0%, as on screen), then
-    //    re-select the plan by name through planNameFromVal(), the mapping serializeDeal() saved it with
-    recomputePlanCosts(pv('gc-build-fee'));
+    // 5) plan library at the saved GC fee, read the way applyGcBuildFee() reads it (v8.33: blank is the 14% default,
+    //    as on screen), then re-select the plan by name through planNameFromVal(), the mapping serializeDeal() saved it with
+    recomputePlanCosts(gcFeePct());
     buildPlanDropdown();
     if(d.plan){const o=Array.from($('plan-sel').options).find(x=>planNameFromVal(x.value)===d.plan);if(o)$('plan-sel').value=o.value;}
     // 6) collections
@@ -6378,8 +6505,20 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.31', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.33', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.33',date:'Oct 2026',name:'No more silent wrong numbers',items:[
+   'A blank Slate GC fee now uses the 14% default and says so under the field. It used to price every plan at 0% with no warning. A typed 0 still means 0%.',
+   'Zones with no setbacks in the app (CG, TOD-UC, MUDD…), a county with no zone list, or any blank front, rear or side setback: the fit check, the plan line, the overlay and the plan comparison now say “Fit not checked” until the setbacks are entered. A blank used to count the whole lot as buildable. Type 0 for a setback that really is zero.',
+   'Changing the county by hand now clears the old zone’s setbacks. They used to keep shaping the lot from the hidden panel.',
+   'A new County GIS lookup with no figure for demo, clearing or grading puts that field back to its default and says to enter it by hand, instead of keeping the last parcel’s number. Moving the address off a parcel does the same. Notes from the county lookup (“No CAMA record…”) now show on the GIS card.',
+   'When Max land is $0 or less it shows the number in red with “doesn’t work” (the deal misses the profit rule even with free land). It used to show “—”, like a deal with no ARV. The offer letter never pre-fills it.',
+   'The BUA meter turns red when the estimate is over the limit. The rule itself is unchanged.',
+   'LVP and Engineered Hardwoods, and Brushed Nickel and Matte Black hardware, can’t both be ticked: ticking one unticks the other. A deal saved with both says so.',
+   'Rowan is in the county list (Salisbury and the Rowan towns fill it in), so its Salisbury-Rowan Utilities tap fees load. Rowan has no zone list yet: type the setbacks.',
+   'Financing: the Worst and Base holding totals in the sidebar now show their numbers. They always read “—”.',
+   'On a lot loaded from County GIS, the Canvas width box only zooms the drawing; the lot keeps its true size. It used to shrink the lot (2723 Dellinger went from 7,145 to 1,623 sf). Hand-drawn lots work as before.',
+   'Separate buildings (2 Hamptons, 4 duet units) are all drawn on the lot overlay and each is fit-checked. It used to show and test only one of them.']},
  {v:'8.31',date:'Oct 2026',name:'Townhome rows and multi-unit deals',items:[
    'The fit check now tests every unit, not just one. A townhome row is Units \u00d7 the unit width (3 Daytons are a 65 ft row). A house, duet or triplex is a whole building, so more Units than it holds means more buildings, side by side and two side setbacks apart, as if the lot were split. Before, a Hampton \u00d7 2 or a row of 3 Daytons was checked as one unit and could say \u201cfits\u201d when it didn\u2019t.',
    'The fit grid tests each plan at the deal\u2019s Units, and the line under the plan you picked says what it tested (the row, or how many buildings). Changing Units now redraws the grid, the fit line and the BUA check at once.',
