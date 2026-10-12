@@ -235,8 +235,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   an `{error:{...}}` payload; treating that as "no features" silently blanked the whole CAMA block
   once already. Keep the error check in `aj()` and `ajPost()`.
 - **Sale-validity semantics:** blank = arm's length and **Z = builder sale** (the new-build resales
-  TTV comps against) are the two market codes; everything else is a disqualified transfer. Flag a
-  comp filter that drops Z or keeps the rest.
+  TTV comps against) are the two market codes, and **TEMP** (recorded, not yet reviewed) counts too,
+  marked unverified (partner decision 2026-10-09, v8.32); everything else is a disqualified transfer.
+  Flag a comp filter that drops Z or TEMP, or keeps the rest.
 - Auto-fill is **Mecklenburg-only** by design. Other counties link out to the county
   viewer — don't "fix" that into a broken universal fetch.
   Its answer always lands in Mecklenburg (v8.16): `applyGisData()` sets `county-sel` to Mecklenburg on any
@@ -306,9 +307,25 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 ### Comps (`api/comps.js`, v7.14; team rule v8.23)
 - **Mecklenburg-only**, same rule as the GIS proxy. It joins `TaxParcelSales` to
   `TaxParcel_camadata` on PID because the sales layer carries no building attributes at all.
-- **Sale-validity filter is the heart of it.** Keep blank (arm's length) and **Z (builder sale)**;
-  everything else is a disqualified transfer. Flag a change that widens this without a reason, or
-  that drops Z — builder sales are the new-build resales TTV is actually pricing.
+- **The assessor join has a backup (v8.32).** `TaxParcel_camadata` came back empty (count 0) from 2026-10-09, and
+  every pull found no comps. `camaFetch()` reads the main layer and, for any chunk it gives nothing for, the
+  county's `CamaDataTables` (`/3` tb_allparceldata: `gis1` = longitude, `gis2` = latitude; `/1` tb_allbuildings,
+  `buildingsequence=1`), mapped to the main layer's field names. A note says when the backup answered. Sales with
+  no assessor record from either source go into `errors[]` (`county_records`), never a silent empty result. Flag a
+  join that drops the backup, or treats an empty join as "no sales".
+- **Sale-validity filter is the heart of it.** Keep blank (arm's length), **Z (builder sale)** and **TEMP**
+  (recorded, not yet reviewed by the county; partner decision 2026-10-09). Each row says `unverified: true` for
+  TEMP, the page notes it on the row, and `arv.unverified` counts them in the ARV set. Everything else is a
+  disqualified transfer. Flag a change that widens this without a reason, or that drops Z or TEMP.
+- **A deed counts once (v8.32, audit C-F2).** The sales layer repeats a multi-parcel deed's whole price on every
+  parcel. A deed is `legalreference` (book-page, else `transferid`) + date + price. A deed that sold two or more
+  of the homes in the rows is a bulk sale and all its rows are left out (a note counts them); a deed of one home
+  plus parcels with no house counts once, as that home's sale (`deed_parcels` on the row). Flag a change that lets
+  a bulk deed's total stand as one home's price: it broke the highest-sold cap (Katonah's $4.5M three-parcel deed).
+- **The lot's location never silently goes missing (v8.32, C-F6).** With no assessor record, the subject's
+  lat/lng come from its parcel outline (`subject.location_from: 'parcel'`, with a note). If even that fails, a
+  flag says the radius and road rule weren't applied. When the roads aren't checked, the flag says so and
+  `rule.label` reads "major roads not checked" instead of "this side of the major roads".
 - **Lot sales are not comps (v8.14).** The county stores `soldasvacantflag` as `'Yes'` / `'No'`. The
   old check compared it with `'Y'`, so it never matched, and builder lot purchases were joined to the
   house the assessor now shows and counted as new-build comps (~$94/sf against ~$213/sf for real
@@ -383,6 +400,21 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   Excel export keep working unchanged. Flag a parallel comps model. Since v8.23 the page adds every comp behind
   the suggested ARV (`used: true`), so the table's median is the rule's; with no ARV, the sales that meet the whole
   rule (`meets_rule`), nearest 12. Server text (road and neighbourhood names) goes into the comps box escaped.
+- **One capped ARV everywhere (v8.32, C-F3).** `compStats().cap` is the highest counted Sold $ + Adjustments;
+  `compArv()` caps median × sf at it. The table summary, Apply median / avg, the PDF and the Excel Comps sheet
+  (`MIN(MEDIAN(...)*sf, SUMPRODUCT(MAX(C+D)))`) all use it, so on a fresh pull they say what the county box says.
+  Flag a reader of `st.median * sf` that skips `compArv()`.
+- **A pull replaces the last pull (v8.32, C-F4).** Pulled rows carry `src:'county'`, `srcPid` (the parcel pulled
+  for) and `cpid` (the comp's parcel). A new pull drops `src:'county'` rows (and untagged pre-v8.32 rows whose notes
+  end with the tier, `isCountyComp()`), keeps typed rows, and keeps a pulled row you edited (`src:'county-edited'`)
+  without adding its sale again. A county row pulled for another parcel is named in `compIssues()`.
+- **The box's Apply belongs to its pull (v8.32, C-F9).** `_countyPull` keeps the pull's search (parcel, product,
+  finish, plan sf) and its `retail_psf`. A change to any of them (plan sf, `#comps-product`,
+  `#comps-finish`, the parcel) disables Apply and shows the stale line (`checkCountyCompsStale()`, also run from
+  `calcAll`). Flag an Apply that bakes a $/sf into its onclick again.
+- **Server errors are errors (v8.32, C-F7).** The server answers 200 with `errors[]`. With no rows and errors the
+  box says the county records didn't answer (red), not "no sales"; with rows it lists them. The empty-result text
+  uses the request's window (12 months).
 
 ### Street check (`api/street.js`, v8.18)
 - **What it is:** the lot's own stretch of street (same CAMA `streetname`, `STREET_FT` = 1,000 ft; CAMA drops the
