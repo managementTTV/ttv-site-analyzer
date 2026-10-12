@@ -6695,6 +6695,11 @@ const RELEASE_NOTES=[
    'Change Base ARV away from the tool\u2019s number and a one-tap \u201cwhy\u201d appears: infill, across a busy road, older stock, weaker street, finish or other, plus a few words if you like. It\u2019s saved with the deal and printed on the deal sheet\u2019s Analyzer Snapshot tab and the PDF, so the later sale price can be matched to it.',
    'Sales whose $/sf is more than 1.5\u00d7 (or under two thirds of) the area\u2019s median for the product are left out of the county comps. These are nearly always odd county square footage (W Tyvola: $625,000 on 1,300 sf). The ones the search would have used are listed in the table, marked \u201cleft out\u201d with the reason, and don\u2019t count. Fix a row\u2019s Sq Ft or Sold $ and it counts.',
    'A wide $/sf spread among the comps is now a note in the box, not a warning: it caught few of the big misses.']},
+ {v:'8.35',date:'Oct 2026',name:'County records back on (backup source)',items:[
+   'Since about Oct 9 the county\u2019s main assessor list has been empty, so the Assessor record card was blank and the Street Check said \u201cNo assessor record\u201d. Both now read the county\u2019s backup tables when the main list gives nothing, and switch back by themselves once the county fixes it.',
+   'When the backup is in use, the County GIS notes and the Street Check say so.',
+   'The Street Check now counts each lot once. The old list had one row per building, so a lot with two buildings counted twice; neighbourhood counts can run a few percent lower.',
+ ]},
  {v:'8.34',date:'Oct 2026',name:'Comps you can trust',items:[
    'One ARV everywhere. The comps table, Apply median / avg, the PDF and the Excel Comps sheet now cap the suggested ARV at the highest sale in the table, the way the county box always did. On Katonah the box said $767,500 while the table, the PDF and Excel said $836,882; they all say $767,500 now.',
    'Pull comps again and the new pull replaces the last one\u2019s rows instead of adding a second copy under them. Comps you typed stay, and so does a pulled row you edited. A county comp pulled for a different parcel (the address changed) gets a note under the table, on the PDF and in Excel.',
