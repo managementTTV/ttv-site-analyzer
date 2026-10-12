@@ -221,7 +221,8 @@ async function newBuildsNear(pid, centre, lat, lng, minYear){
     const yb = num(c.yearbuilt), cLat = num(c.xcoord), cLng = num(c.ycoord);   // xcoord = latitude (see milesBetween)
     if(yb && yb>=minYear && cLat!=null && cLng!=null && milesBetween(lat,lng,cLat,cLng)*MI_FT <= INFILL_FT) n++;
   });
-  return {count:n, parcels:pids.length};
+  // some chunks didn't answer: a partial count can only be low, so it settles "not infill" but never "infill"
+  return {count:n, parcels:pids.length, partial:errs.length>0};
 }
 // "Pat should check" (v8.37, research/12 Q2, Brian 2026-10-12): the ARV goes to Pat when confidence isn't HIGH (or there is
 // no ARV), or the lot is infill. On the 1,077 test sales "not HIGH" alone flagged 29% and caught 64% of the misses over
@@ -286,8 +287,10 @@ export default async function handler(req, res){
   let infillP = Promise.resolve(null);
   const settle = async () => {
     const nb = await infillP;
-    out.infill = nb ? {checked:true, new_builds:nb.count, infill:nb.count<INFILL_MIN, radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN}
-                    : {checked:false, new_builds:null, infill:null, radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN};
+    const known = nb && !(nb.partial && nb.count<INFILL_MIN);
+    out.infill = known ? {checked:true, new_builds:nb.count, infill:nb.count<INFILL_MIN, partial:!!nb.partial, radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN}
+                       : {checked:false, new_builds:nb?nb.count:null, infill:null, partial:!!(nb&&nb.partial), radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN};
+    if(nb && nb.partial) out.notes.push(`Part of the assessor look-up for the new builds within ${INFILL_FT} ft didn\u2019t answer (${nb.count} found)`);
     out.vet = vetOf(out);
   };
 
