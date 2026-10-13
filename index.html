@@ -415,7 +415,7 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 
 
 /* Plan comparison (#3) */
-.cmp-pickers{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.cmp-pickers{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .cmp-pickers select{width:100%;background:var(--navy);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;font-family:inherit}
 .cmp-table{width:100%;border-collapse:collapse;min-width:560px}
 .cmp-table th,.cmp-table td{padding:8px 10px;text-align:right;font-size:12px;border-bottom:1px solid var(--border)}
@@ -427,6 +427,9 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .cmp-winbadge{display:block;background:var(--teal);color:#04201c;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;margin-top:5px;letter-spacing:0.04em}
 .cmp-arv-input{width:66px;background:var(--input-bg);color:var(--text);border:1px solid var(--border-bright);border-radius:4px;padding:3px 5px;font-size:11px;font-family:var(--f-num);text-align:right}
 .cmp-neg{color:var(--red)}
+.cmp-own{display:block;font-family:var(--f-body);font-size:10px;font-weight:600;color:var(--text-mid);margin-top:3px}
+.cmp-src{font-family:var(--f-body);font-size:10px;color:var(--text-dim);margin-top:3px;max-width:190px;margin-left:auto;line-height:1.3}
+.cmp-src-warn{color:var(--amber)}
 
 /* Sales comps (#8) */
 .comps-summary{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--text-mid)}
@@ -748,7 +751,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.36 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.40 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1790,11 +1793,14 @@ function applyRankedPlanDefault(){
   const ranked=CHOICES.find(c=>c);            // highest available rank (1st, else 2nd, else 3rd)
   const sig=rankSig();
   if(!ranked){_rankSig=sig;return;}           // no rankings -> keep last-highlighted plan
-  if(sig===_rankSig)return;                    // rankings unchanged -> respect a manual Step-5 pick
+  // v8.40 (audit S-F4): only a new TOP pick moves the plan. Adding or dropping a 2nd/3rd pick changed the signature too,
+  // so it put the 1st pick back over a plan chosen since (and reset Units). The saved signature keeps its format.
+  const top=s=>String(s==null?'':s).split('|').find(x=>x)||'';
+  if(sig===_rankSig||(_rankSig!=null&&top(_rankSig)===ranked)){_rankSig=sig;return;}   // respect a manual Step-5 pick
   _rankSig=sig;
   const sel=$('plan-sel');if(!sel)return;
   const opt=Array.from(sel.options).find(o=>((o.value||'').split('|')[0])===ranked);
-  if(opt&&sel.value!==opt.value){sel.value=opt.value;onPlanChange();}
+  if(opt&&sel.value!==opt.value)selectPlanKeepUnits(opt.value);   // v8.40: ranked on tiles tested at the deal's Units
 }
 function renderShortlist(){
   const lab=['1st','2nd','3rd'];
@@ -4179,8 +4185,7 @@ function selectPlanFromTile(planKey){
   if(!sel)return;
   const opt=Array.from(sel.options).find(o=>o.value===planKey);
   if(!opt)return;
-  sel.value=planKey;
-  onPlanChange();
+  selectPlanKeepUnits(planKey);   // v8.40 (S-F4): keeps the deal's Units
   renderFitCheck();
 }
 
@@ -4445,6 +4450,23 @@ function unitsLayout(w,d,perBldg,attached,units){
   return{w:+(n*w+(n-1)*gap).toFixed(2),d,sf:n*w*d,bldgs:n,gap,per,units,attached};
 }
 const planLayout=(p,units)=>unitsLayout(p.w,p.d,p.u,p.t==='th',units);
+// v8.40 (audit X-F2, S-F4): the Units a plan builds at the deal's Units U. A house or a townhome row keeps U; a duet or the
+// triplex rounds up to whole buildings, the ones planLayout() draws (U 3 with a duet = 2 duets = 4 units; U 1 = 1 duet = 2),
+// never past the 20 the Units field allows.
+function unitsForPlan(p,U){
+  U=Math.max(1,Math.round(U)||1);
+  const per=p&&p.t!=='th'?Math.max(1,p.u||1):1;
+  let n=Math.ceil(U/per)*per;
+  if(n>20)n=Math.max(per,Math.floor(20/per)*per);
+  return n;
+}
+// v8.40 (S-F4): pick a plan without putting Units back to the plan's default. A fit tile is tested at the deal's Units, so
+// clicking it keeps them (rounded up to whole buildings); before, 3 Daytons → click Troy gave 1 Troy.
+function selectPlanKeepUnits(val){
+  const sel=$('plan-sel'),p=PLANS.find(x=>x.val===val);if(!sel)return;
+  if(p){const u=$('units');if(u)u.value=unitsForPlan(p,pv('units'));_unitsFor=p.n;}
+  sel.value=val;onPlanChange();
+}
 // The deal's own plan, read off the plan-sel value like the other readers (footprint and unit count from the value, the
 // type from PLANS by name). n: a unit count other than the deal's, for maxUnitsFit().
 function dealLayout(n){
@@ -5253,36 +5275,61 @@ function generatePDF(){
   try{
     calcBuildable();
   }catch(_){ }
-  setTimeout(()=>{
+  // v8.40: sheet 4 prices each compared plan from county comps of its type (planPsf()). When some aren't in yet, the window
+  // opens now (one opened after the wait would be blocked as a pop-up) and the report goes into it once they answer, or
+  // after 8 s without them (those plans then show the deal's $/sf, and say so).
+  const pending=reportCompsPending();
+  let w=null;
+  if(pending){
+    w=window.open('','_blank','width=960,height=750');
+    if(!w){alert('Pop-up blocked — please allow pop-ups for this page, then try again.');return;}
+    w.document.write('<!doctype html><title>Building the report…</title><p style="font:14px system-ui,sans-serif;padding:24px;color:#102538">Pricing the compared plans from county comps…</p>');
+  }
+  const wait=pending?Promise.race([pullReportComps(),new Promise(r=>setTimeout(r,8000))]):Promise.resolve();
+  wait.catch(()=>{}).then(()=>setTimeout(()=>{
     const sbCanvas=$('lot-editor-canvas');   // v8.26: the one lot diagram
     const canvasDataUrl=sbCanvas?sbCanvas.toDataURL('image/png'):null;
     const html=buildReportHTML(canvasDataUrl);
-    const w=window.open('','_blank','width=960,height=750');
-    if(!w){alert('Pop-up blocked — please allow pop-ups for this page, then try again.');return;}
+    if(!w){
+      w=window.open('','_blank','width=960,height=750');
+      if(!w){alert('Pop-up blocked — please allow pop-ups for this page, then try again.');return;}
+    }else{if(w.closed)return;w.document.open();}
     w.document.write(html);
     w.document.close();
-    w.onload=()=>{setTimeout(()=>{w.focus();w.print();},600);};
-  },360);
+    const go=()=>setTimeout(()=>{w.focus();w.print();},600);
+    if(w.document.readyState==='complete')go();else w.onload=go;
+  },360));
+}
+// v8.40: a plan sheet 4 will show still needs its county comps
+function reportCompsPending(){
+  const own=dealPlanName();
+  return buildPlanComparison().some(s=>{if(s.plan.n===own)return false;const q=planCompsQuery(s.plan);if(!q.sig)return false;
+    const e=PLAN_COMPS.get(q.sig);return !e||e.state==='err'||e.state==='loading';});
 }
 
-// ── Plan comparison builder: ranked slots first, then next-best fitting plans ──
+// ── Plan comparison builder (PDF sheet 4) ──
+// v8.40 (audit X-F2, N4.1, N4.3, N4.4, N4.6): the deal's own plan, then the Compare shortlist picks (so up to 4 columns),
+// then plans that fit the lot at the deal's Units ('fits', then 'tight'; largest finished sf first) to make 3. Each is priced
+// by planPsf() (the deal's ARV, county comps of the plan's type, or a typed $/sf) at the deal's Units. Before: ranked picks
+// pushed the deal's plan out, a plan too large for the lot could fill a slot, every plan sold at the deal's one $/sf and
+// was built at its catalogue unit count. psf: unused since v8.40 (each plan carries its own); kept for old callers.
 function buildPlanComparison(psf){
-  const used=new Set();
-  const slots=[];
-  CHOICES.forEach((nm,i)=>{
-    if(nm){const p=PLANS.find(x=>x.n===nm);if(p){slots.push({rank:i+1,source:'ranked',plan:p});used.add(p.n);}}
-  });
-  if(!slots.length){
-    const cur=($('plan-sel')||{}).value||'';const curName=planNameFromVal(cur);
-    const p=PLANS.find(x=>x.n===curName);
-    if(p){slots.push({rank:null,source:'selected',plan:p});used.add(p.n);}
-  }
-  const rankFit=s=>s==='fits'?0:s==='tight'?1:s==='na'||s==='nosb'?2:3;
-  const pool=PLANS.filter(p=>!used.has(p.n)&&p.w>0&&p.d>0).map(p=>({p,f:fitStatus(p.w,p.d)}))
+  const U=Math.max(1,pv('units')),own=dealPlanName();
+  const slots=comparePlanNames().map(n=>{const p=PLANS.find(x=>x.n===n),r=CHOICES.indexOf(n);
+    return{rank:r>=0?r+1:null,source:n===own?'selected':'ranked',plan:p};});
+  const used=new Set(slots.map(s=>s.plan.n));
+  const rankFit=s=>s==='fits'?0:1;
+  const pool=PLANS.filter(p=>!used.has(p.n)&&p.w>0&&p.d>0).map(p=>{const L=planLayout(p,unitsForPlan(p,U));return{p,f:fitStatus(L.w,L.d)};})
+    .filter(o=>o.f.status==='fits'||o.f.status==='tight')
     .sort((a,b)=>{const r=rankFit(a.f.status)-rankFit(b.f.status);if(r)return r;return (b.p.sf||0)-(a.p.sf||0);});
-  let pi=0;
-  while(slots.length<3&&pi<pool.length){slots.push({rank:null,source:'fit',plan:pool[pi].p});used.add(pool[pi].p.n);pi++;}
-  return slots.slice(0,3).map(s=>({...s,deal:dealForPlan(s.plan,psf),fit:fitStatus(s.plan.w,s.plan.d)}));
+  for(let pi=0;slots.length<3&&pi<pool.length;pi++)slots.push({rank:null,source:'fit',plan:pool[pi].p});
+  return slots.map(s=>{const pp=planPsf(s.plan),deal=dealForPlan(s.plan,pp);
+    return{...s,deal,fit:deal.fit,psf:{w:pp.w,b:pp.b,best:pp.best,src:pp.src,note:pp.typed.b?'Typed in the comparison':pp.note}};});
+}
+// v8.40: county comps for the plans sheet 4 will show; the PDF waits for them (up to 8 s) so it prices them like the modal
+function pullReportComps(){
+  const own=dealPlanName();
+  return Promise.all(buildPlanComparison().map(s=>s.plan).filter(p=>p.n!==own).map(fetchPlanComps));
 }
 
 function getReportData(){
@@ -5532,26 +5579,32 @@ function buildReportHTML(canvasDataUrl){
   if(!d.planComp.length){planComp=secHdr('PLAN COMPARISON')+'<div class="note-box">No plans available to compare.</div>';}
   else{
     const cols=d.planComp;
-    const slotLbl=s=>s.rank?('#'+s.rank+' Ranked'):(s.source==='selected'?'Selected':'Next-best fit');
-    let bestI=-1,bestV=-Infinity;
-    cols.forEach((s,i)=>{const t=s.deal.scen.b.total;if(s.deal.scen.b.arv>0&&t>bestV){bestV=t;bestI=i;}});
+    // v8.40: the deal's plan is "This deal" (and its shortlist rank, if it has one)
+    const slotLbl=s=>s.source==='selected'?('This deal'+(s.rank?' · #'+s.rank+' Ranked':'')):s.rank?('#'+s.rank+' Ranked'):'Next-best fit';
+    // v8.40 (N4.2/N4.3/N4.5): the badge needs a fit and the profit rule, and isn't given when no plan qualifies
+    const bestI=bestPlanIndex(cols.map(s=>s.deal)), noBest=bestI<0?noBadgeWhy(cols.map(s=>s.deal)):'';
     const th=cols.map((s,i)=>'<th'+(i===bestI?' class="pc-win"':'')+'>'+esc(s.plan.n)
-      +'<div class="pc-slot">'+slotLbl(s)+(i===bestI?' · BEST BASE':'')+'</div></th>').join('');
+      +'<div class="pc-slot">'+slotLbl(s)+(i===bestI?' · BEST BASE (meets rule)':'')+'</div></th>').join('');
     const row=(lbl,fn,cls)=>'<tr'+(cls?' class="'+cls+'"':'')+'><td>'+lbl+'</td>'
       +cols.map((s,i)=>'<td'+(i===bestI?' class="pc-win"':'')+'>'+fn(s)+'</td>').join('')+'</tr>';
-    planComp=secHdr('PLAN COMPARISON — RANKED + NEXT-BEST FITS')
+    const ruleTxt=s=>{const r=s.deal.rule;return !r?'—':r.pass?'<span class="pc-fit">✓ Meets</span>':'<span class="pc-no">✗ Misses by '+F(-r.gap)+'/unit</span>';};
+    planComp=secHdr('PLAN COMPARISON — THIS DEAL, RANKED + NEXT-BEST FITS')
       +'<table class="sc pc avoid"><thead><tr><th></th>'+th+'</tr></thead><tbody>'
-      +row('Finished SF',s=>s.plan.sf?s.plan.sf.toLocaleString()+' sf':'—')
-      +row('Footprint',s=>(s.plan.w&&s.plan.d)?(s.plan.w+"'W × "+s.plan.d+"'D"):'—')
+      +row('Units',s=>esc(unitsWord(s.deal)))
+      +row('Finished SF / Unit',s=>s.plan.sf?s.plan.sf.toLocaleString()+' sf':'—')
+      +row('Footprint (all units)',s=>(s.deal.layout.w&&s.deal.layout.d)?(s.deal.layout.w+"'W × "+s.deal.layout.d+"'D"):'—')
       +row('Fit',s=>'<span class="'+fitCls(s.fit)+'">'+fitTxt(s.fit)+'</span>')
       +row('Build Cost / Unit',s=>F(s.plan.c))
       +row('Loan Size',s=>F(s.deal.loan))
+      +row('Base ARV $/sf',s=>s.psf.b>0?'$'+Math.round(s.psf.b)+'<div class="pc-src'+(s.psf.src==='fallback'&&!/^Typed/.test(s.psf.note)?' pc-src-warn':'')+'">'+esc(s.psf.note)+'</div>':'—')
       +row('Base ARV / Unit',s=>s.deal.scen.b.arv>0?F(s.deal.scen.b.arv):'—')
       +row('Base Profit / Unit',s=>s.deal.scen.b.arv>0?sign(s.deal.scen.b.profit):'—','rowhi')
       +row('Base Total Profit',s=>s.deal.scen.b.arv>0?sign(s.deal.scen.b.total):'—','rowhi')
       +row('Base Cash-on-Cash (profit \u00f7 all-in)',s=>s.deal.scen.b.arv>0?signPct(s.deal.scen.b.coc):'—','rowhi')
+      +row('Profit rule',ruleTxt)
       +'</tbody></table>'
-      +'<div class="legend">Slots fill from your Step-3 rankings first, then the highest-finished-SF plans that still fit the envelope. ARV held at the deal\u2019s base $/sf across all plans.</div>';
+      +(noBest?'<div class="note-box">'+esc(noBest)+'</div>':'')
+      +'<div class="legend">Columns: this deal\u2019s plan, your Compare shortlist picks, then the largest plans that fit the lot at the deal\u2019s Units. Every plan is built at the deal\u2019s Units (a duet or triplex rounds up to whole buildings). ARV $/sf: the deal\u2019s for its own plan; county comps of the same type and size for the others, with the deal\u2019s $/sf where there are none. Best = most Base profit among plans that fit and meet the profit rule ('+esc(profitRuleLabels(d.fin.profitRule).text)+').</div>';
   }
 
   /* ── SHEET 5: COMPS + NOTES ── */
@@ -5640,6 +5693,7 @@ function buildReportHTML(canvasDataUrl){
     +'.pc th.pc-win{background:#648370}'
     +'.pc-slot{font-size:7pt;font-weight:normal;color:#d7e6dc;margin-top:2px}'
     +'.pc-fit{color:#2f8f5b;font-weight:bold}.pc-tight{color:#b9842a;font-weight:bold}.pc-no{color:#cf4037;font-weight:bold}'
+    +'.pc-src{font-size:6.5pt;color:#5b6b78;font-weight:normal;margin-top:1px}.pc-src-warn{color:#b9842a}'
     +'.legend{font-size:7.5pt;color:#647a8e;margin-top:6px;line-height:1.4}'
     +'.lg{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:middle}'
     +'.comps{width:100%;border-collapse:collapse;margin-top:0;font-size:8pt}'
@@ -6236,14 +6290,17 @@ function fitStatus(fpW,fpD){
 // Pure per-plan deal math — mirrors calcLoanBase / holdingCost / calcScenarios.
 // Holds land, lot factor, soft costs, tap fee/unit, upgrades/unit and all financing
 // (loan %, rate, points, doc fee, tax, term) constant; loan SIZE and ARV vary by plan.
-function dealForPlan(plan,psf){
+function dealForPlan(plan,psf,U){
   const landCost=mv('land-cost');
   const softFixed=pv('survey')+pv('appraisal')+pv('insurance')+pv('custom-plans');
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
   const tapWaterU=pv('tap-water'),tapSewerU=pv('tap-sewer'),septicLot=pv('septic-cost');
   const upgPerUnit=upgradesPerUnit();   // v8.36: with the GC fee
-  const u=Math.max(1,plan.u||1);
+  // v8.40 (audit X-F2): the deal's Units, as the fit grid tests every plan (unitsForPlan()); it was the catalogue plan.u, so
+  // 3 Daytons were priced as 1 townhome and every house as one house
+  // (the deal's own plan keeps the deal's Units exactly, so its column matches the page)
+  const u=plan.n===dealPlanName()?Math.max(1,pv('units')):unitsForPlan(plan,U==null?pv('units'):U);
   const buildTotal=plan.c*u, upgTotal=upgPerUnit*u;
   const tapTot=(skipW?0:tapWaterU*u)+(skipS?0:tapSewerU*u)+(skipS?septicLot:0);
   const allInExL=buildTotal+upgTotal+lotFactor+tapTot+softFixed;
@@ -6264,101 +6321,205 @@ function dealForPlan(plan,psf){
     const coc=totalAllIn>0?profit/totalAllIn*100:0;   // v8.36: profit ÷ all-in
     scen[k]={arv,arvPSF,holdPerUnit,saleCost,totalAllIn,profit,total:profit*u,coc,term};
   });
-  return{plan,u,loan,allInPerUnit,buildTotal,scen};
+  // v8.40 (N4.2): the profit rule on the Base case, per unit, as the Max land solve reads it: the greater of the floor or
+  // the % of all-in. need = the profit per unit the rule asks for.
+  const r=getProfitRule(), sb=scen.b;
+  const rule=sb.arv>0?{need:Math.max(r.floor,r.pct/100*sb.totalAllIn)}:null;
+  if(rule){rule.pass=sb.profit>=rule.need;rule.gap=sb.profit-rule.need;}
+  const L=planLayout(plan,u);
+  return{plan,u,loan,allInPerUnit,buildTotal,scen,rule,layout:L,fit:fitStatus(L.w,L.d)};
 }
 
-const CMP=[null,null,null];
-const CMP_ARV=[{w:'',b:'',best:''},{w:'',b:'',best:''},{w:'',b:'',best:''}];
+// ── v8.40 (audit N4.1; Brian, 2026-10-13: "comps by plan type"): what each compared plan sells for ──
+// The deal's own plan sells at the deal's ARV, the number the rest of the page uses. Every other plan is priced from
+// county comps of its own product (house / duet / townhome / triplex) at its own size: the same /api/comps search the
+// Sales comps step runs, with the plan's type and sf in place of the deal's (the suggested ARV, capped at the highest
+// sale). Worst and Best keep the deal's spread around Base. When there are no comps of that type (or no County GIS
+// parcel, or a county outside Mecklenburg) the plan falls back to the deal's $/sf, and the column says so. A $/sf typed
+// in the comparison beats both, for that plan and case, and the PDF uses it too.
+const PLAN_COMPS=new Map();   // search signature -> {state:'loading'|'ok'|'none'|'err', psf, capped, n, conf, p}
+const PLAN_TYPE_NOUN={sfh:'house',duet:'duet',th:'townhome',mf:'triplex'};
+function planCompsQuery(plan){
+  const g=(typeof window!=='undefined'&&window._lastGis)||null, county=($('county-sel')||{}).value||'';
+  if(!(plan&&plan.sf>0))return{why:'the plan has no finished sf'};
+  if(county&&!/mecklenburg/i.test(county))return{why:'county comps cover Mecklenburg only'};
+  if(!g||!g.pid)return{why:'run Auto-fill from County GIS to price it from comps'};
+  if(g.addrSig&&g.addrSig!==gisAddressSignature())return{why:'the address changed since the County GIS lookup'};
+  const product=['sfh','th','duet','mf'].includes(plan.t)?plan.t:'any', finish=($('comps-finish')||{}).value||'standard';
+  return{pid:g.pid,product,finish,sf:plan.sf,sig:[g.pid,product,finish,plan.sf].join('|')};
+}
+// Resolves once the plan's comps are in PLAN_COMPS (or the search can't run). A failed search is tried again next time.
+function fetchPlanComps(plan){
+  const q=planCompsQuery(plan);if(!q.sig)return Promise.resolve(null);
+  const hit=PLAN_COMPS.get(q.sig);
+  if(hit&&hit.state!=='err')return hit.p||Promise.resolve(hit);
+  const e={state:'loading'};PLAN_COMPS.set(q.sig,e);
+  e.p=fetch('/api/comps?pid='+encodeURIComponent(q.pid)+'&radius=0.5&months=12&product='+q.product+'&finish='+q.finish+'&sf='+q.sf)
+    .then(r=>r.json()).then(d=>{
+      if(d&&d.arv&&d.arv.retail_psf>0)Object.assign(e,{state:'ok',psf:d.arv.retail_psf,capped:!!d.arv.capped,
+        n:(d.comps||[]).filter(c=>c.used).length,conf:d.confidence&&d.confidence.level});
+      else{
+        // as pullCountyComps(): only the parcel or assessor look-ups failing make an empty answer meaningless
+        const down=!d||d.error||(d.errors||[]).map(String).some(x=>/^(county_records|cama|subject_parcel|fatal|No parcel geometry)/.test(x));
+        e.state=down?'err':'none';
+      }
+      return e;
+    }).catch(()=>{e.state='err';return e;}).finally(()=>{delete e.p;});
+  return e.p;
+}
+function dealPlanName(){const v=($('plan-sel')||{}).value||'';return v&&v!=='__CUSTOM__'?planNameFromVal(v):'';}
+// the deal's ARV fields, Worst and Best at ∓10% of Base when blank (getReportData's reading)
+function dealPsf(){const b=mv('arv-b')||0;return{w:mv('arv-w')||(b?b*0.9:0),b,best:mv('arv-best')||(b?b*1.1:0)};}
+// {w, b, best, src, note}: src 'deal' (the deal's plan), 'comps', or 'fallback' (the deal's $/sf on another plan)
+function planPsf(plan){
+  const D=dealPsf();
+  let P,src,note;
+  if(plan.n===dealPlanName()){P=D;src='deal';note='The deal’s ARV';}
+  else{
+    const q=planCompsQuery(plan),e=q.sig?PLAN_COMPS.get(q.sig):null,noun=PLAN_TYPE_NOUN[plan.t]||'plan';
+    if(e&&e.state==='ok'){
+      const kw=D.b>0?D.w/D.b:0.9,kb=D.b>0?D.best/D.b:1.1;
+      P={w:e.psf*kw,b:e.psf,best:e.psf*kb};src='comps';
+      note=`County comps: ${e.n} ${noun} sale${e.n===1?'':'s'}, $${Math.round(e.psf)}/sf at ${plan.sf.toLocaleString()} sf${e.capped?' (capped at the highest sale)':''}${e.conf?', '+e.conf+' confidence':''}`;
+    }else{
+      P=D;src='fallback';
+      const why=q.why||(!e||e.state==='loading'?'comps not pulled yet':e.state==='none'?`no ${noun} comps near this lot`:'county records didn’t answer');
+      note=`${why[0].toUpperCase()+why.slice(1)}: the deal’s $/sf is used. Check it.`;
+    }
+  }
+  const out={w:P.w,b:P.b,best:P.best,src,note,typed:{}};
+  ['w','b','best'].forEach(k=>{const r=readCmpArv(plan.n,k);if(r.use){out[k]=r.v;out.typed[k]=true;}});
+  // a typed Base with no typed Worst/Best moves them with it, at the spread this plan had
+  if(out.typed.b&&P.b>0){if(!out.typed.w)out.w=out.b*P.w/P.b;if(!out.typed.best)out.best=out.b*P.best/P.b;}
+  return out;
+}
+// v8.40 (audit N4.2/N4.3/N4.5): the badge goes to the plan with the most Base profit among those that fit the lot at the
+// deal's Units ('fits' or 'tight') and meet the profit rule. None qualifies (every plan loses money, misses the rule or
+// doesn't fit): no badge. It used to be the highest Base total, whatever the fit or the rule, even below $0.
+function bestPlanIndex(deals){
+  let bi=-1,bv=-Infinity;
+  deals.forEach((d,i)=>{const s=d.scen.b;
+    if(s.arv>0&&s.total>0&&d.rule&&d.rule.pass&&(d.fit.status==='fits'||d.fit.status==='tight')&&s.total>bv){bv=s.total;bi=i;}});
+  return bi;
+}
+function noBadgeWhy(deals){
+  const priced=deals.filter(d=>d.scen.b.arv>0);
+  if(!priced.length)return'';
+  if(priced.every(d=>d.scen.b.total<=0))return'No best pick: every plan loses money in the Base case.';
+  const fit=priced.filter(d=>d.fit.status==='fits'||d.fit.status==='tight');
+  if(!fit.length)return'No best pick: none of these plans fits the lot at the deal’s Units.';
+  return'No best pick: no plan that fits the lot meets the profit rule ('+profitRuleLabels(getProfitRule()).text+').';
+}
+const fitWord=f=>f.status==='fits'?(f.rotated?'Fits (rotated)':'✓ Fits'):f.status==='tight'?'Tight — verify':f.status==='no'?'✗ Too large':f.status==='nosb'?'Setbacks missing':'No footprint data';
+const unitsWord=d=>{const L=d.layout;return d.u+(L.attached?(d.u>1?' (row)':''):L.bldgs>1?` (${L.bldgs} buildings)`:'')
+  +(d.plan.t!=='th'&&d.plan.u>1&&d.u!==Math.max(1,pv('units'))?' — whole buildings':'');};
+
+const CMP=[null,null,null,null];
+// typed $/sf, by plan name, for this deal: {name: {w,b,best}}. Kept between opens (the PDF reads them too) and dropped when
+// another deal is opened.
+let CMP_ARV={}, _cmpArvGen=-1;
+function cmpArvFor(name){if(_cmpArvGen!==_dealGen){CMP_ARV={};_cmpArvGen=_dealGen;}return CMP_ARV[name]||(CMP_ARV[name]={w:'',b:'',best:''});}
+// v8.40 (audit N4.4/N4.6): the plans to compare: the deal's own plan first, then the Compare shortlist picks. A shortlist
+// used to push the deal's plan out, and with neither the comparison opened on Akron (the first plan in the list).
+function comparePlanNames(){
+  const out=[],add=n=>{if(n&&!out.includes(n)&&PLANS.some(p=>p.n===n))out.push(n);};
+  add(dealPlanName());CHOICES.forEach(add);
+  return out;
+}
 function openCompare(){
-  const cur=($('plan-sel')||{}).value||'';
-  const curName=cur?planNameFromVal(cur):'';
-  CMP[0]=CHOICES[0]||curName||PLANS[0].n;CMP[1]=CHOICES[1]||null;CMP[2]=CHOICES[2]||null;
-  CMP_ARV.forEach(o=>{o.w='';o.b='';o.best='';});
   calcAll();
+  const names=comparePlanNames();
+  for(let i=0;i<CMP.length;i++)CMP[i]=names[i]||null;
   buildComparePickers();renderCompare();
   $('compare-modal').style.display='flex';
+  pullCompareComps();
+}
+// county comps for the plans on screen; the table redraws as each answers
+function pullCompareComps(){
+  CMP.filter(Boolean).map(n=>PLANS.find(p=>p.n===n)).filter(p=>p&&p.n!==dealPlanName()).forEach(p=>{
+    const q=planCompsQuery(p),e=q.sig&&PLAN_COMPS.get(q.sig);
+    if(!q.sig||(e&&e.state!=='err'&&!e.p))return;
+    fetchPlanComps(p).then(()=>{if(($('compare-modal')||{}).style&&$('compare-modal').style.display!=='none')renderCompare();});
+  });
 }
 function closeCompare(){$('compare-modal').style.display='none';}
 function buildComparePickers(){
   const wrap=$('cmp-pickers');if(!wrap)return;
-  const labels=['Plan A','Plan B (optional)','Plan C (optional)'];
-  wrap.innerHTML=[0,1,2].map(i=>{
-    const opts='<option value="">— '+labels[i]+' —</option>'+PLANS.map(p=>'<option value="'+p.n+'"'+(CMP[i]===p.n?' selected':'')+'>'+p.n+'</option>').join('');
+  const labels=['Plan A','Plan B (optional)','Plan C (optional)','Plan D (optional)'];
+  wrap.innerHTML=CMP.map((_,i)=>{
+    const opts='<option value="">— '+labels[i]+' —</option>'+PLANS.map(p=>'<option value="'+escAttr(p.n)+'"'+(CMP[i]===p.n?' selected':'')+'>'+p.n+'</option>').join('');
     return '<select onchange="setCmpPlan('+i+',this.value)">'+opts+'</select>';
   }).join('');
 }
-function setCmpPlan(i,name){CMP[i]=name||null;renderCompare();}
-function onCmpArv(i,k,v){CMP_ARV[i][k]=v;renderCompare();}
+function setCmpPlan(i,name){CMP[i]=name||null;renderCompare();pullCompareComps();}
+function onCmpArv(i,k,v){if(CMP[i])cmpArvFor(CMP[i])[k]=v;renderCompare();}
 // v8.12: the per-plan ARV overrides are text inputs read like the ARV levers (readMoneyText), so a pasted "$265"
 // works. They were type="number", which hands back '' for "$265" or "2,65", so the override was dropped without a
-// word and the deal's ARV used. Blank still means "use the deal's ARV"; so does a value that can't be read or is
+// word and the deal's ARV used. Blank still means "use the plan's ARV"; so does a value that can't be read or is
 // negative, and that one gets a note under the table and a red cell. {use, v, msg}: use says the override applies.
+// v8.40: keyed by plan name, not by column.
 const CMP_CASE={w:'Worst',b:'Base',best:'Best'};
-function readCmpArv(i,k){
-  const raw=String(CMP_ARV[i][k]==null?'':CMP_ARV[i][k]);
+function readCmpArv(name,k){
+  const raw=String(cmpArvFor(name)[k]==null?'':cmpArvFor(name)[k]);
   if(raw.trim()==='')return {use:false,v:0};
-  const r=readMoneyText(raw,{label:`${CMP[i]||'Plan'} ${CMP_CASE[k]} $/sf`,blank:`so the deal’s ${CMP_CASE[k]} ARV is used`,typoFrom:MONEY_FIELDS['arv-b'].typoFrom});
+  const r=readMoneyText(raw,{label:`${name} ${CMP_CASE[k]} $/sf`,blank:`so the plan’s ${CMP_CASE[k]} ARV is used`,typoFrom:MONEY_FIELDS['arv-b'].typoFrom});
   return {use:!(r.msg&&r.v===0),v:r.v,msg:r.msg};
-}
-function resolveCmpArv(i){
-  const gB=mv('arv-b'),gW=mv('arv-w'),gBest=mv('arv-best');
-  const o=k=>{const r=readCmpArv(i,k);return r.use?r.v:null;}, ob=o('b'), ow=o('w'), obest=o('best');
-  const b=ob!==null?ob:gB;
-  const w=ow!==null?ow:(gW||(b?b*0.9:0));
-  const best=obest!==null?obest:(gBest||(b?b*1.1:0));
-  return{w,b,best};
 }
 function renderCompare(){
   const body=$('cmp-body');if(!body)return;
-  const cc=$('cmp-constants'), T=getTerms();
+  const cc=$('cmp-constants'), T=getTerms(), U=Math.max(1,pv('units'));
   if(cc){
-    cc.innerHTML='Held constant — Land '+fmt(mv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgradesPerUnit())+'/unit \u00b7 Loan '+pv('ltc-pct')+'% of project \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+T.w+'/'+T.b+'/'+T.best+'. Loan size & ARV $/sf vary by plan.';
+    cc.innerHTML='Held constant — Land '+fmt(mv('land-cost'))+' · Lot Factor '+fmt(lotFactor)+' · Upgrades '+fmt(upgradesPerUnit())+'/unit · Loan '+pv('ltc-pct')+'% of project · Rate '+pv('fin-rate')+'% · Term '+T.w+'/'+T.b+'/'+T.best
+      +'. Every plan is built at the deal’s '+U+' unit'+(U===1?'':'s')+' (a duet or triplex rounds up to whole buildings). ARV $/sf: the deal’s for the deal’s plan, county comps of the same type and size for the others.';
   }
-  const cols=[0,1,2].filter(i=>CMP[i]).map(i=>{
-    const plan=PLANS.find(p=>p.n===CMP[i]);if(!plan)return null;
-    const psf=resolveCmpArv(i);
+  const cols=CMP.map((n,i)=>{
+    const plan=n&&PLANS.find(p=>p.n===n);if(!plan)return null;
+    const psf=planPsf(plan);
     return{i,plan,psf,deal:dealForPlan(plan,psf)};
   }).filter(Boolean);
   if(!cols.length){body.innerHTML='<div class="note">Pick at least one plan to compare.</div>';return;}
-  let winI=-1,winV=-Infinity;
-  cols.forEach(c=>{if(c.deal.scen.b.arv>0&&c.deal.scen.b.total>winV){winV=c.deal.scen.b.total;winI=c.i;}});
+  const best=bestPlanIndex(cols.map(c=>c.deal)), winI=best>=0?cols[best].i:-1;
   const wc=i=>i===winI?' class="cmp-win-col"':'';
   const money=(v)=>'<span'+(v<0?' class="cmp-neg"':'')+'>'+fmt(v)+'</span>';
-  const fitTxt=p=>{const f=fitStatus(p.w,p.d);return f.status==='fits'?(f.rotated?'Fits (rotated)':'\u2713 Fits'):f.status==='tight'?'Tight \u2014 verify':f.status==='no'?'\u2717 Too large':f.status==='nosb'?'Setbacks missing':'No footprint data';};
-  const th=cols.map(c=>'<th'+wc(c.i)+'>'+c.plan.n+(c.i===winI?'<span class="cmp-winbadge">BEST BASE PROFIT</span>':'')+'</th>').join('');
+  const own=c=>c.plan.n===dealPlanName()?'<span class="cmp-own">The deal’s plan</span>':'';
+  const th=cols.map(c=>'<th'+wc(c.i)+'>'+c.plan.n+own(c)+(c.i===winI?'<span class="cmp-winbadge">BEST BASE PROFIT · MEETS RULE</span>':'')+'</th>').join('');
   const row=(lbl,fn)=>'<tr><td>'+lbl+'</td>'+cols.map(c=>'<td'+wc(c.i)+'>'+fn(c)+'</td>').join('')+'</tr>';
   const sect=t=>'<tr class="cmp-sect"><td colspan="'+(cols.length+1)+'">'+t+'</td></tr>';
   const arvNotes=[];
   const arvInput=(c,k)=>{
-    const r=readCmpArv(c.i,k), bad=r.msg&&!r.use;
+    const r=readCmpArv(c.plan.n,k), bad=r.msg&&!r.use;
     if(r.msg)arvNotes.push(r.msg);
-    return '<input class="cmp-arv-input'+(r.msg?(bad?' comp-bad':' comp-odd'):'')+'" type="text" inputmode="decimal" value="'+escAttr(CMP_ARV[c.i][k])+'" placeholder="'+(c.psf[k]?Math.round(c.psf[k]):'')+'"'
+    return '<input class="cmp-arv-input'+(r.msg?(bad?' comp-bad':' comp-odd'):'')+'" type="text" inputmode="decimal" value="'+escAttr(cmpArvFor(c.plan.n)[k])+'" placeholder="'+(c.psf[k]?Math.round(c.psf[k]):'')+'"'
       +(r.msg?' title="'+escAttr(r.msg)+'"'+(bad?' aria-invalid="true"':''):'')+' onchange="onCmpArv('+c.i+',\''+k+'\',this.value)">';
   };
+  const srcNote=c=>'<div class="cmp-src'+(c.psf.src==='fallback'&&!c.psf.typed.b?' cmp-src-warn':'')+'">'+escAttr(c.psf.typed.b?'Typed here':c.psf.note)+'</div>';
   let h='<table class="cmp-table"><thead><tr><th></th>'+th+'</tr></thead><tbody>';
   h+=sect('Plan');
-  h+=row('Plan drawing',c=>planImg(c.plan.n)?`<button class="plan-img-btn" style="margin:0;padding:3px 8px" onclick="openPlanImg('${c.plan.n}')">View</button>`:'\u2014');
-  h+=row('Units',c=>c.deal.u);
-  h+=row('Finished SF / unit',c=>c.plan.sf>0?c.plan.sf.toLocaleString()+' sf':'\u2014');
-  h+=row('Footprint (W\u00d7D)',c=>c.plan.w>0?c.plan.w+"'\u00d7"+c.plan.d+"'":'\u2014');
-  h+=row('Fit',c=>fitTxt(c.plan));
-  h+=row('Build Cost (base + '+GC_BUILD_FEE+'% GC)',c=>fmt(c.plan.c));
+  h+=row('Plan drawing',c=>planImg(c.plan.n)?`<button class="plan-img-btn" style="margin:0;padding:3px 8px" onclick="openPlanImg('${c.plan.n}')">View</button>`:'—');
+  h+=row('Units',c=>unitsWord(c.deal));
+  h+=row('Finished SF / unit',c=>c.plan.sf>0?c.plan.sf.toLocaleString()+' sf':'—');
+  h+=row('Footprint (W×D)',c=>c.deal.layout.w>0?c.deal.layout.w+"'×"+c.deal.layout.d+"'":'—');
+  h+=row('Fit',c=>fitWord(c.deal.fit));
+  h+=row('Build Cost / unit (base + '+GC_BUILD_FEE+'% GC)',c=>fmt(c.plan.c));
   h+=row('All-In / unit',c=>fmt(c.deal.allInPerUnit));
   h+=row('Loan Amount',c=>fmt(c.deal.loan));
-  h+=sect('ARV $/sf \u2014 editable');
+  h+=sect('ARV $/sf — editable');
   h+=row('Worst $/sf',c=>arvInput(c,'w'));
-  h+=row('Base $/sf',c=>arvInput(c,'b'));
+  h+=row('Base $/sf',c=>arvInput(c,'b')+srcNote(c));
   h+=row('Best $/sf',c=>arvInput(c,'best'));
   [['w','Worst'],['b','Base'],['best','Best']].forEach(function(pair){
     var k=pair[0],lbl=pair[1];
     h+=sect(lbl+' Case ('+T[k]+' mo)');
-    h+=row('ARV / unit',c=>c.deal.scen[k].arv>0?fmt(c.deal.scen[k].arv):'\u2014');
+    h+=row('ARV / unit',c=>c.deal.scen[k].arv>0?fmt(c.deal.scen[k].arv):'—');
     h+=row('Holding / unit',c=>fmt(c.deal.scen[k].holdPerUnit));
-    h+=row('Profit / unit',c=>c.deal.scen[k].arv>0?money(c.deal.scen[k].profit):'\u2014');
-    h+=row('Total Project Profit',c=>c.deal.scen[k].arv>0?money(c.deal.scen[k].total):'\u2014');
-    h+=row('Cash-on-Cash (\u00f7 all-in)',c=>c.deal.scen[k].arv>0?c.deal.scen[k].coc.toFixed(1)+'%':'\u2014');
+    h+=row('Profit / unit',c=>c.deal.scen[k].arv>0?money(c.deal.scen[k].profit):'—');
+    h+=row('Total Project Profit',c=>c.deal.scen[k].arv>0?money(c.deal.scen[k].total):'—');
+    h+=row('Cash-on-Cash (÷ all-in)',c=>c.deal.scen[k].arv>0?c.deal.scen[k].coc.toFixed(1)+'%':'—');
+    if(k==='b')h+=row('Profit rule ('+escAttr(profitRuleLabels(getProfitRule()).text)+')',c=>{const r=c.deal.rule;if(!r)return'—';
+      return r.pass?'✓ Meets':'<span class="cmp-neg">✗ Misses by '+fmt(-r.gap)+'/unit</span>';});
   });
   h+='</tbody></table>';
+  if(winI<0){const why=noBadgeWhy(cols.map(c=>c.deal));if(why)h+='<div class="note" role="status" style="margin-top:8px">'+escAttr(why)+'</div>';}
   if(arvNotes.length)h+='<div class="warn" role="status">'+escAttr(arvNotes.join(' '))+'</div>';
   body.innerHTML=h;
 }
@@ -6682,8 +6843,14 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.36', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.40', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.40',date:'Oct 2026',name:'Compare builds you can trust',items:[
+   'Compare builds and PDF page 4 now build every plan at the deal\u2019s Units. 3 Daytons used to be priced as 1 townhome. A duet or triplex rounds up to whole buildings (3 units of a duet = 2 duets).',
+   'Each plan now gets its own sale price: county comps of its own type (house, duet, townhome, triplex) at its own size. The deal\u2019s own plan keeps the deal\u2019s ARV. With no comps of that type, it uses the deal\u2019s $/sf and says \u201cCheck it\u201d. A $/sf you type for a plan is kept, and the PDF uses it too.',
+   'The Best badge now goes only to a plan that fits the lot and meets the profit rule. Each plan shows whether it meets the rule. If none does, or every plan loses money, there\u2019s no badge and the table says why.',
+   'The deal\u2019s own plan always stays in the comparison, next to your shortlist picks. Plans too big for the lot no longer fill a slot. With no plan picked, it no longer opens on Akron.',
+   'Clicking a plan tile keeps your Units (it used to put them back to 1). Adding or removing a 2nd or 3rd pick no longer switches the plan back to your 1st pick.']},
  {v:'8.36',date:'Oct 2026',name:'The partners\u2019 money rules',items:[
    'The loan is now 85% of the total project cost (land + build + every cost), the way our lender does it. Change it per deal under Financing. You bring the other 15% plus the closing costs (1% of the loan), the points and the doc fee. It used to be a 93% loan-to-cost.',
    'Cash needed is now the full amount: cash at closing (our 15% + closing, points and doc fee) and cash through the hold (plus the interest and property tax for the Base term). Both show under Financing, in the live levers and on the PDF and Excel.',
