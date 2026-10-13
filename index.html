@@ -609,6 +609,10 @@ body[data-screen="1"] #sub-nav-site,body[data-screen="2"] #sub-nav-uw{display:fl
 .land-input-big input{font-family:var(--f-num);font-weight:700;font-size:26px;color:var(--ink);background:var(--paper-2);border:1px solid var(--border-bright);padding:10px 14px 10px 34px}
 .land-input-big input:focus{border-color:var(--slate);box-shadow:0 0 0 3px rgba(94,128,149,0.16)}
 .ask-gap{font-size:12px;margin-top:6px;min-height:16px}
+.ask-gap div+div{margin-top:2px}
+.hero-dirt .hero-offer{color:var(--paper);font-weight:600;font-size:12.5px;margin-top:6px}
+.stress-line{font-size:12px;color:var(--text-dim);margin:-4px 0 14px;line-height:1.4}
+.stress-line.warn{margin:-4px 0 14px;font-size:12px;color:var(--amber)}
 .lever-stats{display:flex;flex-direction:column;gap:8px;padding-top:22px}
 .lever-stat{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--text-mid);border-bottom:1px solid var(--border);padding-bottom:6px}
 .lever-stat b{font-size:16px;color:var(--ink)}
@@ -1092,19 +1096,23 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hero-lbl">Max land cost &middot; the dirt</div>
       <div class="hero-val" id="max-land-display">&mdash;</div>
       <div class="hero-sub" id="max-land-sub">&mdash;</div>
+      <div class="hero-sub hero-offer" id="opening-offer"></div>
       <a href="#" class="hero-edit" onclick="openProfitRule();return false">Change the profit rule</a>
     </div>
   </div>
+
+  <!-- v8.38: SOP-08 stress test on the deal as entered (a warning only; Max land doesn't use it) -->
+  <div class="stress-line" id="stress-line"></div>
 
   <!-- LIVE LEVERS -->
   <div class="card levers">
     <div class="card-title"><span class="dot"></span>Live levers</div>
     <div class="lever-grid">
       <div class="field lever-land"><label for="land-cost">Land cost</label>
-        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="calcAll();calcScenarios()"></div>
+        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="landInput(this);calcAll();calcScenarios()" onblur="syncLandToAsking()"></div>
       </div>
       <div class="field"><label for="asking-price">Asking price</label>
-        <div class="input-wrap"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" oninput="calcScenarios()"></div>
+        <div class="input-wrap"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" oninput="syncLandToAsking();calcScenarios()"></div>
         <div class="ask-gap" id="ask-gap"></div>
       </div>
       <div class="lever-stats">
@@ -1113,7 +1121,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="lever-stat"><span>Cash through the hold</span><b id="exit-cash-hold" class="pos">&mdash;</b></div>
       </div>
     </div>
-    <p class="note">Listed deals: start at asking and move the offer down until the profit rule clears. Never up.</p>
+    <p class="note">Listed deals: land cost starts at the asking price until you type your own (empty it to follow asking again). Move the offer down until the profit rule clears. Never up.</p>
     <div class="lever-arv">
       <div class="lever-arv-head">ARV &mdash; sale price per sq ft <span>Base is required. Worst fills at &minus;10% and Best at +10% if left blank. Pull comps in <a href="#" onclick="goTo(8);return false">Sales comps</a>.</span></div>
       <div class="fr3">
@@ -5096,7 +5104,9 @@ function getTerms(){
 // edit and re-renders once focus has moved on. Nothing is held while the window itself is unfocused.
 const _editingFields=new Set();
 function renderInputWarnings(rule,terms){
-  const held=id=>document.hasFocus()&&_editingFields.has(id)&&$(id)===document.activeElement;
+  const typing=id=>document.hasFocus()&&_editingFields.has(id)&&$(id)===document.activeElement;
+  // v8.38: an untyped land cost follows the asking price, so its note waits while asking is being typed too
+  const held=id=>typing(id)||(id==='land-cost'&&!isManual('land-cost')&&typing('asking-price'));
   [['profit-rule-warn',(rule||getProfitRule()).issues],['term-warn',(terms||getTerms()).issues],['lever-warn',moneyIssues()]].forEach(([wid,issues])=>{
     const w=$(wid);if(!w)return;
     const t=issues.filter(i=>!held(i.id)).map(i=>i.msg).join(' ');
@@ -5153,44 +5163,12 @@ function calcScenarios(){
     if(arvSub)arvSub.textContent=arv>0?`${units} unit${units>1?'s':''} × ${fmt(arv)} = ${fmt(arv*units)} gross sale`:'';
   });
 
-  // v7.12: asking-price anchor (SOP addendum 2026-09-21) — show the land offer as a % of asking
-  const askEl=$('ask-gap');
-  if(askEl){
-    const ask=mv('asking-price');
-    if(ask>0&&landCost>0){
-      const diff=landCost-ask;
-      askEl.textContent=`Offer ${fmt(landCost)} = ${(landCost/ask*100).toFixed(0)}% of asking (${diff<0?'-':'+'}${fmt(Math.abs(diff))})`;
-      askEl.style.color=diff>0?'var(--red)':'';askEl.style.fontWeight='600';
-    } else askEl.textContent='';
-  }
   // Max land cost — back-solve for the PROFIT RULE target
   renderInputWarnings(rule,T);
   let ruleNote='';
-  if(basePSF>0&&sfPerUnit>0){
-    const bARV=basePSF*sfPerUnit;
-    const term=T.b;
-    const salePctV=salePct;
-    const loanPct=pv('ltc-pct')/100;
-    const rate=pv('fin-rate')/100,pts=pv('fin-points')/100,docFee=pv('fin-doc-fee'),annTax=pv('fin-tax');
-    // v7.12 PROFIT RULE (Deal Analyst SOP): base-case profit per unit must clear the GREATER of a flat floor or a
-    // % of all-in cost per unit. Solve the land ceiling for each rule and take the lower one (that rule is binding).
-    // v8.2: floor and % come from the Profit Rule inputs (shipped default $50k / 15%, the SOP).
-    const FLOOR=rule.floor, RULE_PCT=rule.pct/100;
-    // v8.36: loan = loanPct*(L+A) = k1*(L+A), k1 = loanPct (calcLoanBase: no circular closing term); L = land (unknown),
-    // A = allInExLand
-    const k1=loanPct;
-    // holdPerUnit = loan*(rate/12*term + pts + 0.01)/units + (docFee + annTax/12*term)/units
-    const loanFactor=rate/12*term+pts+0.01;
-    const fixedHold=(docFee+(annTax/12)*term)/units;
-    const lhsCoeff=1/units+k1*loanFactor/units;
-    // Rule A (flat floor): bARV*(1-salePct) - FLOOR - A/units - fixedHold - k1*A*loanFactor/units = L*lhsCoeff
-    const rhsA=bARV*(1-salePctV)-FLOOR-allInExLand/units-fixedHold-k1*allInExLand*loanFactor/units;
-    const landA=rhsA/lhsCoeff;
-    // Rule B (% of all-in): profit = RULE_PCT*allIn  =>  allIn(L) = bARV/(1+RULE_PCT)
-    // allIn(L) = (A+L)/units + k1*(L+A)*loanFactor/units + fixedHold + bARV*salePct
-    const rhsB=bARV/(1+RULE_PCT)-allInExLand/units-fixedHold-bARV*salePctV-k1*allInExLand*loanFactor/units;
-    const landB=rhsB/lhsCoeff;
-    const maxLand=Math.min(landA,landB);
+  const ms=maxLandSolve(rule);
+  if(ms){
+    const {maxLand,landA,landB}=ms;
     const binding=landB<landA?`${ruleL.pct} of all-in`:`${ruleL.floor} floor`;
     // v8.33 (audit M10): a ceiling at or below $0 is shown as the number, in red, with "doesn't work": the deal misses the
     // profit rule even with free land. It used to read a bare "—", like a deal with no ARV. The minus is U+2212, so the
@@ -5201,6 +5179,124 @@ function calcScenarios(){
     const ml=$('max-land-display');if(ml){ml.textContent=neg(maxLand);ml.style.color=maxLand>0?'':'var(--red)';}
   }else{const ml=$('max-land-display');if(ml){ml.textContent=basePSF>0?'Pick a plan':'Enter ARV $/sf';ml.style.color='';}}
   const mls=$('max-land-sub');if(mls)mls.textContent=`Base case ≥ ${ruleL.text}${ruleNote}`;
+  renderOfferLines(landCost);
+}
+
+// v8.38 (partner decisions 2026-10-09, sheet rows 1–2): the Max land back-solve on its own, so the opening offer, the
+// asking check and the report read the same ceiling. Base case only. Base-case profit per unit must clear the GREATER
+// of the profit rule's floor or % of all-in; solve the land ceiling for each and take the lower one (the binding rule).
+// null when there's no Base ARV or no plan.
+function maxLandSolve(rule){
+  const basePSF=mv('arv-b');
+  if(!(basePSF>0&&sfPerUnit>0))return null;
+  rule=rule||getProfitRule();
+  const bARV=basePSF*sfPerUnit;
+  const term=getTerms().b;
+  const salePctV=pv('sale-cost-pct')/100;
+  const loanPct=pv('ltc-pct')/100;
+  const rate=pv('fin-rate')/100,pts=pv('fin-points')/100,docFee=pv('fin-doc-fee'),annTax=pv('fin-tax');
+  // v7.12 PROFIT RULE (Deal Analyst SOP). v8.2: floor and % come from the Profit Rule inputs (default $50k / 15%).
+  const FLOOR=rule.floor, RULE_PCT=rule.pct/100;
+  // v8.36: loan = loanPct*(L+A) = k1*(L+A), k1 = loanPct (calcLoanBase: no circular closing term); L = land (unknown),
+  // A = allInExLand
+  const k1=loanPct;
+  // holdPerUnit = loan*(rate/12*term + pts + 0.01)/units + (docFee + annTax/12*term)/units
+  const loanFactor=rate/12*term+pts+0.01;
+  const fixedHold=(docFee+(annTax/12)*term)/units;
+  const lhsCoeff=1/units+k1*loanFactor/units;
+  // Rule A (flat floor): bARV*(1-salePct) - FLOOR - A/units - fixedHold - k1*A*loanFactor/units = L*lhsCoeff
+  const rhsA=bARV*(1-salePctV)-FLOOR-allInExLand/units-fixedHold-k1*allInExLand*loanFactor/units;
+  const landA=rhsA/lhsCoeff;
+  // Rule B (% of all-in): profit = RULE_PCT*allIn  =>  allIn(L) = bARV/(1+RULE_PCT)
+  // allIn(L) = (A+L)/units + k1*(L+A)*loanFactor/units + fixedHold + bARV*salePct
+  const rhsB=bARV/(1+RULE_PCT)-allInExLand/units-fixedHold-bARV*salePctV-k1*allInExLand*loanFactor/units;
+  const landB=rhsB/lhsCoeff;
+  return {maxLand:Math.min(landA,landB),landA,landB};
+}
+// v8.38 (Brian, 2026-10-09 row 1a; 2026-10-13: 80%, rounded down to $1,000): the opening offer sits about 20% under the
+// walk-away Max land. Max land itself stays the ceiling. 0 when Max land is $0 or less (no offer to open with).
+const OPENING_OFFER_SHARE=0.80;
+function openingOffer(maxLand){return maxLand>0?Math.floor(maxLand*OPENING_OFFER_SHARE/1000)*1000:0;}
+// v8.38 (row 2a; Brian 2026-10-13: the +15% goes on the build cost only, the Slate or custom build plus upgrades): the
+// SOP-08 stress test, ARV −10%, the Base term + 3 months and build +15%. A warning below $10k profit per unit; it never
+// moves Max land.
+const SOP08_STRESS={arv:0.90,months:3,build:1.15,floor:10000};
+// Base-case profit per unit at a land price, with the stress knobs (o.arv, o.months, o.build; 1 / 0 / 1 = the Base card).
+// The same math as calcScenarios()'s Base card and getReportData()'s scenarios. null without a Base ARV or a plan.
+function baseProfitAt(land,o){
+  o=o||{};
+  const basePSF=mv('arv-b');
+  if(!(basePSF>0&&sfPerUnit>0))return null;
+  const arv=basePSF*sfPerUnit*(o.arv||1);
+  const buildPart=(currentPlanCost||0)*units+upgradesPerUnit()*units;
+  const exLand=allInExLand+buildPart*((o.build||1)-1);
+  const loan=pv('ltc-pct')/100*(land+exLand);
+  const term=getTerms().b+(o.months||0);
+  const h=holdingCost(loan,term);
+  const totalAllIn=(exLand+land)/units+(h.total+loan*0.01)/units+arv*pv('sale-cost-pct')/100;
+  return {arv,term,totalAllIn,profit:arv-totalAllIn};
+}
+// v8.38 (row 2c): where a land price leaves the deal against the profit rule: 'pass' (clears it), 'under' (profit, but
+// under the rule) or 'neg' (a loss). The deal bar's colour and the "at asking" check read this. Max land is shown rounded
+// to the dollar, so a land price up to 50¢ over the exact ceiling still passes: typing the Max land on screen clears it.
+function ruleStatusAt(land,rule){
+  const r=baseProfitAt(land);if(!r)return null;
+  rule=rule||getProfitRule();
+  const clears=x=>{const q=baseProfitAt(x);return q.profit>=Math.max(rule.floor,rule.pct/100*q.totalAllIn)-0.01;};
+  const need=Math.max(rule.floor,rule.pct/100*r.totalAllIn);
+  return {profit:r.profit,need,status:r.profit<0?'neg':clears(land-0.5)?'pass':'under'};
+}
+// Everything the offer lines show, for the screen and the report. null without a Base ARV or a plan.
+function offerCheck(landCost){
+  const rule=getProfitRule(), ms=maxLandSolve(rule);
+  if(!ms)return null;
+  const ask=mv('asking-price')||0;
+  const st=baseProfitAt(landCost,SOP08_STRESS);
+  return {maxLand:ms.maxLand,opening:openingOffer(ms.maxLand),pct:Math.round((1-OPENING_OFFER_SHARE)*100),
+    status:ruleStatusAt(landCost,rule).status,
+    asking:ask,askStatus:ask>0?ruleStatusAt(ask,rule).status:null,
+    stress:{profit:st.profit,term:st.term,warn:st.profit<SOP08_STRESS.floor}};
+}
+function renderOfferLines(landCost){
+  const oc=offerCheck(landCost);
+  const oo=$('opening-offer');
+  if(oo)oo.textContent=oc&&oc.opening>0?`Opening offer ${fmt(oc.opening)} · about ${oc.pct}% under max land`:'';
+  // v7.12: asking-price anchor (SOP addendum 2026-09-21): the land offer as a % of asking. v8.38 (row 1b): and whether
+  // asking clears the same profit rule as Max land
+  const askEl=$('ask-gap');
+  if(askEl){
+    const ask=mv('asking-price');
+    askEl.innerHTML='';askEl.style.color='';askEl.style.fontWeight='';
+    const line=(t,col)=>{const d=document.createElement('div');d.textContent=t;d.style.fontWeight='600';if(col)d.style.color=col;askEl.appendChild(d);};
+    if(ask>0&&landCost>0&&Math.round(landCost)!==Math.round(ask)){
+      const diff=landCost-ask;
+      line(`Offer ${fmt(landCost)} = ${(landCost/ask*100).toFixed(0)}% of asking (${diff<0?'-':'+'}${fmt(Math.abs(diff))})`,diff>0?'var(--red)':'');
+    }
+    if(ask>0&&oc)line(oc.askStatus==='pass'?`Asking clears the profit rule (max land ${fmt(oc.maxLand)})`
+      :`Asking misses the profit rule: ${oc.maxLand>0?fmt(ask-oc.maxLand)+' over max land':'the deal misses it even at $0 land'}`,
+      oc.askStatus==='pass'?'var(--green)':oc.askStatus==='under'?'var(--amber)':'var(--red)');
+  }
+  const sl=$('stress-line');
+  if(sl){
+    if(!oc){sl.textContent='';sl.className='stress-line';}
+    else{
+      const t=`SOP-08 stress test (ARV −10%, Base months + 3 = ${oc.stress.term}, build +15%) at this land cost: ${oc.stress.profit<0?'−'+fmt(-oc.stress.profit):fmt(oc.stress.profit)} profit per unit.`;
+      sl.textContent=oc.stress.warn?`⚠ ${t} That’s under the $10k per unit the SOP asks for. Max land doesn’t change; check the deal before you offer.`:t;
+      sl.className='stress-line'+(oc.stress.warn?' warn':'');
+    }
+  }
+}
+// v8.38 (row 2c): while nobody has typed a land cost, it follows the asking price (blank asking → the default again).
+// A typed land cost (markManual) is left alone, and so is a reopened deal's (restoreDeal marks it). Emptying the land
+// field hands it back to the asking price (landInput): it refills when you leave the field, not while you're typing.
+function landInput(el){if(String(el.value).trim()==='')delete el.dataset.manual;else markManual(el);}
+function syncLandToAsking(){
+  const l=$('land-cost');if(!l||isManual('land-cost'))return;
+  if(readMoney('asking-price').msg)return;   // mid-typing ("185,") or unreadable: leave the land where it is
+  const ask=mv('asking-price');
+  const v=ask>0?Math.round(ask).toLocaleString('en-US'):fieldDefault(l);
+  if(l.value===v)return;
+  l.value=v;calcAll();calcScenarios();
 }
 
 // ═══════════════════ SUMMARY ═══════════════════
@@ -5405,6 +5501,7 @@ function getReportData(){
     date:new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),
     fin,cost,scenarios,psf,terms,
     maxLand:($('max-land-display')||{}).textContent||'—',
+    offer:offerCheck(landCost),   // v8.38: opening offer, the profit rule at this land and at asking, the SOP-08 stress
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     lfItems:((typeof window!=='undefined'&&window._lfItems)||[]).slice(),
     planComp:buildPlanComparison(psf),
@@ -5443,6 +5540,21 @@ function buildReportHTML(canvasDataUrl){
   const baseCoc=base.hasArv?signPct(base.coc):'—';
   // v8.8: the same notes as the screen's #lever-warn, so the memo can't quietly run on a misread land or ARV
   const inputNotes=moneyIssues().map(i=>i.msg).join(' ');
+  // v8.38: the asking check and the SOP-08 stress test, as on the screen (green, amber or red line; the stress box only
+  // when it fails)
+  const offerNotes=(()=>{
+    const o=d.offer;if(!o)return '';
+    const S=v=>v<0?'\u2212'+F(-v):F(v);
+    let h='';
+    if(o.asking>0){
+      const ok=o.askStatus==='pass',col=ok?PG:o.askStatus==='under'?'#b26b00':PR;
+      h+='<div class="avoid" style="border-left:3px solid '+col+';padding:5px 10px;margin:6px 0;font-size:10px"><b>Asking '+F(o.asking)+':</b> '
+        +(ok?'clears the profit rule.':'misses the profit rule'+(o.maxLand>0?' ('+F(o.asking-o.maxLand)+' over max land).':' even at $0 land.'))+'</div>';
+    }
+    if(o.stress.warn)h+=noteBox('SOP-08 stress test','ARV \u221210%, Base months + 3 = '+o.stress.term+', build +15%: '+S(o.stress.profit)
+      +' profit per unit at '+F(d.cost.land)+' land, under the $10k per unit the SOP asks for. Max land doesn\u2019t change.');
+    return h;
+  })();
   const cover=
     '<div class="addr-bar"><div class="addr-text">'+esc(d.address)+'</div><div class="date-text">'+d.date+'</div></div>'
     +noteBox('Check inputs',inputNotes)
@@ -5450,8 +5562,10 @@ function buildReportHTML(canvasDataUrl){
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'% (target '+profitRuleLabels(d.fin.profitRule).pct+')'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
       +metric('Cash at Closing',F(d.fin.cash),F(d.fin.cashHold)+' through the hold ('+d.terms.b+' mo)',true)
-      +metric('Max Land (Base, profit rule)',d.maxLand,(/^\u2212/.test(d.maxLand)?'Doesn\u2019t work: misses the rule even at $0 land. ':'')+profitRuleLabels(d.fin.profitRule).text,true)
+      +metric('Max Land (Base, profit rule)',d.maxLand,(/^\u2212/.test(d.maxLand)?'Doesn\u2019t work: misses the rule even at $0 land. ':'')+profitRuleLabels(d.fin.profitRule).text
+        +(d.offer&&d.offer.opening>0?'<br><b>Opening offer '+F(d.offer.opening)+'</b> (about '+d.offer.pct+'% under)':''),true)
     +'</div>'
+    +offerNotes
     +'<div class="two-col">'
       +'<div>'+secHdr('DEAL SUMMARY')
         +'<table class="kv avoid">'
@@ -6564,7 +6678,9 @@ function updateDealPulse(){
     const pEl=$('dp-profit'),cEl=$('dp-coc');
     if(b&&b.hasArv){
       pEl.textContent=F(b.profit);
-      pEl.className='dp-val '+(b.profit>0?'pos':b.profit<0?'neg':'');
+      // v8.38 (row 2c): green only when the profit rule passes, amber when there's profit but under the rule, red for a loss
+      const st=d.offer&&d.offer.status;
+      pEl.className='dp-val '+(st==='pass'?'pos':st==='under'?'amb':st==='neg'?'neg':'');
       cEl.textContent='CoC '+b.coc.toFixed(1)+'%';
     }else{pEl.textContent='\u2014';pEl.className='dp-val';cEl.textContent='set ARV';}
     updateHero(d,b,F);
@@ -6649,6 +6765,7 @@ function serializeDeal(){
     tapSig:_tapSig,rankSig:_rankSig,   // what the entry-time defaults last applied, so a reopen replays one still due
     tapManual:{w:isManual('tap-water'),s:isManual('tap-sewer')},   // v8.14: typed tap quotes stay typed on reopen
     autoManual:Object.fromEntries(AUTO_FILL_FIELDS.map(id=>[id,isManual(id)])),   // v8.36: and so do the county / survey fills
+    landManual:isManual('land-cost'),   // v8.38: an untyped land cost keeps following the asking price on reopen
     upgrades:Array.from(selectedUpgrades),
     structures:extraStructures.map(st=>({name:st.name,w:st.w,d:st.d,rot:st.rot||0,x:st.x,y:st.y,xFt:st.xFt,yFt:st.yFt})),   // v8.26
     comps:COMPS.map(c=>Object.assign({},c)),
@@ -6788,6 +6905,8 @@ function restoreDeal(d){
     // file from before v8.36 has no record of it: they stay typed, as they always did.
     {const am=(d.autoManual&&typeof d.autoManual==='object')?d.autoManual:null;
      if(am)AUTO_FILL_FIELDS.forEach(id=>{const e=$(id);if(e&&am[id]===false)delete e.dataset.manual;});
+     // v8.38: so does the land cost (a file from before v8.38 keeps it typed)
+     if(d.landManual===false){const e=$('land-cost');if(e)delete e.dataset.manual;}
      renderTaxHint();}
     updateLinks();updateGISLink();   // step 1 built these before the street and ZIP were back
     updateDealPulse();
@@ -6860,6 +6979,13 @@ const RELEASE_NOTES=[
    'The Best badge now goes only to a plan that fits the lot and meets the profit rule. Each plan shows whether it meets the rule. If none does, or every plan loses money, there\u2019s no badge and the table says why.',
    'The deal\u2019s own plan always stays in the comparison, next to your shortlist picks. Plans too big for the lot no longer fill a slot. With no plan picked, it no longer opens on Akron.',
    'Clicking a plan tile keeps your Units (it used to put them back to 1). Adding or removing a 2nd or 3rd pick no longer switches the plan back to your 1st pick.']},
+ {v:'8.38',date:'Oct 2026',name:'Opening offer, asking check and the stress test',items:[
+   'Under Max land there\u2019s now an Opening offer: about 20% under Max land, rounded down to the nearest $1,000. Max land stays the walk-away ceiling: the profit rule, the greater of $50k per unit or 15% of all-in by default (the SOP).',
+   'Under the asking price, a line says whether asking clears the same profit rule, or how far over Max land it is.',
+   'The SOP-08 stress test runs on every deal: ARV \u221210%, the Base months + 3 and build cost +15%. Under $10k profit per unit it shows a warning, on screen and on the PDF. It doesn\u2019t change Max land.',
+   'Land cost starts at the asking price and follows it until you type your own land cost. Empty the land field to make it follow asking again.',
+   'The bottom bar\u2019s Base profit is green only when the deal clears the profit rule, amber when it makes money but less than the rule, red for a loss.',
+   'The offer letter is unchanged: it still fills in Max land.']},
  {v:'8.36',date:'Oct 2026',name:'The partners\u2019 money rules',items:[
    'The loan is now 85% of the total project cost (land + build + every cost), the way our lender does it. Change it per deal under Financing. You bring the other 15% plus the closing costs (1% of the loan), the points and the doc fee. It used to be a 93% loan-to-cost.',
    'Cash needed is now the full amount: cash at closing (our 15% + closing, points and doc fee) and cash through the hold (plus the interest and property tax for the Base term). Both show under Financing, in the live levers and on the PDF and Excel.',
