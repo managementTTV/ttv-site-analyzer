@@ -395,13 +395,23 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     change that lets Accela set a `-rec` step or a County step.
   - **Lock:** the status picker is disabled on `owns` milestones and `setStatus()` refuses them;
     owner / due / vendor / ref stay editable. Accela's status is shown even when the save fails.
+    `accelaOwned(p,c)` also requires the block's record number to still be on the project, and the
+    sync clears (`accela: null`) any block whose ref was removed or moved — a stale block must never
+    keep a step locked.
+  - **No review steps, no status:** a lookup whose Processing Status call fails or comes back empty
+    is not `ok` and writes nothing (record status alone would turn an approved LDIRL back into
+    "submitted"). Failed lookups are retried after 2 minutes, not on every load.
   - **No staff names, no comments in Drive:** reviewer names are dropped at parse; review comments
     ride only the live response (hover text), never the stored block.
   - **Only production saves.** A branch preview shares the live Drive file and feed, so the sync is
     report-only unless `VERCEL_ENV` is `production` (the banner says why it didn't save). Flag a
     change that lets a preview write.
-  - **Writes are sequential and only on change** (one feed call per changed milestone); the
-    in-memory 10-minute memo is per function instance. `MAX_REFS` caps a sync at 25 records.
+  - **Writes are sequential and only on change** (one feed call per changed milestone), and stop
+    being started after 40 s (`WRITE_BUDGET_MS`, under `maxDuration` 60); the rest are reported as
+    deferred and land on the next sync. The in-memory 10-minute memo is per function instance.
+    `MAX_REFS` caps a sync at 25 records. The board queues syncs (`syncAccela()` chains) so a ref
+    saved during the on-load sync never races it. The Drive read is `loadPermitState()` from
+    `api/permits.js`, shared with the board's GET.
   - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
     when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
     write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.

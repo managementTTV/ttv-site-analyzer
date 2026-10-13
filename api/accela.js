@@ -15,7 +15,7 @@
 // Status and Related Records tabs. Staff names in the review history are dropped; nothing written back
 // is more than the City already publishes. County records (R-TH-… building permits) are not in the public
 // search (re-checked 2026-10-13 on aca-prod.accela.com/MECKLENBURG) — they stay email-driven.
-import { GATE_HASH, FILE_ID } from './permits.js';
+import { GATE_HASH, loadPermitState } from './permits.js';
 
 const AGENCY = 'CHARLOTTE';
 const ORIGIN = 'https://aca-prod.accela.com';
@@ -23,6 +23,8 @@ const UA = 'Mozilla/5.0 (TTV permitting board; read-only status check)';
 const REF_RE = /\b(LD[A-Z]{2,6}|ZV|ZUP|CPB|RSVA)-(\d{4})-(\d{3,7})\b/i;
 const MAX_REFS = 25;            // one record page + two small calls each; a sync never fans out further
 const CACHE_MS = 10 * 60 * 1000; // per-instance memo so a burst of board loads costs Accela one lookup
+const MISS_MS = 2 * 60 * 1000;   // a failed / not-found lookup is retried after 2 min, not on every load
+const WRITE_BUDGET_MS = 40 * 1000; // stop starting feed writes here; the rest wait for the next sync (maxDuration 60)
 const cache = new Map();
 
 // Which board milestones a record type may set. Accela knows City approval, never Register-of-Deeds
@@ -72,7 +74,9 @@ export function parseProcessing(html){
     let x;
     while((x = h.exec(body))){ const st = text(x[1]); if(st && st !== 'TBD') history.push({ status: st, date: isoDate(text(x[2])) }); }
     const c = /Comment:\s*(?:<\/[^>]+>\s*)*(.*?)(?:Additional Information:|<\/table>)/s.exec(body);
-    tasks.push({ name: t.name, state: t.state, history, comment: c ? text(c[1]).slice(0, 280) || null : null });
+    const task = { name: t.name, state: t.state, history, comment: c ? text(c[1]).slice(0, 280) || null : null };
+    task.latest = last(task);
+    tasks.push(task);
   });
   return tasks;
 }
@@ -171,15 +175,18 @@ async function lookup(ref){
       call('GetBuildCapTree', { moduleName: module, isShowAll: 'true' })
     ]);
     if(proc.status === 'fulfilled') out.tasks = parseProcessing(proc.value);
-    if(tree.status === 'fulfilled') out.related = parseRelated(tree.value).filter(r => r.ref !== out.ref);
-    const self = tree.status === 'fulfilled' ? parseRelated(tree.value).find(r => r.ref === out.ref) : null;
+    const rel = tree.status === 'fulfilled' ? parseRelated(tree.value) : [];
+    out.related = rel.filter(r => r.ref !== out.ref);
+    const self = rel.find(r => r.ref === out.ref);
     out.opened = (self && self.opened) || out.tasks.flatMap(t => t.history.map(h => h.date)).filter(Boolean).sort()[0] || null;
-    out.ok = true;
-    if(proc.status === 'rejected') out.error = 'review steps unavailable (' + proc.reason.message + ')';
+    // No review steps = no status. Without them an approved LDIRL whose record still reads "In Progress"
+    // would derive as "submitted" and the sync would write that over "done".
+    if(!out.tasks.length) out.error = 'review steps unavailable' + (proc.status === 'rejected' ? ' (' + proc.reason.message + ')' : '');
+    else out.ok = true;
   }catch(e){
     out.error = String(e && e.message || e);
   }
-  if(out.ok) cache.set(ref, { at: Date.now(), data: out });
+  cache.set(ref, { at: Date.now() - (out.ok ? 0 : CACHE_MS - MISS_MS), data: out });
   return out;
 }
 
@@ -212,8 +219,9 @@ export function targets(state){
       const target = REC_TO_APP[mid] || mid;
       const owns = (OWNS[ref.split('-')[0]] || []).includes(target) && !!st[target];
       const key = owns ? target : mid;
-      // a ref on the step itself beats one parked on its RECORDED step
-      if(seen.has(key) && !(owns && mid === target)) continue;
+      // an owned ref beats a display-only one; a ref on the step itself beats one parked on its RECORDED step
+      const prev = seen.get(key);
+      if(prev && !((owns && !prev.owns) || (owns && mid === target && prev.refOn !== target))) continue;
       seen.set(key, { projectId: p.id, addr: p.addr, milestoneId: key, refOn: mid, ref, owns });
     }
     out.push(...seen.values());
@@ -226,15 +234,26 @@ export function targets(state){
 const same = (prev, next) => !!prev && Object.keys(next).every(k => (prev[k] ?? null) === (next[k] ?? null));
 
 export function plan(state, records){
-  return targets(state).map(t => {
+  const tg = targets(state);
+  // A block whose ref was removed or moved: clear it, or its lock outlives the record number.
+  const stale = [];
+  for(const p of state.projects){
+    for(const [mid, c] of Object.entries(p.state || {})){
+      if(c && c.accela && !tg.some(t => t.projectId === p.id && t.milestoneId === mid))
+        stale.push({ projectId: p.id, addr: p.addr, milestoneId: mid, refOn: mid, ref: c.accela.rec || null, owns: false,
+                     from: c.status || null, to: c.status || null, accela: null, change: true, upd: { accela: null },
+                     note: 'record number removed — Accela block cleared', cleared: true });
+    }
+  }
+  return tg.map(t => {
     const p = state.projects.find(x => x.id === t.projectId), c = p.state[t.milestoneId] || {};
     const rec = records[t.ref];
-    const item = { ...t, from: c.status || null, to: null, accela: c.accela || null, change: false, note: null };
+    const item = { ...t, from: c.status || null, to: c.status || null, accela: c.accela || null, change: false, note: null };
     if(!rec || !rec.ok){ item.note = rec ? rec.error : 'not looked up'; return item; }
     const acc = { ...summary(rec), owns: t.owns };   // owns: this record sets the step's status (the board locks it)
     const upd = {};
     if(t.owns && acc.board && acc.board !== c.status) upd.status = acc.board;
-    if(t.owns && acc.board && acc.board !== 'todo' && !c.started && acc.opened) upd.started = acc.opened;
+    if(t.owns && acc.board && !c.started && acc.opened) upd.started = acc.opened;
     if(!same(c.accela, acc)) upd.accela = acc;
     item.accela = acc;
     item.to = upd.status || c.status || null;
@@ -242,15 +261,7 @@ export function plan(state, records){
     item.upd = upd;
     if(!t.owns) item.note = `${t.ref.split('-')[0]} on "${t.refOn}" — shown, not used to set status`;
     return item;
-  });
-}
-
-async function loadState(){
-  const r = await fetch(`https://drive.google.com/uc?export=download&id=${FILE_ID}`, { redirect: 'follow', signal: AbortSignal.timeout(20000) });
-  if(!r.ok) throw new Error('drive HTTP ' + r.status);
-  const data = JSON.parse(await r.text());
-  if(!data || !Array.isArray(data.projects)) throw new Error('unexpected payload shape');
-  return data;
+  }).concat(stale);
 }
 
 async function writeFeed(state, item){
@@ -268,7 +279,8 @@ async function writeFeed(state, item){
 }
 
 async function sync({ dry }){
-  const state = await loadState();
+  const t0 = Date.now();
+  const state = await loadPermitState();
   const tg = targets(state);
   const records = await lookupAll(tg.map(t => t.ref));
   const items = plan(state, records);
@@ -277,15 +289,16 @@ async function sync({ dry }){
   const env = process.env.VERCEL_ENV;
   const dryWhy = dry ? 'dry run' : !(process.env.PERMITS_FEED_URL && process.env.PERMITS_FEED_TOKEN) ? 'write path not configured'
     : env && env !== 'production' ? `${env} deployment — only production saves` : null;
-  let wrote = 0, failed = 0;
+  let wrote = 0, failed = 0, deferred = 0;
   for(const it of items){                                   // one at a time: every patch rewrites the same Drive file
     if(!it.change){ it.wrote = null; continue; }
     if(dryWhy){ it.wrote = false; it.note = dryWhy; continue; }
+    if(Date.now() - t0 > WRITE_BUDGET_MS){ it.wrote = false; it.note = 'deferred to the next sync (time budget)'; deferred++; continue; }
     try{ await writeFeed(state, it); it.wrote = true; wrote++; }
     catch(e){ it.wrote = false; it.note = String(e && e.message || e); failed++; }
   }
   items.forEach(it => { delete it.upd; });
-  return { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed,
+  return { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed, deferred,
            changes: items.filter(i => i.change).length, items, records };
 }
 

@@ -17,6 +17,18 @@
 export const FILE_ID = process.env.PERMITS_FILE_ID || '1BKJf7_fDSw8nKBogxU2rD6vC5WqrbrPC';
 export const GATE_HASH = '9b748ce71c59791771ab14a3de4bb0a2822eac70555d3e292ac7160af8fa1cc6'; // keep in sync with permits.html (api/accela.js imports it)
 
+// The Drive permit-state file, parsed and shape-checked. Shared with api/accela.js (the Accela sync).
+export async function loadPermitState(){
+  const r = await fetch(`https://drive.google.com/uc?export=download&id=${FILE_ID}`, {redirect:'follow'});
+  if(!r.ok) throw new Error('drive HTTP '+r.status);
+  const text = await r.text();
+  let data;
+  try{ data = JSON.parse(text); }
+  catch(_){ throw new Error('drive returned non-JSON (file sharing changed?)'); }
+  if(!data || !Array.isArray(data.projects)) throw new Error('unexpected payload shape');
+  return data;
+}
+
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin','*');
 
@@ -45,13 +57,7 @@ export default async function handler(req, res){
 
   if((req.query.k || '') !== GATE_HASH){ res.status(401).json({error:'unauthorized'}); return; }
   try{
-    const r = await fetch(`https://drive.google.com/uc?export=download&id=${FILE_ID}`, {redirect:'follow'});
-    if(!r.ok) throw new Error('drive HTTP '+r.status);
-    const text = await r.text();
-    let data;
-    try{ data = JSON.parse(text); }
-    catch(_){ throw new Error('drive returned non-JSON (file sharing changed?)'); }
-    if(!data || !Array.isArray(data.projects)) throw new Error('unexpected payload shape');
+    const data = await loadPermitState();
     // Short edge cache: the board is interactive now (team edits write back), so a
     // long TTL would make a just-saved edit look lost on reload. 30s is enough to
     // absorb team-wide load bursts without hiding fresh writes.

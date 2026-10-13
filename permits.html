@@ -538,7 +538,7 @@ function detailHtml(p,m){
   const byId=Object.fromEntries(catalogFor(p.flags).map(x=>[x.id,x]));
   const depTxt=depGroups(m,p,byId).map(g=>g.map(id=>byId[id].t).join(' or ')).join(' + ');
   const opts=STATUSES.map(st=>`<option value="${st.k}" ${c.status===st.k?'selected':''}>${st.label}</option>`).join('');
-  const own=accelaOwned(c);
+  const own=accelaOwned(p,c);
   return `<div class="detail">
     <div class="dt">${m.t} ${m.gate?'<span class="gatechip">Gate</span>':''} ${m.crit?'<span class="critchip">Watch</span>':''}
       <button class="xbtn" onclick="selectMs(null)">close ✕</button></div>
@@ -553,7 +553,7 @@ function detailHtml(p,m){
       <div class="cg"><label>Due date</label><input type="date" value="${c.due||''}" onchange="setField('${p.id}','${m.id}','due',this.value)"></div>
       <div class="cg"><label>Ref # (LDIRL / LDPLAT / permit)</label><input type="text" class="refin" value="${esc(c.ref||'')}" placeholder="e.g. LDIRL-2026-02598" onchange="setField('${p.id}','${m.id}','ref',this.value)"></div>
     </div>
-    ${accelaBox(c)}
+    ${accelaBox(p,c)}
   </div>`;
 }
 
@@ -635,7 +635,7 @@ function renderProject(){
 function selectMs(id){selMs=(selMs===id?null:id);renderProject();}
 function setStatus(pid,mid,val){
   const p=PROJECTS.find(x=>x.id===pid),c=p.state[mid];
-  if(accelaOwned(c)){toast('⚠ This step\'s status comes from Accela — change it in Accela, not here',true);render();return;}
+  if(accelaOwned(p,c)){toast('⚠ This step\'s status comes from Accela — change it in Accela, not here',true);render();return;}
   if((val==='active'||val==='submitted')&&!c.started)c.started=fmtDate(today);
   if(val==='todo')c.started=null;
   c.status=val;render();
@@ -718,9 +718,10 @@ const CITY_REF=/\b(LD[A-Z]{2,6}|ZV|ZUP|CPB|RSVA)-\d{4}-\d{3,7}\b/i;
 function cityRef(s){const m=CITY_REF.exec(String(s||''));return m?m[0].toUpperCase():null;}
 const ACCELA_URL=ref=>'https://aca-prod.accela.com/CHARLOTTE/Cap/GlobalSearchResults.aspx?QueryText='+encodeURIComponent(ref);
 let ACCELA={state:'idle'};
-function accelaOwned(c){return !!(c&&c.accela&&c.accela.owns&&c.accela.board);}
+/* owned = the block says this record sets the step AND that record number is still on the project
+   (a removed / moved ref must not leave the step locked) */
+function accelaOwned(p,c){return !!(c&&c.accela&&c.accela.owns&&c.accela.board&&p&&Object.values(p.state).some(x=>cityRef(x&&x.ref)===c.accela.rec));}
 function shortDate(d){const[y,m,dd]=String(d||'').split('-').map(Number);return m&&dd?m+'/'+dd:'';}
-function latestH(hh){const d=hh.map(x=>x.date).filter(Boolean).sort().pop();const day=d?hh.filter(x=>x.date===d):hh;return day[day.length-1];}
 function accelaChip(a){
   if(!a)return'';
   const lbl=a.board==='done'?'✓ '+(a.stepDate?shortDate(a.stepDate):'approved')
@@ -728,15 +729,15 @@ function accelaChip(a){
     :a.board==='submitted'?'in review':String(a.status||'no status').toLowerCase());
   return `<span class="acchip ac-${a.board||'none'}" title="${esc(a.why||'')}">Accela ${esc(lbl)}</span>`;
 }
-function accelaBox(c){
+function accelaBox(p,c){
   const a=c.accela;if(!a)return'';
   const rec=ACCELA.records&&ACCELA.records[a.rec];
   let h=`<div class="acbox"><div class="ach">🏛 Accela · <a href="${ACCELA_URL(a.rec)}" target="_blank" rel="noopener">${esc(a.rec)}</a>${a.type?` · ${esc(a.type)}`:''} · record status <b>${esc(a.status||'—')}</b> ${accelaChip(a)}</div>`;
   h+=`<div class="acw">${esc(a.why||'')}${a.step?` · ${a.board==='done'?'':'now: '}${esc(a.step)} — ${esc(a.stepStatus||'')}${a.stepDate?' '+shortDate(a.stepDate):''}`:''}</div>`;
-  h+=`<div class="acw">${accelaOwned(c)?'<b>Accela sets this step\'s status</b> — change it in Accela, not here.':'Shown for reference — this record doesn\'t set this step\'s status.'} Opened ${esc(a.opened||'—')} · last City activity ${esc(a.asOf||'—')}${rec&&rec.ok?' · checked just now':''}</div>`;
+  h+=`<div class="acw">${accelaOwned(p,c)?'<b>Accela sets this step\'s status</b> — change it in Accela, not here.':'Shown for reference — this record doesn\'t set this step\'s status.'} Opened ${esc(a.opened||'—')} · last City activity ${esc(a.asOf||'—')}${rec&&rec.ok?' · checked just now':''}</div>`;
   if(rec&&rec.ok&&rec.tasks&&rec.tasks.length)
     h+=`<div class="acsteps">`+rec.tasks.map(t=>{
-      const l=t.history.length?latestH(t.history):null,cls=t.state==='active'?'now':t.state==='complete'?'ok':'wait';
+      const l=t.latest,cls=t.state==='active'?'now':t.state==='complete'?'ok':'wait';
       const tip=t.history.map(x=>x.status+(x.date?' '+x.date:'')).join(' → ')+(t.comment?' — '+t.comment:'');
       return `<div class="${cls}" title="${esc(tip)}"><b>${esc(t.name)}</b>${l?` — ${esc(l.status)}${l.date?' '+shortDate(l.date):''}`:''}</div>`;
     }).join('')+`</div>`;
@@ -756,11 +757,15 @@ function accelaNote(){
   const step=id=>(CATALOG.find(m=>m.id===id)||{t:id}).t.split(' — ')[0];
   let s=`🏛 <b>Accela</b> checked ${esc(at)} — ${okN} of ${recs.length} City record${recs.length===1?'':'s'} read; Accela sets the status of those steps.`;
   if(moved.length)s+=` <b>${moved.length} status update${moved.length>1?'s':''}:</b> `+moved.map(i=>`${esc(String(i.addr).split(' (')[0])} · ${esc(step(i.milestoneId))} → ${esc(i.accela.why)}`).join('; ')+'.';
+  if(A.deferred)s+=` ${A.deferred} more will save on the next check.`;
   if(A.failed)s+=` ⚠ ${A.failed} couldn't be saved to the shared record — shown here from Accela.`;
   else if(A.dry&&A.items.some(i=>i.change))s+=` (shown here only, not saved: ${esc(A.dryWhy||'save path not configured')})`;
   return s;
 }
-async function syncAccela(){
+/* one sync at a time: a ref saved while the on-load sync runs queues behind it instead of racing it */
+let accelaRun=Promise.resolve();
+function syncAccela(){accelaRun=accelaRun.then(runAccelaSync,runAccelaSync);return accelaRun;}
+async function runAccelaSync(){
   const n=new Set(PROJECTS.flatMap(p=>Object.values(p.state).map(c=>cityRef(c&&c.ref)).filter(Boolean))).size;
   if(!n){ACCELA={state:'idle'};return;}
   ACCELA={state:'loading',n};renderProject();
@@ -770,11 +775,13 @@ async function syncAccela(){
     if(!r.ok||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
     (d.items||[]).forEach(it=>{
       const p=PROJECTS.find(x=>x.id===it.projectId),c=p&&p.state[it.milestoneId];
-      if(!c||!it.accela)return;
+      if(!c)return;
+      if(it.cleared){delete c.accela;return;}
+      if(!it.accela)return;
       c.accela=it.accela;
-      if(accelaOwned(c)){c.status=it.accela.board;if(!c.started&&it.accela.opened&&c.status!=='todo')c.started=it.accela.opened;}
+      if(accelaOwned(p,c)){c.status=it.accela.board;if(!c.started&&it.accela.opened&&c.status!=='todo')c.started=it.accela.opened;}
     });
-    ACCELA={state:'ok',at:d.checkedAt,records:d.records||{},items:d.items||[],failed:d.failed||0,dry:!!d.dry,dryWhy:d.dryWhy||''};
+    ACCELA={state:'ok',at:d.checkedAt,records:d.records||{},items:d.items||[],failed:d.failed||0,deferred:d.deferred||0,dry:!!d.dry,dryWhy:d.dryWhy||''};
   }catch(e){ACCELA={state:'error',error:(e&&e.message)||String(e)};}
   render();
 }
