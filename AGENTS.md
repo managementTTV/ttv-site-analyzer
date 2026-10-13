@@ -67,6 +67,19 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   × (1 + fee)); `upgradeMenuPerUnit()` is the menu total, for labels and the Excel input. The Excel model holds the menu
   price and "GC Fee % on Upgrades" as inputs and derives `upgU`. Flag a path that adds upgrades at menu price, or that
   takes the fee from `planCostSplit()` (0% on a custom build).
+- **Inner units sell ~2% less per sf (v8.42, research/12 Q3, Brian 2026-10-12).** ARV / unit = $/sf × sf ×
+  `innerUnitFactor(plan, units)` = 1 − 0.02 × inner ÷ units. A townhome row (`t:'th'`) has units − 2 inner units; the
+  Arcadia triplex (`t:'mf'`) one per full 3-unit building; a duet, a house or a custom footprint none. So a row of 3 is
+  0.9933, 4 is 0.99, 6 is 0.9867. Evidence: in 196 hot-ZIP rows, inner units sold a median 4.2% under the ends of the same
+  row (1.7% per sf; lower in 158). Every reader of $/sf × sf applies it: `calcScenarios`, `maxLandSolve`, `baseProfitAt`,
+  `getReportData` (`arvFactor`, `innerUnits`; the PDF sensitivity grid), `dealForPlan` (with that plan's own `u`, so the
+  deal's column in Compare builds still equals `getReportData().scenarios`) and Excel (Inputs "ARV factor for inner units", a formula on Inputs › Units for a row or the triplex, 1 otherwise,
+  read by Scenarios row 15 and the Sensitivity grid). The comps' $/sf, Apply and the comps box don't change: a sale's
+  $/sf is one unit's, ends and inner units mixed. The locked deal sheet prices every unit at $/sf × sf, so the hand-off
+  adds a note (`innerUnitNotes()`) saying how much higher the sheet's ARV is. The `#inner-cut` box (`arvFactorFor()`,
+  `innerCount()`) is ticked on a fresh page and unticked by `restoreDeal()` for a file saved before v8.42, so reopening an
+  older deal doesn't move its Max land (the v8.39 `#lf-house-min` pattern). Flag a new $/sf × sf reader that skips
+  `arvFactorFor()`, calls `innerUnitFactor()` directly (it ignores the box), or a factor applied to the comps' $/sf.
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
   Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, appraisal, insurance, custom plans.
   Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
@@ -494,6 +507,17 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   fatal catch included, goes through `settle()` so it carries both. The wide-spread (>1.6×) line is a note now, not a
   flag: it caught 12% of the misses over 10%. The page keeps the pull's verdict as `_arvTool` (saved with the deal as
   `arvTool`, shown only while `_lastGis.pid` is its parcel) under the ARV fields and in the comps box.
+- **The wide-area check (v8.42, research/14 Q1, Brian 2026-10-13: "show it, don't use it").** On an infill lot the page
+  runs the same search at `WIDE_RADIUS` (1.5 mi, `&infill=0`) after the pull and shows the result in the comps box and
+  under the ARV fields (`_arvTool.wide`, saved with the deal, sent to the deal sheet as a note). It never changes the
+  suggested ARV, the comps table, Apply or Base ARV. research/14: averaging it with the 0.5 mi ARV took infill from 33% to
+  42% within ±5% (49% → 59% within ±10%) out of sample; Brian kept the ARV as is and the number for Pat to weigh. Flag a
+  path that lets the 1.5 mi result reach Base ARV or the table without a recorded decision.
+- **Big searches (v8.42).** The sales query pages past the layer's 2,000-row cap (`SALES_PAGE`, `exceededTransferLimit`,
+  `orderByFields: objectid`, up to `SALES_MAX_PAGES`, with a flag if that's hit). `camaFetch()` runs
+  `CAMA_CONCURRENCY` (4) chunks at once (`camaChunk()`; each chunk decides on its own whether the backup answered). On
+  five test lots the 0.5 mi answers are identical before and after; a 1.5 mi pull went from 11 s to 7 s. `api/comps.js`
+  has `maxDuration` 30 in vercel.json. `?infill=0` skips the infill count (`infill.skipped`, no vet reason).
 - **Pat's one-tap "why" (v8.41, research/12 Q1).** When Base ARV is $1/sf or more off `_arvTool.psf` (Apply writes the
   $/sf rounded, or rounded down when capped, so an applied ARV is never a change), chips ask why (`ARV_WHY`: infill,
   across a busy road, older stock, weaker street, finish, other) into `#arv-why-code` plus `#arv-why-note`, plain
@@ -1050,13 +1074,17 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
+  - **v8.42 (inner units): Max land $256,586**, hash **`54155a16bebc`** (recorded without opening Compare builds or the
+    PDF). 3 × Dayton has 1 inner unit, so Base ARV / unit is $364,315 (0.9933 × $366,760), Base profit / unit $115,320
+    ($117,618 before), total $345,960, CoC 46.3%, opening offer $205,000 ($210,000 before), stress profit $50,721. The loan
+    ($536,122) and every cost are unchanged. The lines below are the pre-v8.42 reference.
   - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$262,975** (v8.36: loan 85% of the project,
     12 / 9 / 8 months, survey $3,000; no upgrades, property tax $0 because the new sub-lot has no assessed value yet),
     lot factor $25,850. Loan $536,122, cash at closing $106,082, through the hold (9 mo) $145,286. Base interest $39,204,
     profit $117,618, CoC 47.2% per the report. v8.30–v8.35: $263,493 (93% LTC, 10 / 8 / 6, survey $2,000; base interest
     $38,425, profit $117,845); $262,309 at 10% through v8.29. v8.36 step by step: 85% loan alone $269,249; + 12 / 9 / 8
     $263,975; + survey $3,000 $262,975.
-  - **Reference hash (v8.40 on v8.39, 2026-10-13): `fea47778bc02`**, Max land $262,975 unchanged. v8.40 moves only `planComp`
+  - v8.40 hash (on v8.39, 2026-10-13; v8.41 too, before v8.42's inner units): `fea47778bc02`, Max land $262,975 unchanged. v8.40 moves only `planComp`
     (PDF sheet 4): Compare builds builds every plan at the deal's Units and prices it per plan (planPsf()). With
     `planComp` deleted the hash is `078c1d24648a`, the same as v8.39's. Sheet 4 for Dellinger: Dayton ×3 (the deal, too
     large as a row of 3), Yarmouth ×3, Wheatley ×3, all at the deal's $/sf. Record it **without opening Compare builds or

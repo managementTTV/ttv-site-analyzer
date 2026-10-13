@@ -763,7 +763,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.41 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.42 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1137,8 +1137,10 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="field"><label for="arv-b">Base ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-b" placeholder="your comp $/sf" oninput="calcScenarios()"></div></div>
         <div class="field"><label for="arv-best">Best ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()"></div></div>
       </div>
+      <label id="inner-cut-row" class="note" style="display:none;align-items:center;gap:8px;margin-top:8px;cursor:pointer"><input type="checkbox" id="inner-cut" checked onchange="calcAll();calcScenarios()"> <span>Inner units of a townhome row or the triplex sell 2% less per sq ft than the end units (partner pick; here and in Compare builds). A deal saved before v8.42 reopens with this off, so its Max land doesn&rsquo;t move.</span></label>
       <div id="arv-check" class="arv-check" style="display:none">
         <div id="arv-check-vet" role="status"></div>
+        <div id="arv-check-wide" style="display:none;margin-top:6px;color:var(--text-mid)"></div>
         <div id="arv-why-row" style="display:none">
           <div id="arv-why-head"></div>
           <div class="arv-why" role="group" aria-label="Why Base ARV differs from the tool&rsquo;s">
@@ -2047,7 +2049,10 @@ async function pullCountyComps(){
       say(vetBox+esc((d.rule&&d.rule.label)||('No new-build sales found within 0.5 mi in the last '+((d.params&&d.params.months)||12)+' months.'))
         +(errs.length?'<div style="color:var(--text-dim);margin-top:4px;font-size:11px">Also: '+errs.map(esc).join(' \u00b7 ')+'</div>':'')
         +(replaced?'<div style="margin-top:4px">The '+replaced+' comps from the last pull were taken out of the table.</div>':'')
-        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):''),'var(--amber)');
+        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):'')
+        +'<div class="county-wide" style="display:none;margin-top:6px;font-size:12px"></div>','var(--amber)');
+      // v8.42: an infill lot with no sales nearby is where the 1.5 mi number helps most
+      if(tool&&d.infill&&d.infill.infill&&sf&&_arvTool===tool)checkWideArea(Q,pid,gen,tool);
       return;
     }
     // Nearest first; outside the ARV set, keep it to a readable dozen.
@@ -2106,12 +2111,40 @@ async function pullCountyComps(){
       +'<div class="county-stale" style="display:none;color:var(--red);font-size:11px;margin-top:2px">The plan size, product, finish or parcel changed since this pull, so this ARV is for the old search. Pull comps again.</div>'
       +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+esc(d.arv.basis||'')+'</div>'
       +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+esc(d.arv.note)+'</div></div>';
+    h+='<div class="county-wide" style="display:none;margin-top:6px;font-size:12px"></div>';   // v8.42: infill lots only
     (d.flags||[]).filter(f=>!(d.rule&&f===d.rule.label)&&!(d.confidence&&/^Confidence /.test(f))).forEach(f=>{h+='<div style="color:var(--amber);margin-top:4px">\u26a0 '+esc(f)+'</div>';});
     h+='<div style="color:var(--text-dim);font-size:11px;margin-top:6px">County deed records only \u2014 no MLS status, concessions or photos. Recording lags closing by 1\u20133 weeks. Check each row before you lean on it.</div>';
     say(h);
     if(d.arv)_countyPull={sig:countyPullSig(Q,pid),psf:d.arv.retail_psf,capped:!!d.arv.capped};
+    // v8.42 (research/14 Q1, Brian 2026-10-13): on an infill lot, the same search at 1.5 mi, shown next to the ARV
+    if(tool&&d.infill&&d.infill.infill&&sf&&_arvTool===tool)checkWideArea(Q,pid,gen,tool);
   }catch(e){ if(gen===_dealGen)say('Comps lookup failed: '+e.message,'var(--red)'); }
   finally{ if(btn){btn.disabled=false;btn.innerHTML='\ud83d\udce1 Pull new-build comps (Meck)';} }
+}
+// v8.42 (research/14 Q1, Brian 2026-10-13: "show it, don't use it"). On infill lots the tool lands 33% within ±5% of the
+// real sale; averaging its 0.5 mi ARV with the same rule at 1.5 mi landed 42% (and 59% within ±10%, against 49%) on the
+// 138 hot-ZIP infill sales, and held up on both date halves and in a second area. Brian chose to SHOW the 1.5 mi number as
+// a wide-area check, not to change the ARV: it never touches the suggested ARV, the comps table or Base ARV. It rides on the
+// pull's _arvTool (saved with the deal, printed under the ARV fields and sent to the deal sheet as a note). ?infill=0: the
+// 0.5 mi pull already counted the new builds nearby.
+const WIDE_RADIUS=1.5;
+const wideText=w=>w.psf>0
+  ?`Wide-area check (${w.radius} mi, infill lot): ${fmtPsf(w.psf)}/sf from ${w.n} new-build sale${w.n===1?'':'s'}${w.anyProduct?' of any product':''}${w.level?', '+w.level.toUpperCase()+' confidence':''}. Shown only: the ARV doesn\u2019t use it.`
+  :`Wide-area check (${w.radius} mi, infill lot): too few new-build sales even that far out.`;
+async function checkWideArea(Q,pid,gen,tool){
+  const box=$('county-comps-msg');
+  const show=t=>{const e=box&&box.querySelector('.county-wide');if(e){e.textContent=t;e.style.display='';}};
+  const mine=()=>gen===_dealGen&&_arvTool===tool;   // still this deal's pull
+  show(`Wide-area check (${WIDE_RADIUS} mi): looking\u2026`);
+  try{
+    const r=await fetch('/api/comps?pid='+encodeURIComponent(pid)+'&radius='+WIDE_RADIUS+'&months=12&product='+Q.product+'&finish='+Q.finish+'&sf='+Q.sf+'&infill=0');
+    const d=await r.json();
+    if(!mine())return;
+    const a=d&&d.arv;
+    tool.wide={radius:WIDE_RADIUS,psf:a&&a.retail_psf>0?+a.retail_psf:null,n:(a&&a.comps_used)||0,level:(a&&d.confidence&&d.confidence.level)||'',
+      anyProduct:!!(a&&d.rule&&(d.rule.relaxed||[]).includes('product'))};
+    show(wideText(tool.wide));renderArvCheck();scheduleAutosave();
+  }catch(e){ if(mine())show(`Wide-area check (${WIDE_RADIUS} mi) didn\u2019t answer. Pull comps again to retry.`); }
 }
 // v8.34 (C-F9): what a county pull searches for. The box's Apply carries that pull's $/sf, so once the plan size, the
 // product, the finish or the parcel changes, the box says so and Apply stops (it used to write the old plan's $/sf).
@@ -2151,7 +2184,7 @@ function applyCompsArv(stat){
 // when confidence isn't HIGH (or there's no ARV) or the lot is infill. When Base ARV differs from that $/sf by $1/sf or
 // more, a one-tap reason asks why. The reason is a field of the deal (#arv-why-code, #arv-why-note, saved like any input),
 // and arvCheckNotes() sends the verdict and the reason to the deal sheet's Analyzer Snapshot tab and the PDF.
-let _arvTool=null;   // {pid, sig, psf, level, newBuilds, vet:{check, reasons}, ts}; sig = countyPullSig() of its search
+let _arvTool=null;   // {pid, sig, psf, level, newBuilds, vet:{check, reasons}, ts, wide?}; sig = countyPullSig() of its search; wide: v8.42
 const ARV_WHY={infill:'infill',road:'across a busy road',older:'older stock',street:'weaker street',finish:'finish',other:'other'};
 const fmtPsf=v=>'$'+Math.round(v).toLocaleString('en-US');
 function arvToolForDeal(){const g=(typeof window!=='undefined'&&window._lastGis)||null,t=_arvTool;return t&&g&&g.pid&&g.pid===t.pid?t:null;}
@@ -2182,6 +2215,8 @@ function renderArvCheck(){
   if(v){const L=vetLine(t);v.className=L.cls;
     v.textContent=L.head+' '+L.body+(t.psf>0?` The tool said ${fmtPsf(t.psf)}/sf.`:'')
       +(arvToolStale(t)?' The plan size, product or finish changed since that pull: pull comps again.':'');}
+  const wd=$('arv-check-wide'),wOk=!!(t.wide&&!arvToolStale(t));   // v8.42
+  if(wd){wd.style.display=wOk?'':'none';wd.textContent=wOk?wideText(t.wide):'';}
   const o=arvOverride(),row=$('arv-why-row');
   if(row)row.style.display=o?'':'none';
   if(!o)return;
@@ -2195,6 +2230,7 @@ function arvCheckNotes(){
   const t=arvToolForDeal();if(!t)return [];
   const out=[];
   if(t.vet.check)out.push(('Pat should check this ARV. '+t.vet.reasons.join(' ')+(arvToolStale(t)?' (From a pull for another plan size, product or finish.)':'')).slice(0,290));
+  if(t.wide&&!arvToolStale(t))out.push(wideText(t.wide));   // v8.42
   const o=arvOverride();
   if(o)out.push(`Base ARV ${fmtPsf(o.base)}/sf vs the tool\u2019s ${fmtPsf(o.tool)}/sf (${signPctTxt(o.pct)}${t.level?', '+t.level.toUpperCase()+' confidence':''}). Why: ${o.label||'not given'}${o.note?' \u2014 '+o.note:''}.`);
   return out;
@@ -4622,6 +4658,29 @@ function sublotSvg(n,frontage,area,minW){
 // ── Attached townhome "subplotting": +1 Units adds a unit to the row; flag past the county cap ──
 function currentPlanObj(){const val=($('plan-sel')||{}).value||'';if(!val||val==='__CUSTOM__')return null;return PLANS.find(p=>p.val===val)||null;}
 function isAttachedPlan(){const p=currentPlanObj();return !!(p&&p.t==='th');}
+// v8.42 (research/12 Q3, Brian 2026-10-12): the inner units of a townhome row or a triplex sell for about 2% less per sf
+// than the end units (196 hot-ZIP rows: inner units a median 4.2% below the ends of the same row, 1.7% per sf, lower in
+// 158). ARV / unit is the average over the units built: $/sf × sf × innerUnitFactor(), so a row of 3 = 0.9933, 4 = 0.99,
+// 6 = 0.9867. A townhome row has units − 2 inner units; the Arcadia triplex one per full 3-unit building (a part building
+// of 1 or 2 units has none). A duet, a house or a custom footprint has none. The comps' $/sf doesn't change: a sale's $/sf
+// is one unit's, ends and inner ones mixed. Every reader of $/sf × sf goes through this: calcScenarios, maxLandSolve,
+// baseProfitAt, getReportData (and the PDF), dealForPlan (Compare builds, with its own plan and units) and Excel.
+const INNER_UNIT_CUT=0.02;
+function innerUnitCount(plan,n){
+  n=Math.max(1,Math.round(n)||1);
+  if(!plan)return 0;
+  if(plan.t==='th')return Math.max(0,n-2);
+  if(plan.t==='mf'){const per=Math.max(1,plan.u||1);return Math.floor(n/per)*Math.max(0,per-2);}
+  return 0;
+}
+function innerUnitFactor(plan,n){n=Math.max(1,Math.round(n)||1);return 1-INNER_UNIT_CUT*innerUnitCount(plan,n)/n;}
+// #inner-cut: ticked on a fresh page; restoreDeal() unticks it for a file saved before v8.42 (no such field), so reopening an
+// older deal doesn't move its Max land. Off = every unit at $/sf × sf, as before.
+const innerCutOn=()=>!!($('inner-cut')&&$('inner-cut').checked);
+function arvFactorFor(plan,n){return innerCutOn()?innerUnitFactor(plan,n):1;}
+function innerCount(plan,n){return innerCutOn()?innerUnitCount(plan,n):0;}
+// the deal's own: its plan at its Units
+function dealArvFactor(){return arvFactorFor(currentPlanObj(),Math.max(1,pv('units')));}
 // v8.31 (audit M2/G10, G8): the ground the deal's Units take with a plan. fitStatus() tests w × d; calcBUA() counts sf (the
 // buildings, not the gaps between them). A townhome (t:'th') or a custom footprint is ONE unit of an attached row: the row
 // is Units × its width, every unit at the listed width (Brian, 2026-10-08). Any other plan's footprint is the whole
@@ -5313,12 +5372,14 @@ function calcScenarios(){
   const allInPerUnit=(allInExLand+landCost)/units;
   const T=getTerms();
   const rule=getProfitRule(), ruleL=profitRuleLabels(rule);
+  const arvF=dealArvFactor(), inner=innerCount(currentPlanObj(),units);   // v8.42: inner units
+  {const r=$('inner-cut-row');if(r)r.style.display='flex';}   // shown always: Compare builds prices other rows with it too
 
   ['w','b','best'].forEach(k=>{
     const arvId=k==='w'?'arv-w':k==='b'?'arv-b':'arv-best';
     let arvPSF=mv(arvId);
     if(!arvPSF&&basePSF){if(k==='w')arvPSF=basePSF*0.90;if(k==='best')arvPSF=basePSF*1.10;}
-    const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit:0;
+    const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit*arvF:0;
     const term=T[k];
     const h=holdingCost(loan,term);
     const holdPerUnit=(h.total+purchaseClosing)/units;
@@ -5330,7 +5391,7 @@ function calcScenarios(){
     const coc=totalAllIn>0?profit/totalAllIn*100:0;
 
     const lines=[
-      {l:units>1?'ARV / Unit':'ARV',v:arv>0?fmt(arv):'Enter $/sf above',hi:true},
+      {l:units>1?(inner?`ARV / Unit (avg: ${inner} inner unit${inner===1?'':'s'} \u22122%)`:'ARV / Unit'):'ARV',v:arv>0?fmt(arv):'Enter $/sf above',hi:true},
       ...(units>1?[{l:`Gross Sale (${units} units)`,v:arv>0?fmt(arv*units):'—',hi:true}]:[]),
       {l:'Build + Costs / Unit',v:fmt(allInPerUnit)},
       {l:`Holding Cost / Unit (${term}mo)`,v:fmt(holdPerUnit)},
@@ -5378,7 +5439,7 @@ function maxLandSolve(rule){
   const basePSF=mv('arv-b');
   if(!(basePSF>0&&sfPerUnit>0))return null;
   rule=rule||getProfitRule();
-  const bARV=basePSF*sfPerUnit;
+  const bARV=basePSF*sfPerUnit*dealArvFactor();   // v8.42: inner units
   const term=getTerms().b;
   const salePctV=pv('sale-cost-pct')/100;
   const loanPct=pv('ltc-pct')/100;
@@ -5415,7 +5476,7 @@ function baseProfitAt(land,o){
   o=o||{};
   const basePSF=mv('arv-b');
   if(!(basePSF>0&&sfPerUnit>0))return null;
-  const arv=basePSF*sfPerUnit*(o.arv||1);
+  const arv=basePSF*sfPerUnit*dealArvFactor()*(o.arv||1);   // v8.42: inner units
   const buildPart=(currentPlanCost||0)*units+upgradesPerUnit()*units;
   const exLand=allInExLand+buildPart*((o.build||1)-1);
   const loan=pv('ltc-pct')/100*(land+exLand);
@@ -5663,9 +5724,10 @@ function getReportData(){
 
   // Scenario economics computed directly (not read from DOM text)
   const allInPerUnit=(cost.allInExLand+landCost)/u;
+  const arvFactor=dealArvFactor(), innerUnits=innerCount(currentPlanObj(),u);   // v8.42
   const scenarios=['w','b','best'].map(k=>{
     const arvPSF=psf[k]||0;
-    const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit:0;
+    const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit*arvFactor:0;
     const h=holdingCost(fin.loan,terms[k]);
     const holdPerUnit=(h.total+fin.purchaseClosing)/u;
     const saleCost=arv*(fin.salePct/100);
@@ -5687,7 +5749,7 @@ function getReportData(){
     footprint:planFootprintFromVal(planVal),...memoFootprints(planVal),buildable_sf:buildableArea||0,
     lotMode,lotW:pv('lot-w'),lotD:pv('lot-d'),
     date:new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),
-    fin,cost,scenarios,psf,terms,
+    fin,cost,scenarios,psf,terms,arvFactor,innerUnits,
     maxLand:($('max-land-display')||{}).textContent||'—',
     offer:offerCheck(landCost),   // v8.38: opening offer, the profit rule at this land and at asking, the SOP-08 stress
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
@@ -5845,7 +5907,7 @@ function buildReportHTML(canvasDataUrl){
   const scTable=secHdr('SCENARIO ANALYSIS — WORST / BASE / BEST')
     +'<table class="sc avoid"><thead><tr><th></th>'+scHdr+'</tr></thead><tbody>'
       +scRow('ARV $/sf',s=>s.arvPSF?('$'+Math.round(s.arvPSF)):'—')
-      +scRow('ARV / Unit',s=>s.hasArv?F(s.arv):'—')
+      +scRow(d.innerUnits?`ARV / Unit (avg: ${d.innerUnits} inner unit${d.innerUnits===1?'':'s'} \u22122%)`:'ARV / Unit',s=>s.hasArv?F(s.arv):'—')
       +scRow('Hold (months)',s=>s.term+' mo')
       +scRow('Build + Costs / Unit',s=>F(s.allInPerUnit))
       +scRow('Holding / Unit',s=>F(s.holdPerUnit))
@@ -5862,7 +5924,7 @@ function buildReportHTML(canvasDataUrl){
       const deltas=[-20,-10,0,10,20];
       const allIn=base.allInPerUnit, salePct=d.fin.salePct/100;
       const cell=(arvPSF,t)=>{
-        const arv=arvPSF*d.sf; if(!(arv>0))return '—';
+        const arv=arvPSF*d.sf*(d.arvFactor||1); if(!(arv>0))return '—';   // v8.42: inner units
         const hh=holdingCost(d.fin.loan,t);
         const p=arv-(allIn+(hh.total+d.fin.purchaseClosing)/d.units+arv*salePct);
         return sign(p);
@@ -6080,7 +6142,13 @@ function sheetHandoffPayload(){
     gis:{pid:g.pid||'',nc_pin:g.nc_pin||'',area_sf:g.area_sf||0,zoning:g.zoning||'',watershed:g.watershed||'',
       swim:g.swim?!!g.swim.i:null,historic:g.historic&&g.historic.i?(g.historic.n||'Yes'):'',bua:g.bua||''},
     comps:M.comps.map(c=>({addr:c.addr,url:c.url,sqft:c.sqft,sold:c.sold,adj:c.adj,date:c.date,dist:c.dist,mom:c.mom,notes:c.notes})),
-    notes:moneyIssues().map(i=>i.msg).concat(M.compNotes||[]).concat(arvCheckNotes())};   // v8.41: the ARV verdict + reason
+    notes:moneyIssues().map(i=>i.msg).concat(M.compNotes||[]).concat(arvCheckNotes()).concat(innerUnitNotes(d))};   // v8.41: the ARV verdict + reason; v8.42: inner units
+}
+// v8.42: the locked sheet prices every unit at $/sf × sf; the analyzer takes 2% off the inner ones, so its ARV / unit is lower
+function innerUnitNotes(d){
+  if(!d.innerUnits||!(d.arvFactor<1))return [];
+  const b=(d.scenarios||[]).find(s=>s.key==='b'), full=b&&b.arvPSF>0?b.arvPSF*d.sf:0;
+  return [`Inner units: ${d.innerUnits} of the ${d.units} units ${d.innerUnits===1?'is an inner unit':'are inner units'}, priced 2% under the end units, so the analyzer's Base ARV / unit is ${((1-d.arvFactor)*100).toFixed(1)}% under $/sf \u00d7 sf`+(full?` (${fmt(full*d.arvFactor)} vs ${fmt(full)}). The sheet prices every unit at $/sf \u00d7 sf, so its ARV is ${fmt(full*(1-d.arvFactor))} higher per unit.`:'.')];
 }
 function b64url(str){
   const b=new TextEncoder().encode(str);let s='';
@@ -6147,6 +6215,8 @@ function collectModelInputs(d){
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
     arvBase:mv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
+    arvFactor:dealArvFactor(),   // v8.42: inner units
+    innerType:(()=>{const pl=currentPlanObj();return !innerCutOn()||!pl?'':pl.t==='th'?'th':(pl.t==='mf'&&(pl.u||1)===3)?'mf3':'';})(),
     moneyNotes:{land:readMoney('land-cost').note||'',arvB:readMoney('arv-b').note||'',arvW:readMoney('arv-w').note||'',arvBest:readMoney('arv-best').note||''},
     termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,termDefaults:termDefaults(),termMax:parseFloat(($('term-b')||{}).max)||36,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
@@ -6188,6 +6258,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   const der=(key,label,formula,fmt)=>{ir++;wsI.getCell('A'+ir).value=label;wsI.getCell('A'+ir).font={italic:true,color:{argb:'FF566B82'},name:'Arial'};const c=wsI.getCell('B'+ir);c.value={formula};if(fmt)c.numFmt=fmt;c.font={name:'Arial',bold:true};c.fill=fill(CREAM);if(key)IN[key]='B'+ir;return 'B'+ir;};
   sec('DEAL'); inp('addr','Property Address',M.address); inp('county','County',M.county); inp('zone','Zone',M.zone); inp('units','Units',M.units);
   sec('PLAN'); inp('plan','Plan',M.planName); inp('sf','Sq Ft / Unit',M.sf,SF);
+  {const t=M.innerType;   // v8.42: 'th' (a row), 'mf3' (the triplex) or '' (none, or the box is off)
+   if(t==='th')der('arvF','ARV factor for inner units (row: ends 1, inner −2%)',`1-0.02*MAX(0,ROUND(${IN['units']},0)-2)/MAX(1,ROUND(${IN['units']},0))`,'0.0000');
+   else if(t==='mf3')der('arvF','ARV factor for inner units (triplex: 1 inner per building, −2%)',`1-0.02*INT(MAX(1,ROUND(${IN['units']},0))/3)/MAX(1,ROUND(${IN['units']},0))`,'0.0000');
+   else inp('arvF','ARV factor for inner units (1 = none)',1,'0.0000');}
   inp('base',M.customBuild?'Custom Plan Build Cost / Unit (as entered)':'Slate Base Cost / Unit',M.baseUnit,MONEY); inp('gcfee','GC Fee % (on build)',M.gcFeePct,PCT);
   // v8.13: a custom Build Cost is used exactly as the app does (no rounding to whole dollars)
   der('build','Build Cost / Unit (= base \u00d7 (1+fee))',M.customBuild?`${IN['base']}*(1+${IN['gcfee']})`:`ROUND(${IN['base']}*(1+${IN['gcfee']}),0)`,MONEY);
@@ -6273,7 +6347,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   F('C14',`IF(${I('arvW')}="",${I('arvB')}*0.9,${I('arvW')})`,MONEY2);
   F('D14',`${I('arvB')}`,MONEY2,false,true);
   F('E14',`IF(${I('arvBest')}="",${I('arvB')}*1.1,${I('arvBest')})`,MONEY2);
-  ws.getCell('A15').value='ARV / Unit ($)'; ['C','D','E'].forEach(col=>F(col+15,`${col}14*${I('sf')}`,MONEY,true));
+  ws.getCell('A15').value='ARV / Unit ($)'; ['C','D','E'].forEach(col=>F(col+15,`${col}14*${I('sf')}*${I('arvF')}`,MONEY,true));
   // v8.13: the terms as used, the same as getTerms(): a blank or non-numeric Inputs cell means the app's default,
   // and nothing under 1 month. Every term formula below (holding, Max Land, Sensitivity) reads this row.
   {const T=(key,dflt)=>`MAX(1,IF(ISNUMBER(${I(key)}),${I(key)},${dflt}))`, TD=M.termDefaults;
@@ -6339,7 +6413,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
      const t=o===0?'Scenarios!$D$16':`MAX(1,Scenarios!$D$16${o>=0?'+':''}${o})`;
      const lc=wsS.getCell(5+r,1);lc.value={formula:t};lc.numFmt='0" mo"';lc.font={bold:true,name:'Arial'};lc.fill=fill(CREAM);lc.alignment={horizontal:'center'};
      deltas.forEach((dv,ci)=>{
-       const arvU=`(${I('arvB')}${dv>=0?'+':''}${dv})*${I('sf')}`;
+       const arvU=`(${I('arvB')}${dv>=0?'+':''}${dv})*${I('sf')}*${I('arvF')}`;
        const term=`(${t})`;
        const hold=`(Scenarios!$B$8*(${I('rate')}/12)*${term}+Scenarios!$B$8*${I('pts')}+${I('doc')}+(${I('tax')}/12)*${term}+Scenarios!$B$9)/${I('units')}`;
        const cell=wsS.getCell(5+r,2+ci);cell.value={formula:`${arvU}-(Scenarios!$B$11+${hold}+${arvU}*${I('sale')})`};cell.numFmt=MONEY;cell.font={name:'Arial',size:9};
@@ -6623,7 +6697,7 @@ function dealForPlan(plan,psf,U){
   ['w','b','best'].forEach(k=>{
     const term=T[k];
     const arvPSF=psf[k]||0;
-    const arv=plan.sf>0&&arvPSF>0?arvPSF*plan.sf:0;
+    const arv=plan.sf>0&&arvPSF>0?arvPSF*plan.sf*arvFactorFor(plan,u):0;   // v8.42: inner units, at this plan's u
     const h=holdingCost(loan,term);
     const holdPerUnit=(h.total+purchaseClosing)/u;
     const saleCost=arv*salePct;
@@ -6995,7 +7069,10 @@ function restoreDeal(d){
      _arvTool=t&&typeof t==='object'&&typeof t.pid==='string'&&t.pid&&t.vet&&typeof t.vet==='object'&&Array.isArray(t.vet.reasons)
        ?{pid:t.pid,sig:typeof t.sig==='string'?t.sig.slice(0,200):'',psf:Number.isFinite(+t.psf)&&+t.psf>0?+t.psf:null,level:['high','medium','low'].includes(t.level)?t.level:'',
          newBuilds:t.newBuilds!=null&&Number.isFinite(+t.newBuilds)?+t.newBuilds:null,
-         vet:{check:!!t.vet.check,reasons:t.vet.reasons.filter(x=>typeof x==='string').map(x=>x.slice(0,200)).slice(0,6)},ts:+t.ts||0}:null;}
+         vet:{check:!!t.vet.check,reasons:t.vet.reasons.filter(x=>typeof x==='string').map(x=>x.slice(0,200)).slice(0,6)},ts:+t.ts||0,
+         wide:t.wide&&typeof t.wide==='object'?{radius:+t.wide.radius>0?+t.wide.radius:WIDE_RADIUS,   // v8.42
+           psf:Number.isFinite(+t.wide.psf)&&+t.wide.psf>0?+t.wide.psf:null,n:Math.max(0,Math.round(+t.wide.n)||0),
+           level:['high','medium','low'].includes(t.wide.level)?t.wide.level:'',anyProduct:!!t.wide.anyProduct}:null}:null;}
     const setV=id=>{const f=vals[id],e=$(id);if(f&&e){if(f.t==='checkbox')e.checked=!!f.c;else if(f.v!=null)e.value=f.v;}};
     // 0) start from a fresh page's defaults. The blanket restore below only writes fields the file has, so a
     //    field added after the deal was saved would otherwise keep whatever the previous deal left on screen.
@@ -7016,6 +7093,7 @@ function restoreDeal(d){
     ['floor','pct'].forEach(k=>{const e=$('profit-'+k);if(e&&!vals['profit-'+k])e.value=PRE_V82_PROFIT_RULE[k];});
     // 1) jurisdiction first (rebuilds zones, autofills taps)
     {const hm=$('lf-house-min');if(hm&&!vals['lf-house-min'])hm.checked=false;}   // v8.39: an older deal keeps its lot factor
+    {const ic=$('inner-cut');if(ic&&!vals['inner-cut'])ic.checked=false;}   // v8.42: an older deal keeps its ARV / unit
     setV('addr-city');setV('county-sel');
     onCountyChange();
     // then the zone: onZoneChange() writes the zone table's setbacks, so it must run before the blanket restore, or
@@ -7179,8 +7257,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.41', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.42', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.42',date:'Oct 2026',name:'Inner units and a wide-area check',items:[
+   'Townhome rows and the triplex: the inner units now sell for 2% less per sq ft than the end units (partner pick, from 196 real rows where inner units sold a median 4% under the ends). ARV / Unit is the average over the units, so a row of 3 is 0.7% under $/sf \u00d7 sf, a row of 4 is 1% under. Max land, the scenarios, the PDF, Excel and Compare builds all use it. Duets and houses don\u2019t change, and neither does the comps $/sf. A box under the ARV fields turns it off; a deal saved before 8.42 reopens with it off, so its Max land doesn\u2019t move.',
+   'On an infill lot (fewer than 3 new builds within 300 ft), a county comps pull now also runs the same search out to 1.5 mi and shows it as a wide-area check, in the comps box and under the ARV fields. It doesn\u2019t change the suggested ARV or Base ARV: it\u2019s there for Pat to weigh (research/14).',
+   'The deal sheet gets a note explaining the inner-unit difference, since the sheet prices every unit at $/sf \u00d7 sf. The wide-area check goes to the sheet as a note too.',
+   'County comps pulls are a bit faster, and a big search area no longer stops at the county\u2019s 2,000-sale page.']},
  {v:'8.41',date:'Oct 2026',name:'Know when Pat should check',items:[
    'Every county comps pull now says whether Pat should check the ARV: when the confidence isn\u2019t HIGH, when there\u2019s no suggested ARV, or when the lot is infill (fewer than 3 homes built 2020+ within 300 ft). On infill lots the tool lands within 5% of the real sale only a third of the time, against nearly 6 in 10 in new-build pockets. The verdict shows in the comps box and under the ARV fields, and goes to the deal sheet.',
    'Change Base ARV away from the tool\u2019s number and a one-tap \u201cwhy\u201d appears: infill, across a busy road, older stock, weaker street, finish or other, plus a few words if you like. It\u2019s saved with the deal and printed on the deal sheet\u2019s Analyzer Snapshot tab and the PDF, so the later sale price can be matched to it.',
