@@ -61,19 +61,47 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `#plan-info-*` text only for a Slate plan, so on a custom or no-plan deal it still shows the last
   Slate plan, and every reader of `getReportData().plan` / `.footprint` (the PDF, the hero, the Excel
   model) would print that plan. Flag a new read of `#plan-info-*` text as data.
-- **Upgrades are NOT marked up.** The GC fee applies to the Slate base build only; upgrades are
-  added at their flat menu price (Brian, 2026-09-22). Flag any path that applies the fee to upgrades.
+- **Upgrades carry the GC fee (v8.36, partner decision 2026-10-09).** This reverses Brian's 2026-09-22 flat-menu-price
+  rule. Upgrades get the same % as the build: the GC fee box (`gcFeePct()`, 14% by default), also on a custom build,
+  as the team sheet does (B16 = build + upgrades × 1.14). Every reader prices them through `upgradesPerUnit()` (menu
+  × (1 + fee)); `upgradeMenuPerUnit()` is the menu total, for labels and the Excel input. The Excel model holds the menu
+  price and "GC Fee % on Upgrades" as inputs and derives `upgU`. Flag a path that adds upgrades at menu price, or that
+  takes the fee from `planCostSplit()` (0% on a custom build).
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
-  Per-**lot** costs stay singular ×1: lot factor, septic, survey, appraisal, insurance.
+  Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, appraisal, insurance, custom plans.
   Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
+- **Survey is one front-end survey per project (v8.36, Brian 2026-10-12).** `applySurveyDefault()` writes
+  `SURVEY_ONE_LOT` ($1,500: one house on one lot) or `SURVEY_SPLIT` ($3,000: a plan with more than one unit, a custom
+  footprint with Units (opt) over 1, or Units over 1), from Phoenix Land Surveying's 9/2/2026 quote rounded (the team's
+  go-to). It runs after Units settles in `onPlanChange()` and on every `onUnitsChange()`, and never over a typed value
+  (`data-manual`). `SURVEY_ONE_LOT` must equal `#survey`'s HTML value. The per-house stakeout survey is in Slate's build
+  contract (paid through the loan draws), so it isn't a separate line. Before v8.36: $1,000 / $2,000.
+- **Custom plans (v8.36).** `custom-plans` (Other Soft Costs, "Custom plans (architect / engineer)"), $0 by default: once
+  per deal, inside `allInExLand`, so it's financed like the other costs. The cost stack, the PDF cost build-up, the Excel
+  Inputs / Scenarios!B4 / Cost Build-Up and `dealForPlan()` all carry it. It isn't in the deal-sheet payload yet (the
+  sheet has no cell for it: Chat 11).
 - **Per-unit special cases stay intact:** Arcadia Triplex priced per unit
   ($416,608 ÷ 3) with the footprint kept as the whole 3-unit building; duets priced per
   side (`u:2`); townhomes per single unit (`u:1`). Flag changes that re-triple-count.
 
 ### Financing math (subtle — easy to "simplify" wrongly)
-- **Preserve the circular loan solve.** `loan = LTC% × costBase / (1 − LTC%×0.01)`
-  because purchase closing (1% of the loan) is itself inside the loan base. Flag any
-  naive `loan = LTC% × costBase` that drops the closed-form term.
+- **The loan is a % of the total project cost (v8.36, partner decision 2026-10-09, Wendell).** `loan = loan% ×
+  (land + allInExLand)`, `ltc-pct` default **85**, editable per deal (the same field and id the 93% LTC used). We bring
+  the rest plus the closing costs and fees: purchase closing (1% of the loan), the points and the doc fee are paid in cash,
+  not financed, so there is **no circular term**. This replaces v7.12's `loan = LTC% × costBase / (1 − LTC%×0.01)`
+  (93%, closing inside the base). `calcLoanBase()` is the one formula; `dealForPlan()`, the Max land back-solve (`k1 =
+  loan%`) and the Excel model (`Scenarios!B8 = B7*B6`, `B26 = B7`) mirror it. Flag a change that puts the closing back
+  inside the loan base (or the old divisor back) without a partner decision.
+- **Cash needed is the full amount (v8.36, audit M5).** `calcLoanBase().cash` is the **cash at closing**: our share
+  (project − loan) + purchase closing + points + doc fee (it used to leave out the points and the doc fee).
+  `cashThroughHold(lb, term)` adds the interest and property tax for the term; every surface shows it for the **Base**
+  term (Financing sidebar, live levers, `getReportData().fin.cashHold`, PDF cover and Financing detail, Excel
+  `Scenarios!B31` and the Cover). Flag a cash figure that drops a piece or uses another term.
+- **Cash on Cash = profit ÷ all-in (v8.36, partner decision 2026-10-09, audit M4).** `totalAllIn` per unit (land, costs,
+  holding, sale costs), the sheet's definition; it was profit ÷ loan per unit. Its **target is the profit rule's %**
+  (`getProfitRule().pct`, 15% by default): profit ≥ 15% of all-in is the same test as CoC ≥ 15%, so at Max land with the
+  % leg binding the CoC reads exactly the target. The scenario cards, the hero, the PDF and the Excel (`Scenarios` row 23
+  = row 21 ÷ row 20) all use it. Flag a second CoC definition or a hard-coded 15%.
 - **Max-supportable-land back-solve** targets the Deal Analyst **PROFIT RULE** (v7.12,
   2026-09-22): base profit/unit must clear the **greater of a flat floor or a % of all-in per
   unit**. It solves both rules and takes the lower land ceiling.
@@ -106,14 +134,15 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   those two cells, and the note in column C beside each rule cell compares what was typed with what
   was used, plus the same typo thresholds. Flag a change to one side that isn't made on the other.
 - **Exports read the same raw values the screen uses.** `getReportData()` (`fin`),
-  `collectModelInputs()` and the plan-compare header take LTC, rate, points, fees, tax and sale cost
+  `collectModelInputs()` and the plan-compare header take the loan %, rate, points, fees, tax and sale cost
   straight from the fields, as `calcLoanBase()` / `holdingCost()` / `calcScenarios()` do. Flag a
   `pv(x)||default` fallback on a field where 0 is a real answer (0 points, 0% sale cost): it makes
   the PDF and Excel Max Land disagree with the tile. Where blank should mean a default, test for the blank
   field instead, as `calcBUA()` does for `bua-hardscape` since v8.8 (blank = its HTML default, 500 sf; 0 = none).
 - **Loan terms go through `getTerms()` (v8.7)**, the one reader for `term-w` / `term-b` / `term-best`:
   the scenario cards, Max land, the hero (via `getReportData().terms`), the PDF, the Excel inputs and
-  the plan comparison. A blank term is the field's HTML default (10 / 8 / 6, also its placeholder), not
+  the plan comparison. A blank term is the field's HTML default (12 / 9 / 8 since v8.36, the sheet's; 10 / 8 / 6
+  before; also its placeholder), not
   0 months, and is silent, as with the profit rule. An unreadable term also gets the default, a term under
   1 month is raised to 1, and one over the field's max (36) applies as typed; each of those shows a note in
   `#term-warn`. Flag a direct `pv('term-…')` read. The Excel model mirrors this once (v8.13): Scenarios row
@@ -641,12 +670,24 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   value-based check silently overwrote it — a Codex P1 on PR #17. Auto-fill gates on the explicit
   `data-manual` flag instead: `markManual()` sets it on any human edit, `restoreDeal()` sets it on
   every field of a saved deal, and `isManual()` is what `applySurveyDefault()`,
-  `applyCountyDefaults()` and (v8.14) `applyTapDefaults()` check. Flag any auto-fill that compares
+  `applyCountyDefaults()` (v8.36: property tax too) and (v8.14) `applyTapDefaults()` check. Two exceptions keep the
+  typed-or-default state they were saved with instead: the taps (`tapManual`, v8.14) and, since v8.36, `AUTO_FILL_FIELDS`
+  (`LF_AUTO_FIELDS` + `survey`, saved as `autoManual`, put back at the very end of `restoreDeal()` so every step ran with
+  them protected). So a County GIS lookup or a plan / Units change on a reopened deal still fills what nobody typed. Files
+  from before v8.36 have no `autoManual`: those fields stay typed, as before. Flag any auto-fill that compares
   against a default value, or an input added without `markManual(this)` on its handler.
 - **The three mappings are deliberate:** demo square footage from the assessor's heated area (falling
   back to the mapped footprint when there is no CAMA record, e.g. a newly created lot); clearing tier
   from canopy % (`CANOPY_CLEARING`); grading from the slope band (`SLOPE_GRADING`). These are
   screening estimates and the UI says so — don't present them as quotes.
+- **Property tax starts from the county bill (v8.36, partner decision 2026-10-09, audit M6).** `applyCountyDefaults()`
+  fills an untouched `fin-tax` with `countyTaxEstimate()`: the assessor's `cama.total_value` × the rates in `MECK_TAX`
+  (cents per $100: Mecklenburg 49.27¢ plus the town of the county address point, `match.point.city`; FY2027, the 2026
+  bills). A town not in the table (unincorporated) gets the county rate only, and `#tax-hint` says so; fire and special
+  districts aren't included. `fin-tax` is in `LF_AUTO_FIELDS`, so a lookup with no value resets an untouched field to $0
+  and names it, and an address move clears it with the site. `fin-tax` calls `markManual(this)`: a typed bill wins, and
+  the hint shows the county figure beside it. A new sub-lot has no assessed value yet (Dellinger's three), so it stays $0
+  with the "enter it by hand" note. **Update `MECK_TAX` each July** when the new rates are adopted.
 
 ### Domain-correctness (don't let geometry override the rulebook)
 > These two rules describe the **target state**; the current code differs. Flag against
@@ -849,9 +890,11 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   (`renderSheetHandoff()`), shown while the deal on screen is the one sent (`isSentDeal()`: same `addrWords()` street,
   same city when both have one). A blocked pop-up is not recorded as sent.
 - Sending is blocked without a street, a plan or a Base ARV, or while `moneyIssues()` has a note.
-- The sheet's locked formulas don't follow the app's math in several places: it adds 14% to upgrades, finances 60% of
-  land + 100% of build, prices survey at $1,000 / $2,000 per unit and sale costs at 5% + 1%, and its Worst / Best are
-  Base ∓ $10/sf. The hand-off doesn't force the sheet to match; it records both in the snapshot. Changing the
+- The sheet's locked formulas don't follow the app's math in several places: it finances 60% of land + 100% of build
+  (the app: 85% of the project since v8.36), prices survey at $1,000 / $2,000 per unit (the app: once per project) and
+  sale costs at 5% + 1%, has no custom-plans cell, and its Worst / Best are Base ∓ $10/sf. Since v8.36 both add the GC fee
+  to upgrades, run 12 / 9 / 8 months and read CoC as profit ÷ all-in. Chat 11 brings the sheet in line (the partner
+  decisions), and any new payload field bumps `v` and `HANDOFF_VERSION` together. The hand-off doesn't force the sheet to match; it records both in the snapshot. Changing the
   template's formulas is a separate decision for the partners.
 - The Apps Script source is not in this repo; a reference copy lives in Brian's project folder
   (`New Dev UW'er 5000/Code.gs.v3-analyzer-handoff-*.gs`). The Apps Script side is changed by pasting the whole
@@ -920,12 +963,18 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   (PID 04118536, 3,455 sf) and 2731 (PID 04118537, 4,312 sf), all N1-B, Central Catawba. The older
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
-  Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the Max land and hash below are v8.30's):
+  Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
-  - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$263,493** at the 9.75% default (it was
-    $262,309 at 10% through v8.29), lot factor $25,850. Base interest $38,425, profit $117,845 per the report.
-  - **Reference hash (v8.35, 2026-10-12): `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
+  - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$262,975** (v8.36: loan 85% of the project,
+    12 / 9 / 8 months, survey $3,000; no upgrades, property tax $0 because the new sub-lot has no assessed value yet),
+    lot factor $25,850. Loan $536,122, cash at closing $106,082, through the hold (9 mo) $145,286. Base interest $39,204,
+    profit $117,618, CoC 47.2% per the report. v8.30–v8.35: $263,493 (93% LTC, 10 / 8 / 6, survey $2,000; base interest
+    $38,425, profit $117,845); $262,309 at 10% through v8.29. v8.36 step by step: 85% loan alone $269,249; + 12 / 9 / 8
+    $263,975; + survey $3,000 $262,975.
+  - **Reference hash (v8.36, 2026-10-13): `89e653639f61`**, Max land $262,975, with the county's main assessor layer
+    back (`gis.cama.source` "Mecklenburg County CAMA"). The same day main v8.35 gives `beff46071a6e` ($263,493). On 10/12,
+    with the backup tables, v8.36 gave `3855c6d7ca29`. Earlier: **v8.35 `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
     county's backup tables (`gis.cama.source` "… (backup tables)"). History, no figure moving at any step:
     `c7e8f10b0bd7` (v8.30 on 10/08, main layer up); `31e8e99b1fe8` (v8.31–v8.33 while `TaxParcel_camadata` was empty
     and the assessor block blank); `d5b26a3d3bfb` (v8.34 adds `compStats.cap`); `ae9025aadcaa` (v8.35 brings the

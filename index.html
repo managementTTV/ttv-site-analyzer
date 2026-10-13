@@ -748,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.35 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.36 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1083,7 +1083,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="hero-tile">
       <div class="hero-lbl">Base cash-on-cash</div>
       <div class="hero-val" id="hero-coc">&mdash;</div>
-      <div class="hero-sub" id="hero-coc-sub">Profit &divide; loan per unit</div>
+      <div class="hero-sub" id="hero-coc-sub">Profit &divide; all-in per unit</div>
     </div>
     <div class="hero-tile hero-dirt">
       <div class="hero-lbl">Max land cost &middot; the dirt</div>
@@ -1106,7 +1106,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
       </div>
       <div class="lever-stats">
         <div class="lever-stat"><span>Loan amount</span><b id="exit-loan-amt">&mdash;</b></div>
-        <div class="lever-stat"><span>Cash needed</span><b id="exit-cash-needed" class="pos">&mdash;</b></div>
+        <div class="lever-stat"><span>Cash at closing</span><b id="exit-cash-needed" class="pos">&mdash;</b></div>
+        <div class="lever-stat"><span>Cash through the hold</span><b id="exit-cash-hold" class="pos">&mdash;</b></div>
       </div>
     </div>
     <p class="note">Listed deals: start at asking and move the offer down until the profit rule clears. Never up.</p>
@@ -1125,17 +1126,17 @@ body[data-screen="2"] .page{padding-bottom:108px}
   <!-- SCENARIOS -->
   <div class="sc-grid">
     <div class="sc-card worst">
-      <div class="sc-tag">Worst — <span id="term-w-label">10</span>mo</div>
+      <div class="sc-tag">Worst — <span id="term-w-label">12</span>mo</div>
       <div id="sc-lines-w" style="margin-top:4px"></div>
       <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-w">—</div><div class="profit-sub" id="coc-w"></div></div>
     </div>
     <div class="sc-card base">
-      <div class="sc-tag">Base — <span id="term-b-label">8</span>mo</div>
+      <div class="sc-tag">Base — <span id="term-b-label">9</span>mo</div>
       <div id="sc-lines-b" style="margin-top:4px"></div>
       <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-b">—</div><div class="profit-sub" id="coc-b"></div></div>
     </div>
     <div class="sc-card best">
-      <div class="sc-tag">Best — <span id="term-best-label">6</span>mo</div>
+      <div class="sc-tag">Best — <span id="term-best-label">8</span>mo</div>
       <div id="sc-lines-best" style="margin-top:4px"></div>
       <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-best">—</div><div class="profit-sub" id="coc-best"></div></div>
     </div>
@@ -1215,7 +1216,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         </div>
         <div class="fr2" style="margin-top:14px">
           <div class="field"><label>Units</label><input type="number" id="units" value="1" min="1" max="20" oninput="onUnitsChange()"></div>
-          <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div><p class="note" id="gc-fee-note" style="display:none;margin-top:4px"></p></div>
+          <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build and upgrades)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div><p class="note" id="gc-fee-note" style="display:none;margin-top:4px"></p></div>
         </div>
       </div>
       <div class="card">
@@ -1240,16 +1241,18 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="card">
         <div class="card-title"><span class="dot"></span>Other Soft Costs</div>
         <div class="fr3">
-          <div class="field"><label>Survey</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="survey" value="1000" oninput="markManual(this);calcAll()"></div></div>
+          <div class="field"><label>Survey</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="survey" value="1500" oninput="markManual(this);calcAll()"></div></div>
           <div class="field"><label>Appraisal</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="appraisal" value="725" oninput="calcAll()"></div></div>
           <div class="field"><label>Insurance (build period)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="insurance" value="1400" oninput="calcAll()"></div></div>
         </div>
+        <p class="note" style="margin-top:4px">Survey is the front-end survey, once per project: $1,500 for one house on one lot, $3,000 when the project is split into lots (townhomes, a duet, the triplex, or more than one unit). Phoenix Land Surveying&rsquo;s 9/2/26 quote, rounded. The per-house stakeout is in Slate&rsquo;s build.</p>
+        <div class="field" style="margin-top:10px"><label for="custom-plans">Custom plans (architect / engineer)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="custom-plans" value="0" min="0" oninput="markManual(this);calcAll()"></div><p class="note">Only when an architect or engineer has to draw new plans. Once per deal, financed with the other costs.</p></div>
       </div>
       <div class="card">
         <div class="card-title"><span class="dot"></span>Upgrades (per unit)</div>
         <div class="upg-grid" id="upg-grid"></div>
         <p class="warn" id="upg-note" style="display:none;margin-top:6px"></p>
-        <div class="upg-total-bar"><span style="font-size:11px;color:var(--text-mid)">Selected Upgrades Total</span><span style="font-family:var(--f-num);font-size:14px;color:var(--amber)" id="upg-total">$0</span></div>
+        <div class="upg-total-bar"><span style="font-size:11px;color:var(--text-mid)" id="upg-total-lbl">Selected Upgrades Total</span><span style="font-family:var(--f-num);font-size:14px;color:var(--amber)" id="upg-total">$0</span></div>
         <button class="btn btn-ghost" style="margin-top:12px;width:100%" onclick="openInclusions()">View standard build inclusions</button>
       </div>
     </div>
@@ -1291,7 +1294,6 @@ body[data-screen="2"] .page{padding-bottom:108px}
           </div>
         </div>
         <p class="note" style="margin-top:6px">Remove heritage trees before demolishing the house to lock the $750 rate; after demo begins it's $1,500/tree.</p>
-        <p class="note">$750/tree (pre-demo rate).</p>
       </div>
       <div class="card">
         <div class="card-title"><span class="dot"></span>ROW Trees</div>
@@ -1353,32 +1355,32 @@ body[data-screen="2"] .page{padding-bottom:108px}
 </div>
 </details>
 <details class="step-sec uw-sec" id="page-6">
-<summary class="uw-sum"><span class="sec-num">C</span><span class="uw-sum-t">Financing &amp; exit costs</span><span class="uw-sum-m">LTC, rate, points, taxes, loan terms, sale costs</span><span class="uw-sum-v" id="uw-sum-fin"></span></summary>
+<summary class="uw-sum"><span class="sec-num">C</span><span class="uw-sum-t">Financing &amp; exit costs</span><span class="uw-sum-m">Loan %, rate, points, taxes, loan terms, sale costs</span><span class="uw-sum-v" id="uw-sum-fin"></span></summary>
 <div class="uw-body">
   <div class="two-col">
     <div>
       <!-- Loan Structure -->
       <div class="card">
-        <div class="card-title"><span class="dot"></span>Loan Structure (LTC)</div>
-        <p class="note" style="margin-bottom:14px">Loan-to-Cost: lender covers LTC% of total project cost. You bring the rest. Purchase closing costs (1% of loan) are included in the cost base automatically.</p>
+        <div class="card-title"><span class="dot"></span>Loan Structure (% of project)</div>
+        <p class="note" style="margin-bottom:14px">The lender covers this % of the total project cost (land + build + every cost below). You bring the rest, plus the closing costs (1% of the loan), the points and the doc fee.</p>
         <div class="fr2">
-          <div class="field"><label>LTC %</label><div class="input-wrap"><input type="number" id="ltc-pct" value="93" step="1" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div><p class="note">93% = you bring 7% cash</p></div>
+          <div class="field"><label for="ltc-pct">Loan (% of project)</label><div class="input-wrap"><input type="number" id="ltc-pct" value="85" step="1" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div><p class="note">85% = you bring 15% + closing costs and fees</p></div>
           <div class="field"><label>Annual Interest Rate</label><div class="input-wrap"><input type="number" id="fin-rate" value="9.75" step="0.25" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div></div>
         </div>
         <div class="fr2">
           <div class="field"><label>Loan Points</label><div class="input-wrap"><input type="number" id="fin-points" value="1" step="0.25" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div></div>
           <div class="field"><label>Origination / Doc Fee (flat)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="fin-doc-fee" value="750" oninput="calcFinancing()"></div></div>
         </div>
-        <div class="field"><label>Annual Property Tax</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="fin-tax" value="0" oninput="calcFinancing()"></div><p class="note">Enter yearly amount. Prorated by loan term per scenario.</p></div>
+        <div class="field"><label for="fin-tax">Annual Property Tax</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="fin-tax" value="0" oninput="markManual(this);calcFinancing()"></div><p class="note">Yearly amount, prorated by loan term per scenario. A County GIS lookup fills it from the county bill.</p><p class="note" id="tax-hint" style="display:none"></p></div>
       </div>
 
       <!-- Loan Term per Scenario -->
       <div class="card">
         <div class="card-title"><span class="dot"></span>Loan Term by Scenario (months)</div>
         <div class="fr3">
-          <div class="field"><label for="term-w">Worst Case</label><input type="number" id="term-w" value="10" placeholder="10" min="1" max="36" oninput="calcFinancing()"></div>
-          <div class="field"><label for="term-b">Base Case</label><input type="number" id="term-b" value="8" placeholder="8" min="1" max="36" oninput="calcFinancing()"></div>
-          <div class="field"><label for="term-best">Best Case</label><input type="number" id="term-best" value="6" placeholder="6" min="1" max="36" oninput="calcFinancing()"></div>
+          <div class="field"><label for="term-w">Worst Case</label><input type="number" id="term-w" value="12" placeholder="12" min="1" max="36" oninput="calcFinancing()"></div>
+          <div class="field"><label for="term-b">Base Case</label><input type="number" id="term-b" value="9" placeholder="9" min="1" max="36" oninput="calcFinancing()"></div>
+          <div class="field"><label for="term-best">Best Case</label><input type="number" id="term-best" value="8" placeholder="8" min="1" max="36" oninput="calcFinancing()"></div>
         </div>
         <div id="term-warn" class="warn" style="display:none" role="status"></div>
       </div>
@@ -1405,10 +1407,11 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="sidebar">
       <div class="sb-card">
         <div class="sb-card-title">Loan Summary</div>
-        <div class="sb-stat"><span class="sb-stat-lbl">Total Cost Base</span><span class="sb-stat-val" id="fin-cost-base">—</span></div>
+        <div class="sb-stat"><span class="sb-stat-lbl">Total Project Cost</span><span class="sb-stat-val" id="fin-cost-base">—</span></div>
         <div class="sb-stat"><span class="sb-stat-lbl">Loan Amount</span><span class="sb-stat-val" id="fin-loan-amt">—</span></div>
         <div class="sb-stat"><span class="sb-stat-lbl">Purchase Closing (1% of loan)</span><span class="sb-stat-val" id="fin-purch-closing">—</span></div>
-        <div class="sb-stat"><span class="sb-stat-lbl">Cash Needed</span><span class="sb-stat-val" id="fin-cash-needed" style="color:var(--green)">—</span></div>
+        <div class="sb-stat"><span class="sb-stat-lbl" id="fin-cash-lbl">Cash at Closing</span><span class="sb-stat-val" id="fin-cash-needed" style="color:var(--green)">—</span></div>
+        <div class="sb-stat"><span class="sb-stat-lbl" id="fin-cash-hold-lbl">Cash Through the Hold</span><span class="sb-stat-val" id="fin-cash-hold" style="color:var(--green)">—</span></div>
         <p class="note" style="margin-top:8px">Land cost is set in Live levers at the top. These figures update live as you adjust it.</p>
       </div>
       <div class="sb-card">
@@ -1940,7 +1943,7 @@ async function pullCountyComps(){
   if(!pid){ say('Run <b>\ud83d\udef0 Auto-fill from County GIS</b> on Site Intelligence first \u2014 the comp search keys off the county parcel id.','var(--amber)'); return; }
   // Guard against a stale cache even if onAddrChange never fired (paste, autofill, restored deal).
   if(gis.addrSig && gis.addrSig!==gisAddressSignature()){
-    window._lastGis=null;hideStreetCheck();
+    window._lastGis=null;hideStreetCheck();renderTaxHint();
     say('The address changed since the last GIS lookup, so the cached parcel id belongs to a different property. Run <b>\ud83d\udef0 Auto-fill from County GIS</b> again first.','var(--amber)');
     return;
   }
@@ -2241,7 +2244,7 @@ function invalidateGisIfAddressMoved(){
     const g=window._lastGis;
     if(!g||!g.addrSig) return;
     if(gisAddressSignature()===g.addrSig) return;
-    window._lastGis=null;renderZoneNote();
+    window._lastGis=null;renderZoneNote();renderTaxHint();
     const box=$('gis-result'); if(box){box.style.display='none';}
     hideStreetCheck();
     setGisStatus('Address changed \u2014 run the County GIS auto-fill again before pulling comps.');
@@ -2283,7 +2286,8 @@ function gisMatchFits(street,matched){
 let _gisLot=null;        // {label, streets[], zips[], cities[]}: the address(es) the site data on screen belongs to
 let _clearedSite=null;   // what clearGisSite() took off, for putBackGisSite()
 let _gisMismatch=null;   // {matched}: a reopened deal whose saved County GIS parcel isn't its address (saved with the deal)
-const LF_AUTO_FIELDS=['demo-sqft','clearing','grading'];   // v8.33: the lot-factor fields applyCountyDefaults() fills
+const LF_AUTO_FIELDS=['demo-sqft','clearing','grading','fin-tax'];   // v8.33: the fields applyCountyDefaults() fills (v8.36: + tax)
+const AUTO_FILL_FIELDS=LF_AUTO_FIELDS.concat('survey');   // v8.36: saved with their typed-or-default state (serializeDeal autoManual)
 const SITE_FIELDS=['sb-front','sb-rear','sb-sides','sb-corner','sb-minw','sb-garage','lot-w','lot-d','lot-sf','buildable-override','lot-sf-poly'];
 // pt: the county's own spelling of the address (the proxy's match.point), so a correction toward it isn't a move. A ZIP or
 // city left blank at tie time is unknown, so typing it in isn't a move either.
@@ -2315,7 +2319,7 @@ function clearGisSite(){
   try{calcLF();}catch(_){ }
   onZoneChange();   // no zone: hides the setback panel and its notes
   redrawEditor();calcBuildable();
-  setGisStatus(`The address moved off ${t&&t.label||'the last parcel'}, so that parcel’s lot, zone and setbacks (and the lot factor the county filled for it) were cleared. Run the County GIS auto-fill for this address, or enter the lot by hand.`,'warn');
+  setGisStatus(`The address moved off ${t&&t.label||'the last parcel'}, so that parcel’s lot, zone and setbacks (and the lot factor and property tax the county filled for it) were cleared. Run the County GIS auto-fill for this address, or enter the lot by hand.`,'warn');
 }
 function putBackGisSite(){
   const c=_clearedSite;if(!c)return;_clearedSite=null;
@@ -2729,7 +2733,7 @@ function applyGisData(d,sig){
   // does a lot tied to it (a deal saved before v8.16 can hold the wrong parcel's), with the Put back button.
   if(m&&(m.status==='none'||m.status==='ambiguous'||m.status==='locality')){
     const cleared=!!_gisLot;if(cleared)clearGisSite();
-    window._lastGis=null;renderZoneNote();
+    window._lastGis=null;renderZoneNote();renderTaxHint();
     const box=$('gis-result');if(box)box.style.display='none';
     hideStreetCheck();
     setGisStatus((m.message||'No county address point matches that address.')
@@ -2755,6 +2759,7 @@ function applyGisData(d,sig){
   if(d.parcel&&d.parcel.geometry&&d.parcel.geometry.rings&&loadParcelPolygon(d.parcel.geometry.rings,d.parcel.edges))filled.push('lot polygon + area'+(d.parcel.edges&&d.parcel.edges.front_index!=null?' + front edge':''));
   const lf=applyCountyDefaults(d);
   if(lf.length)filled.push('lot factor \u2014 '+lf.join(', '));
+  if(lf.tax)filled.push(lf.tax);   // v8.36
   const lfMissed=lf.missed&&lf.missed.length?` No county figure for ${lf.missed.join(', ')}: left at the default, so enter ${lf.missed.length>1?'them':'it'} by hand.`:'';
   // v8.16: a close match (a part left out, or a different ZIP / city) is loaded, with what differs said up front
   const warn=m&&m.status==='close'?(m.message||'County GIS matched a slightly different address.')+' Check it’s the right parcel. ':'';
@@ -2781,6 +2786,7 @@ function applyGisData(d,sig){
     _gisParcel=d.parcel&&d.parcel.geometry?{gis:window._lastGis,pr:editorParcelRing(d.parcel.geometry.rings,d.parcel.edges)}:null;}catch(_){ }
   renderZoneNote();   // v8.15: now that the cache holds this parcel's zoning string (and any suffix)
   renderGisResult(d);
+  renderTaxHint();   // v8.36: the tax note reads _lastGis, which only now holds this parcel (calcLF() ran before it)
   if(d.parcel&&d.parcel.pid)checkStreet();else hideStreetCheck();   // v8.18: not awaited, the lookup is done
 }
 // v7.13: turn the county's own site facts into lot-factor starting points. Each field is only
@@ -2811,17 +2817,51 @@ function applyCountyDefaults(d){
     const v=SLOPE_GRADING[site.slope_class];
     if(v!=null){$('grading').value=v;filled.push('grading '+site.slope_class+' ('+site.slope_pct+'% slope)');}
   }
+  // v8.36 (audit M6): the property tax starts from the county bill, not $0
+  const tax=countyTaxEstimate(cama,d.match&&d.match.point&&d.match.point.city);
+  if(tax&&untouched('fin-tax')){$('fin-tax').value=tax.annual;filled.tax='property tax '+fmt(tax.annual)+'/yr (county bill)';}
   // v8.33 (audit N1.6): a field this lookup has no figure for, and that nobody typed, goes back to its default instead of
   // keeping the last parcel's auto-filled value; the status line names it so it gets entered by hand
   const missed=[];
-  [['demo-sqft','demo'],['clearing','clearing'],['grading','grading']].forEach(([id,lbl])=>{   // LF_AUTO_FIELDS
-    if(!untouched(id)||filled.some(f=>f.indexOf(lbl+' ')===0))return;
+  [['demo-sqft','demo'],['clearing','clearing'],['grading','grading'],['fin-tax','property tax']].forEach(([id,lbl])=>{   // LF_AUTO_FIELDS
+    if(!untouched(id)||filled.some(f=>f.indexOf(lbl+' ')===0)||(id==='fin-tax'&&filled.tax))return;
     const e=$(id),dv=fieldDefault(e);if(e.value!==dv)e.value=dv;
     missed.push(lbl);
   });
   try{calcLF();}catch(_){ }
   filled.missed=missed;
   return filled;
+}
+// v8.36 (partner decision 2026-10-09, audit M6): the yearly property tax from the county bill: the assessor's total value
+// (CAMA total_value) × the FY2027 rates on the 2026 bills (mailed 7/28/2026), cents per $100. Mecklenburg 49.27¢ (FY2027
+// budget, adopted 6/2/2026); Charlotte 29.30¢ (27.41¢ + the 1.89¢ FY2027 increase); the towns from their FY2027 budgets
+// as reported in June 2026. The town is the county address point's city (match.point.city, `nme_city`). A town not listed
+// (unincorporated) gets the county rate only, and the hint says so. Fire and special districts aren't included. Update
+// the rates each July. {annual, value, rate, town, townRate} or null when the county gave no value.
+const MECK_TAX={fy:'FY2027',county:49.27,towns:{CHARLOTTE:29.30,CORNELIUS:19.31,DAVIDSON:27.60,HUNTERSVILLE:22.75,
+  MATTHEWS:27.95,'MINT HILL':22.50,PINEVILLE:30.00}};
+function countyTaxEstimate(cama,city){
+  const v=cama&&+cama.total_value;
+  if(!(v>0))return null;
+  const town=String(city||'').trim().toUpperCase(), tr=Object.prototype.hasOwnProperty.call(MECK_TAX.towns,town)?MECK_TAX.towns[town]:null;
+  const rate=MECK_TAX.county+(tr||0);
+  return {annual:Math.round(v*rate/100/100),value:v,rate,town,townRate:tr};
+}
+// Under the tax field: where the county figure comes from, for the parcel on screen. Display only.
+function renderTaxHint(){
+  const h=$('tax-hint');if(!h)return;
+  const g=window._lastGis, t=g&&countyTaxEstimate(g.cama,g.mpt&&g.mpt.city);
+  if(!t){h.style.display='none';h.textContent='';return;}
+  const c=x=>x.toFixed(2).replace(/\.?0+$/,'')+'\u00a2';
+  const tn=t.town?t.town.toLowerCase().replace(/\b[a-z]/g,ch=>ch.toUpperCase()):'';
+  const unincorp=!t.town||/^(MECKLENBURG|OTHER|UNINCORPORATED)$/.test(t.town);
+  const typed=isManual('fin-tax')&&pv('fin-tax')!==t.annual?` You typed ${fmt(pv('fin-tax'))}.`:'';
+  h.textContent=`County bill: ${fmt(t.value)} assessed \u00d7 ${c(t.rate)} per $100 (county ${c(MECK_TAX.county)}`
+    +(t.townRate!=null?` + ${tn} ${c(t.townRate)}`:'')+`, ${MECK_TAX.fy}) = ${fmt(t.annual)}/yr.`
+    +(t.townRate!=null?' Fire or special districts aren\u2019t included: check the bill.'
+      :unincorp?' Outside the towns: county only, so add the fire district from the bill.'
+      :` No ${tn} rate on file: county only, so add the town\u2019s from the bill.`)+typed;
+  h.style.display='';
 }
 // a field's shipped default: a select's default option, an input's value attribute
 function fieldDefault(e){
@@ -4427,6 +4467,7 @@ function syncUnitsUI(){
 }
 // v8.31: the fit grid, the plan-fit message and BUA follow Units too (before, a Units change left them on the old count)
 function onUnitsChange(){
+  applySurveyDefault();   // v8.36: one lot or a split
   updateAttachedBuild();syncUnitsUI();
   calcAll();renderSublot();
   calcBUA();renderFitCheck();renderPlanFitMsg();
@@ -4593,8 +4634,13 @@ function calcLF(){
 }
 
 // ═══════════════════ PLAN & BUILD ═══════════════════
-// v7.12: survey defaults to $2,000 for duets / townhomes / triplex and $1,000 otherwise (matches the corrected UW
-// template). Only rewrites the field while it still holds a default value, so a figure the user typed is left alone.
+// v8.36 (Brian, 2026-10-12): one front-end survey per project, priced from Phoenix Land Surveying's 9/2/2026 quote (the
+// team's go-to surveyor), rounded: SURVEY_ONE_LOT for one house on one lot (boundary survey $1,250 + LDIRL site plan $300)
+// and SURVEY_SPLIT when the project is split into lots (plus the plat, new corners and recording: $2,881.65). A split is a
+// plan with more than one unit (duet, townhome, the triplex; a custom footprint with Units (opt) over 1) or Units over 1.
+// The per-house stakeout survey is a line in Slate's build contract (paid through the loan draws), so it isn't here.
+// v7.12 had $1,000 / $2,000. SURVEY_ONE_LOT must equal #survey's HTML value: a restore starts from the HTML default.
+// The default is only written while the field is untouched, so a figure the user typed is left alone.
 // An analyst can legitimately type $1,000 or $2,000 as a real survey quote, so inferring
 // "untouched" from the amount would silently overwrite their number on the next plan change.
 // Fields carry an explicit data-manual flag instead; markManual() sets it on any human edit,
@@ -4602,13 +4648,14 @@ function calcLF(){
 function markManual(el){ const e=(typeof el==='string')?$(el):el; if(e) e.dataset.manual='1'; }
 function markAllManual(){ document.querySelectorAll('.page input[id], .page select[id]').forEach(e=>{ e.dataset.manual='1'; }); }
 function isManual(id){ const e=$(id); return !!(e && e.dataset.manual==='1'); }
+const SURVEY_ONE_LOT=1500, SURVEY_SPLIT=3000;
 function applySurveyDefault(){
   const s=$('survey');if(!s)return;
   if(isManual('survey'))return;
   const val=($('plan-sel')||{}).value||'';
-  const p=currentPlanObj();
-  const multi=(val==='__CUSTOM__')?(pv('cust-u')>1):!!(p&&(p.t==='duet'||p.t==='th'||p.t==='mf'));
-  s.value=multi?2000:1000;   // still auto — leave data-manual unset
+  const p=val?currentPlanObj():null;
+  const split=pv('units')>1||((val==='__CUSTOM__')?(pv('cust-u')>1):!!(p&&(p.t==='duet'||p.t==='th'||p.t==='mf')));
+  s.value=split?SURVEY_SPLIT:SURVEY_ONE_LOT;   // still auto — leave data-manual unset
 }
 // v8.14: the plan whose default unit count Units last took. onPlanChange() also runs for things that aren't a plan
 // change (a GC fee edit rebuilds the dropdown, every custom-footprint keystroke), and writing the default each
@@ -4620,7 +4667,6 @@ function onPlanChange(){
   const info=$('plan-info');
   const cp=$('custom-dim-panel');
   const isCustom=(val==='__CUSTOM__');
-  applySurveyDefault();
   if(cp)cp.style.display=isCustom?'':'none';
 
   let name,du,fpW,fpD;
@@ -4637,6 +4683,7 @@ function onPlanChange(){
       if(info)info.style.display='none';
       const pfm0=$('plan-fit-msg');if(pfm0)pfm0.innerHTML='';
       planOverlay.active=false;const oc=$('plan-overlay-controls');if(oc)oc.style.display='none';
+      applySurveyDefault();
       calcBUA();calcAll();renderFitCheck();
       drawDiagram();
       return;
@@ -4672,6 +4719,7 @@ function onPlanChange(){
     planOverlay.active=false;
     $('plan-overlay-controls').style.display='none';
   }
+  applySurveyDefault();   // v8.36: after Units is set, since Units over 1 means a split
   updateAttachedBuild();syncUnitsUI();
   calcBUA();calcAll();renderFitCheck();renderSublot();
   drawDiagram();   // the one lot diagram (step 2) shows the footprint at once
@@ -4824,9 +4872,8 @@ function calcAll(){
   }
   units=Math.max(1,pv('units'));
   const buildTotal=currentPlanCost*units;
-  const upgPerUnit=Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);
-  // Upgrades are entered at their flat menu price and added straight to the build — the GC fee applies to the
-  // Slate base build only (Brian, 2026-09-22). Do not mark these up.
+  // v8.36: upgrades carry the GC fee, like the build (upgradesPerUnit(); reverses the 2026-09-22 flat-price rule)
+  const upgMenu=upgradeMenuPerUnit(), upgPerUnit=upgradesPerUnit();
   const upgTotal=upgPerUnit*units;
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
@@ -4836,20 +4883,23 @@ function calcAll(){
   const septicTot=skipS?septicLot:0;   // per lot, replaces sewer when going septic
   tapTotal=tapWaterTot+tapSewerTot+septicTot;
   const softFixed=pv('survey')+pv('appraisal')+pv('insurance');
+  const customPlans=pv('custom-plans');   // v8.36: once per deal, financed like the other costs
   // allInExLand = everything except land and financing
-  allInExLand=buildTotal+upgTotal+lotFactor+tapTotal+softFixed;
+  allInExLand=buildTotal+upgTotal+lotFactor+tapTotal+softFixed+customPlans;
   const allInPerUnit=allInExLand/units;
   const cs=$('cost-stack');
   if(cs){
     const items=[
-      {l:'Build Cost (all units)',v:buildTotal},{l:'Upgrades (all units)',v:upgTotal},
+      {l:'Build Cost (all units)',v:buildTotal},{l:`Upgrades (all units, + ${fmtRulePct(gcFeePct())} GC fee)`,v:upgTotal},
       {l:'Lot Factor',v:lotFactor},{l:'Water Tap',v:tapWaterTot},{l:'Sewer Tap',v:tapSewerTot},{l:'Septic Install',v:septicTot},
       {l:'Survey',v:pv('survey')},{l:'Appraisal',v:pv('appraisal')},{l:'Insurance',v:pv('insurance')},
+      {l:'Custom Plans (architect / engineer)',v:customPlans},
     ].filter(i=>i.v>0);
     cs.innerHTML=items.map(i=>`<div class="sb-stat"><span class="sb-stat-lbl">${i.l}</span><span class="sb-stat-val">${fmt(i.v)}</span></div>`).join('');
   }
   const ald=$('allin-display');if(ald)ald.textContent=fmt(allInPerUnit);
   const ut=$('upg-total');if(ut)ut.textContent=fmt(upgTotal);
+  const utl=$('upg-total-lbl');if(utl)utl.textContent=upgMenu>0?`Selected Upgrades Total (${fmt(upgMenu)}/unit menu + ${fmtRulePct(gcFeePct())} GC fee${units>1?' \u00d7 '+units+' units':''})`:'Selected Upgrades Total';
   const tapmsg=$('tap-msg');
   if(tapmsg){
     const parts=[skipW?'Water: skipped':'Water '+fmt(tapWaterU)+'/unit',
@@ -4860,19 +4910,23 @@ function calcAll(){
 }
 
 // ═══════════════════ FINANCING (Page 6) ═══════════════════
+// v8.36 (partner decision 2026-10-09, Wendell): the loan is a set % of the total project cost, land + allInExLand
+// (every cost except financing), default 85% and editable per deal (`ltc-pct`, the field the 93% LTC used). We bring the
+// rest plus the closing costs and fees: purchase closing (1% of the loan), the points and the doc fee are paid in cash at
+// closing, not financed. This replaces v7.12's 93% LTC, whose base held the 1% closing and so needed the closed-form
+// circular solve LTC% × costBase / (1 − LTC% × 0.01). With closing outside the loan there is no circle: don't add one back.
+// `cash` is the cash at closing (audit M5: the points and doc fee used to be left out).
 function calcLoanBase(landCost){
-  // LTC base = land + build (allInExLand already has everything except land)
-  // Purchase closing = 1% of loan, and loan includes closing cost base
-  // Loan = LTC% * (land + allInExLand + purchaseClosing)
-  // purchaseClosing = 0.01 * loan => circular
-  // Solve: loan = LTC% * (land + allInExLand + 0.01*loan)
-  // loan * (1 - LTC%*0.01) = LTC% * (land + allInExLand)
-  // loan = LTC% * (land + allInExLand) / (1 - LTC%*0.01)
-  const ltcPct=pv('ltc-pct')/100;
+  const loanPct=pv('ltc-pct')/100;
   const costBase=landCost+allInExLand;
-  const loan=ltcPct*costBase/(1-ltcPct*0.01);
-  return {loan, costBase, purchaseClosing:loan*0.01, cash:costBase-loan+loan*0.01};
+  const loan=loanPct*costBase;
+  const purchaseClosing=loan*0.01;
+  return {loan, costBase, purchaseClosing, equity:costBase-loan,
+    cash:costBase-loan+purchaseClosing+loan*pv('fin-points')/100+pv('fin-doc-fee')};
 }
+// v8.36 (audit M5): cash through the hold = cash at closing + the carry paid while we hold, the interest and property tax
+// for the term (the Base term everywhere it's shown). Points, the doc fee and closing are already in the closing figure.
+function cashThroughHold(lb,term){const h=holdingCost(lb.loan,term);return lb.cash+h.interest+h.taxes;}
 
 function holdingCost(loan,term){
   const rate=pv('fin-rate')/100;
@@ -4888,19 +4942,23 @@ function holdingCost(loan,term){
 
 function calcFinancing(){
   const landCost=mv('land-cost');
-  const {loan,costBase,purchaseClosing,cash}=calcLoanBase(landCost);
+  const lb=calcLoanBase(landCost),{loan,costBase,purchaseClosing,cash}=lb;
+  const terms=getTerms(), cashHold=cashThroughHold(lb,terms.b);
 
   // Update loan summary sidebar
   const set=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
-  set('fin-cost-base',fmt(costBase+purchaseClosing));
+  set('fin-cost-base',fmt(costBase));
   set('fin-loan-amt',fmt(loan));
   set('fin-purch-closing',fmt(purchaseClosing));
   set('fin-cash-needed',fmt(Math.max(0,cash)));
+  set('fin-cash-hold',fmt(Math.max(0,cashHold)));
+  set('fin-cash-hold-lbl',`Cash Through the Hold (Base, ${terms.b} mo)`);
   set('exit-loan-amt',fmt(loan));
   set('exit-cash-needed',fmt(Math.max(0,cash)));
+  set('exit-cash-hold',fmt(Math.max(0,cashHold)));
+  renderTaxHint();
 
   // Holding cost per scenario
-  const terms=getTerms();
   // v8.33: the sidebar's ids are hold-worst / hold-base / hold-best; `hold-${k}` found only Best, so Worst and Base stayed "—"
   const ids={w:'worst',b:'base',best:'best'};
   ['w','b','best'].forEach(k=>{
@@ -5031,10 +5089,10 @@ function calcScenarios(){
   const landCost=mv('land-cost');
   const basePSF=mv('arv-b');
   const {loan,purchaseClosing}=calcLoanBase(landCost);
-  const loanPerUnit=loan/units;
   const salePct=pv('sale-cost-pct')/100;
   const allInPerUnit=(allInExLand+landCost)/units;
   const T=getTerms();
+  const rule=getProfitRule(), ruleL=profitRuleLabels(rule);
 
   ['w','b','best'].forEach(k=>{
     const arvId=k==='w'?'arv-w':k==='b'?'arv-b':'arv-best';
@@ -5047,7 +5105,9 @@ function calcScenarios(){
     const saleCost=arv*salePct;
     const totalAllIn=allInPerUnit+holdPerUnit+saleCost;
     const profit=arv-totalAllIn;
-    const coc=loanPerUnit>0?profit/loanPerUnit*100:0;
+    // v8.36 (partner decision 2026-10-09, audit M4): Cash on Cash = profit ÷ all-in, the sheet's definition (it was
+    // profit ÷ loan). Its target is the profit rule's %: profit ≥ 15% of all-in is the same test as CoC ≥ 15%.
+    const coc=totalAllIn>0?profit/totalAllIn*100:0;
 
     const lines=[
       {l:units>1?'ARV / Unit':'ARV',v:arv>0?fmt(arv):'Enter $/sf above',hi:true},
@@ -5062,7 +5122,7 @@ function calcScenarios(){
     const pe=document.getElementById(`profit-${k}`);
     if(pe){pe.textContent=arv>0?fmt(profit):'—';pe.style.color=profit<0&&arv>0?'var(--red)':'';}
     const ce=document.getElementById(`coc-${k}`);
-    if(ce)ce.textContent=arv>0?`CoC: ${coc.toFixed(1)}%`:'Enter ARV $/sf';
+    if(ce)ce.textContent=arv>0?`CoC: ${coc.toFixed(1)}% (target ${ruleL.pct})`:'Enter ARV $/sf';
     const projMap={w:'proj-worst',b:'proj-base',best:'proj-best'};
     const pe2=document.getElementById(projMap[k]);
     if(pe2)pe2.textContent=arv>0?fmt(profit*units):'—';
@@ -5082,21 +5142,21 @@ function calcScenarios(){
     } else askEl.textContent='';
   }
   // Max land cost — back-solve for the PROFIT RULE target
-  const rule=getProfitRule(), ruleL=profitRuleLabels(rule);
   renderInputWarnings(rule,T);
   let ruleNote='';
   if(basePSF>0&&sfPerUnit>0){
     const bARV=basePSF*sfPerUnit;
     const term=T.b;
     const salePctV=salePct;
-    const ltcPct=pv('ltc-pct')/100;
+    const loanPct=pv('ltc-pct')/100;
     const rate=pv('fin-rate')/100,pts=pv('fin-points')/100,docFee=pv('fin-doc-fee'),annTax=pv('fin-tax');
     // v7.12 PROFIT RULE (Deal Analyst SOP): base-case profit per unit must clear the GREATER of a flat floor or a
     // % of all-in cost per unit. Solve the land ceiling for each rule and take the lower one (that rule is binding).
     // v8.2: floor and % come from the Profit Rule inputs (shipped default $50k / 15%, the SOP).
     const FLOOR=rule.floor, RULE_PCT=rule.pct/100;
-    // loan = ltcPct*(L+A)/(1-ltcPct*0.01) = k1*(L+A) where k1=ltcPct/(1-ltcPct*0.01); L = land (unknown), A = allInExLand
-    const k1=ltcPct/(1-ltcPct*0.01);
+    // v8.36: loan = loanPct*(L+A) = k1*(L+A), k1 = loanPct (calcLoanBase: no circular closing term); L = land (unknown),
+    // A = allInExLand
+    const k1=loanPct;
     // holdPerUnit = loan*(rate/12*term + pts + 0.01)/units + (docFee + annTax/12*term)/units
     const loanFactor=rate/12*term+pts+0.01;
     const fixedHold=(docFee+(annTax/12)*term)/units;
@@ -5150,6 +5210,11 @@ function renderUpgrades(){
   });
   renderUpgradeNote();
 }
+// v8.36 (partner decision 2026-10-09; reverses Brian's 2026-09-22 flat-menu-price rule): upgrades carry the Slate GC fee,
+// the same % as the build (gcFeePct(), the GC fee box: 14% by default, also on a custom build), as the team sheet does
+// (B16 = build + upgrades × 1.14). The screen, the plan comparison, the report and the Excel model all price them here.
+function upgradeMenuPerUnit(){return Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);}
+function upgradesPerUnit(){return upgradeMenuPerUnit()*(1+gcFeePct()/100);}
 // A deal saved before v8.33 can hold both of a pair: it opens as saved (both counted), and this says to untick one
 function renderUpgradeNote(){
   const n=$('upg-note');if(!n)return;
@@ -5239,16 +5304,19 @@ function getReportData(){
   const lb=calcLoanBase(landCost);
   // v8.2: raw field values, the same ones the on-screen loan and holding math reads (calcLoanBase,
   // holdingCost). The old `||93` / `||10` / `||1` fallbacks turned a deliberate 0 into a default.
+  // v8.36: ltc is the loan's % of the project cost (calcLoanBase); cash = at closing, cashHold = through the Base hold
   const fin={ltc:pv('ltc-pct'),rate:pv('fin-rate'),points:pv('fin-points'),
     docFee:pv('fin-doc-fee'),annualTax:pv('fin-tax'),salePct:pv('sale-cost-pct'),
     profitRule:getProfitRule(),
-    loan:lb.loan,costBase:lb.costBase,purchaseClosing:lb.purchaseClosing,cash:Math.max(0,lb.cash)};
+    loan:lb.loan,costBase:lb.costBase,purchaseClosing:lb.purchaseClosing,equity:lb.equity,cash:Math.max(0,lb.cash),
+    cashHold:Math.max(0,cashThroughHold(lb,terms.b))};
 
   // Cost build-up
   const softFixed=(pv('survey')||0)+(pv('appraisal')||0)+(pv('insurance')||0);
-  const upgPerUnit=Array.from(selectedUpgrades).reduce((a,id)=>{const x=UPGRADES.find(y=>y.id===id);return a+(x?x.cost:0);},0);
+  // v8.36: upgrades with the GC fee (upgradesMenu = the menu prices); custom plans once per deal
   const cost={land:landCost,lotFactor:lotFactor||0,tap:tapTotal||0,
-    buildTotal:(currentPlanCost||0)*u,upgrades:upgPerUnit*u,soft:softFixed,
+    buildTotal:(currentPlanCost||0)*u,upgrades:upgradesPerUnit()*u,upgradesMenu:upgradeMenuPerUnit()*u,upgFeePct:gcFeePct(),
+    soft:softFixed,customPlans:pv('custom-plans')||0,
     allInExLand:allInExLand||0,total:(allInExLand||0)+landCost};
   // Build cost = base × (1 + GC fee); break out for the memo
   {const sp=planCostSplit();
@@ -5263,7 +5331,6 @@ function getReportData(){
    cost.septic=skipS?pv('septic-cost'):0;}
 
   // Scenario economics computed directly (not read from DOM text)
-  const loanPerUnit=fin.loan/u;
   const allInPerUnit=(cost.allInExLand+landCost)/u;
   const scenarios=['w','b','best'].map(k=>{
     const arvPSF=psf[k]||0;
@@ -5273,7 +5340,7 @@ function getReportData(){
     const saleCost=arv*(fin.salePct/100);
     const totalAllIn=allInPerUnit+holdPerUnit+saleCost;
     const profit=arv?arv-totalAllIn:0;
-    const coc=loanPerUnit>0&&arv?profit/loanPerUnit*100:0;
+    const coc=totalAllIn>0&&arv?profit/totalAllIn*100:0;   // v8.36: profit ÷ all-in (calcScenarios)
     return {key:k,name:k==='w'?'WORST':k==='b'?'BASE':'BEST',
       color:k==='w'?'#cf4037':k==='b'?'#5e8095':'#648370',
       term:terms[k],arvPSF,arv,holding:h,holdPerUnit,allInPerUnit,saleCost,
@@ -5333,9 +5400,9 @@ function buildReportHTML(canvasDataUrl){
     '<div class="addr-bar"><div class="addr-text">'+esc(d.address)+'</div><div class="date-text">'+d.date+'</div></div>'
     +noteBox('Check inputs',inputNotes)
     +'<div class="metric-row">'
-      +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'%'):'',true)
+      +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'% (target '+profitRuleLabels(d.fin.profitRule).pct+')'):'',true)
       +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
-      +metric('Cash Required',F(d.fin.cash),'at close',true)
+      +metric('Cash at Closing',F(d.fin.cash),F(d.fin.cashHold)+' through the hold ('+d.terms.b+' mo)',true)
       +metric('Max Land (Base, profit rule)',d.maxLand,(/^\u2212/.test(d.maxLand)?'Doesn\u2019t work: misses the rule even at $0 land. ':'')+profitRuleLabels(d.fin.profitRule).text,true)
     +'</div>'
     +'<div class="two-col">'
@@ -5352,9 +5419,10 @@ function buildReportHTML(canvasDataUrl){
         +'</table>'
         +secHdr('FINANCING SNAPSHOT')
         +'<table class="kv avoid">'
-          +'<tr><td>Loan-to-Cost</td><td>'+d.fin.ltc+'%</td></tr>'
+          +'<tr><td>Loan (% of project cost)</td><td>'+d.fin.ltc+'%</td></tr>'
           +'<tr><td>Loan Amount</td><td>'+F(d.fin.loan)+'</td></tr>'
-          +'<tr><td>Cash Required</td><td>'+F(d.fin.cash)+'</td></tr>'
+          +'<tr><td>Cash at Closing</td><td>'+F(d.fin.cash)+'</td></tr>'
+          +'<tr><td>Cash Through the Hold ('+d.terms.b+' mo)</td><td>'+F(d.fin.cashHold)+'</td></tr>'
           +'<tr><td>Rate / Points</td><td>'+d.fin.rate+'% / '+d.fin.points+'%</td></tr>'
         +'</table>'
         +(d.gis?(secHdr('SITE INTELLIGENCE (GIS)','green')
@@ -5386,8 +5454,9 @@ function buildReportHTML(canvasDataUrl){
   if(c.customBuild)costRows.push(['Build Cost ('+d.units+' × custom plan, as entered)',c.baseBuild]);
   else{costRows.push(['Base Build Cost ('+d.units+' × plan)',c.baseBuild]);
        costRows.push(['Slate GC Fee ('+c.gcFeePct+'%)',c.gcFee]);}
-  costRows.push(['Upgrades',c.upgrades]);
+  costRows.push(['Upgrades (menu + '+c.upgFeePct+'% GC fee)',c.upgrades]);
   costRows.push(['Soft Costs (survey/appraisal/ins.)',c.soft]);
+  if(c.customPlans>0)costRows.push(['Custom Plans (architect / engineer)',c.customPlans]);
   const costBuild=secHdr('COST BUILD-UP')
     +'<table class="kv avoid">'
       +costRows.map(r=>'<tr'+(r[2]==='sub'?' class="subrow"':'')+'><td>'+r[0]+'</td><td>'+F(r[1])+'</td></tr>').join('')
@@ -5407,12 +5476,15 @@ function buildReportHTML(canvasDataUrl){
   };
   const finDetail=secHdr('FINANCING DETAIL')
     +'<table class="kv avoid">'
-      +'<tr><td>Cost Base (land + all-in + closing)</td><td>'+F(d.fin.costBase+d.fin.purchaseClosing)+'</td></tr>'
-      +'<tr><td>Loan Amount ('+d.fin.ltc+'% LTC)</td><td>'+F(d.fin.loan)+'</td></tr>'
+      +'<tr><td>Total Project Cost (land + all-in)</td><td>'+F(d.fin.costBase)+'</td></tr>'
+      +'<tr><td>Loan Amount ('+d.fin.ltc+'% of project)</td><td>'+F(d.fin.loan)+'</td></tr>'
+      +'<tr><td>Our Share ('+Math.round((100-d.fin.ltc)*100)/100+'% of project)</td><td>'+F(d.fin.equity)+'</td></tr>'
       +'<tr><td>Purchase Closing (1% of loan)</td><td>'+F(d.fin.purchaseClosing)+'</td></tr>'
-      +'<tr><td>Interest Rate / Points</td><td>'+d.fin.rate+'% / '+d.fin.points+'%</td></tr>'
+      +'<tr><td>Points ('+d.fin.points+'%) + Doc Fee</td><td>'+F(d.fin.loan*d.fin.points/100+d.fin.docFee)+'</td></tr>'
+      +'<tr><td>Interest Rate</td><td>'+d.fin.rate+'%</td></tr>'
       +'<tr><td>Annual Property Tax</td><td>'+F(d.fin.annualTax)+'</td></tr>'
-      +'<tr class="total"><td>CASH REQUIRED AT CLOSE</td><td>'+F(d.fin.cash)+'</td></tr>'
+      +'<tr class="total"><td>CASH AT CLOSING</td><td>'+F(d.fin.cash)+'</td></tr>'
+      +'<tr class="total"><td>CASH THROUGH THE HOLD (BASE, '+d.terms.b+' MO)</td><td>'+F(d.fin.cashHold)+'</td></tr>'
     +'</table>'
     +'<div class="hold-label">Holding cost by scenario</div>'
     +'<div class="hold-grid">'+d.scenarios.map(holdRowsFor).join('')+'</div>';
@@ -5431,7 +5503,7 @@ function buildReportHTML(canvasDataUrl){
       +scRow('Total All-In / Unit',s=>F(s.totalAllIn))
       +scRow('Profit / Unit',s=>s.hasArv?sign(s.profit):'—','rowhi')
       +scRow('Total Profit ('+d.units+' u)',s=>s.hasArv?sign(s.total):'—','rowhi')
-      +scRow('Cash-on-Cash',s=>s.hasArv?signPct(s.coc):'—','rowhi')
+      +scRow('Cash-on-Cash (profit \u00f7 all-in)',s=>s.hasArv?signPct(s.coc):'—','rowhi')
     +'</tbody></table>'
     +'<div class="legend"><span class="lg" style="background:'+PG+'"></span> Positive &nbsp;&nbsp; <span class="lg" style="background:'+PR+'"></span> Negative &nbsp;&nbsp; Worst/Best auto-derive ±10% off base ARV when not entered.</div>'
     +(function(){
@@ -5477,7 +5549,7 @@ function buildReportHTML(canvasDataUrl){
       +row('Base ARV / Unit',s=>s.deal.scen.b.arv>0?F(s.deal.scen.b.arv):'—')
       +row('Base Profit / Unit',s=>s.deal.scen.b.arv>0?sign(s.deal.scen.b.profit):'—','rowhi')
       +row('Base Total Profit',s=>s.deal.scen.b.arv>0?sign(s.deal.scen.b.total):'—','rowhi')
-      +row('Base Cash-on-Cash',s=>s.deal.scen.b.arv>0?signPct(s.deal.scen.b.coc):'—','rowhi')
+      +row('Base Cash-on-Cash (profit \u00f7 all-in)',s=>s.deal.scen.b.arv>0?signPct(s.deal.scen.b.coc):'—','rowhi')
       +'</tbody></table>'
       +'<div class="legend">Slots fill from your Step-3 rankings first, then the highest-finished-SF plans that still fit the envelope. ARV held at the deal\u2019s base $/sf across all plans.</div>';
   }
@@ -5689,7 +5761,7 @@ function renderSheetHandoff(){
 }
 function collectModelInputs(d){
   const rawW=mv('arv-w'), rawBest=mv('arv-best');
-  const upgUnit=Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);
+  const upgUnit=upgradeMenuPerUnit();
   const sp=planCostSplit();
   const skipW=$('skip-water')&&$('skip-water').checked, skipS=$('skip-sewer')&&$('skip-sewer').checked;
   return {
@@ -5697,7 +5769,8 @@ function collectModelInputs(d){
     planName:d.plan,sf:sfPerUnit,buildUnit:currentPlanCost,
     // v8.13: planCostSplit(), so the workbook's Build Cost / Unit (= base × (1+fee)) equals the app's
     customBuild:sp.custom,baseUnit:sp.baseUnit,gcFeePct:sp.feePct/100,
-    upgUnit:upgUnit,
+    upgUnit:upgUnit,upgFeePct:gcFeePct()/100,   // v8.36: menu price + the GC fee, as upgradesPerUnit()
+    customPlans:pv('custom-plans'),
     lotFactor:lotFactor||0,
     lf:{demoSqft:pv('demo-sqft'),demoRate:pv('demo-rate'),herTrees:pv('her-trees'),
         herRate:parseFloat(($('her-timing')||{}).value)||750,
@@ -5777,8 +5850,15 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   inp('taps','Sewer Tap / Unit (0 if septic)',M.tapSewerU,MONEY);
   inp('septic','Septic Install (per lot)',M.septicLot,MONEY);
   der('tap','Tap Fees (total)',`(${IN['tapw']}+${IN['taps']})*${IN['units']}+${IN['septic']}`,MONEY);
-  sec('OTHER COSTS'); inp('upg','Upgrades / Unit',M.upgUnit,MONEY); inp('survey','Survey',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
-  sec('FINANCING'); inp('ltc','LTC %',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
+  // v8.36: upgrades get the GC fee (the app's GC fee box, also on a custom build), and custom plans are a per-deal cost
+  // On a Slate plan the upgrades' fee is the build's fee cell (one box sets both in the app); a custom build has no build fee
+  // (gcfee 0), so there it's the app's GC fee box as typed
+  sec('OTHER COSTS'); inp('upg','Upgrades / Unit (menu price)',M.upgUnit,MONEY);
+  inp('upgfee','GC Fee % on Upgrades'+(M.customBuild?'':' (= the build\u2019s)'),M.customBuild?M.upgFeePct:{formula:IN['gcfee']},PCT);
+  der('upgU','\u2514 Upgrades / Unit (with GC fee)',`${IN['upg']}*(1+${IN['upgfee']})`,MONEY);
+  inp('survey','Survey (once per project)',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
+  inp('plans','Custom Plans (architect / engineer)',M.customPlans,MONEY);
+  sec('FINANCING'); inp('ltc','Loan % of Project Cost',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
   sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
   // v8.13: a note beside each term cell, like the rule cells', when it isn't used as typed (Scenarios row 16 applies
   // the default and the 1-month floor) or is over the app's max; a text term like "12 mo" is otherwise silent
@@ -5789,7 +5869,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   // note beside it, in the same style as the rule notes below; no note, no cell, so a clean deal's sheet is unchanged
   {const mn=M.moneyNotes||{};
    ['land','arvB','arvW','arvBest'].forEach(k=>{if(!mn[k])return;const c=wsI.getCell(IN[k].replace('B','C'));c.value=mn[k];c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};});}
-  // v8.2: appended last so every existing Inputs cell keeps its address
+  // v8.2: appended last so every existing Inputs cell kept its address (v8.36 inserted rows above it; every reference
+  // goes through IN[], so nothing points at a fixed Inputs row)
   sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY2); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT2);
   // v8.7: the rule Max Land actually uses, after getProfitRule()'s defaults and limits (PROFIT_RULE_LIMITS):
   // a blank or non-numeric cell means the app's default (ISNUMBER, so text like "$70k" isn't skipped as 0 by
@@ -5813,15 +5894,16 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   titleBar(ws,1,'E','SCENARIO ANALYSIS — live formulas');
   band(ws,3,'E','DERIVED');
   const F=(addr,formula,fmt,bold,colorLink)=>{const c=ws.getCell(addr);c.value={formula};if(fmt)c.numFmt=fmt;c.font={name:'Arial',bold:!!bold,color:{argb:colorLink?LINK:'FF000000'}};};
-  ws.getCell('A4').value='All-In ex Land'; F('B4',`${I('build')}*${I('units')}+${I('upg')}*${I('units')}+${I('lot')}+${I('tap')}+${I('survey')}+${I('appr')}+${I('ins')}`,MONEY,false,true);
+  ws.getCell('A4').value='All-In ex Land'; F('B4',`${I('build')}*${I('units')}+${I('upgU')}*${I('units')}+${I('lot')}+${I('tap')}+${I('survey')}+${I('appr')}+${I('ins')}+${I('plans')}`,MONEY,false,true);
   ws.getCell('A5').value='Land'; F('B5',`${I('land')}`,MONEY,false,true);
-  ws.getCell('A6').value='Cost Base (land + all-in)'; F('B6','B5+B4',MONEY);
-  ws.getCell('A7').value='LTC %'; F('B7',`${I('ltc')}`,PCT,false,true);
-  ws.getCell('A8').value='Loan Amount'; F('B8','B7*B6/(1-B7*0.01)',MONEY,true);
+  ws.getCell('A6').value='Project Cost (land + all-in)'; F('B6','B5+B4',MONEY);
+  ws.getCell('A7').value='Loan % of Project'; F('B7',`${I('ltc')}`,PCT,false,true);
+  // v8.36: the loan is a % of the project; closing, points and the doc fee are paid in cash (no circular term)
+  ws.getCell('A8').value='Loan Amount'; F('B8','B7*B6',MONEY,true);
   ws.getCell('A9').value='Purchase Closing (1%)'; F('B9','B8*0.01',MONEY);
   ws.getCell('A10').value='Loan / Unit'; F('B10',`B8/${I('units')}`,MONEY);
   ws.getCell('A11').value='Build + Costs / Unit'; F('B11',`(B4+B5)/${I('units')}`,MONEY);
-  ws.getCell('A12').value='Cash Required (close)'; F('B12','B6-B8+B9',MONEY,true);
+  ws.getCell('A12').value='Cash at Closing'; F('B12',`B6-B8+B9+B8*${I('pts')}+${I('doc')}`,MONEY,true);
   // scenario header
   [['C','WORST',NAVY],['D','BASE',STEEL],['E','BEST',GREEN]].forEach(([col,lbl,c])=>{const cell=ws.getCell(col+13);cell.value=lbl;cell.font={bold:true,color:{argb:WHITE},name:'Arial'};cell.fill=fill(c);cell.alignment={horizontal:'center'};});
   ws.getCell('A14').value='ARV $/sf';
@@ -5839,7 +5921,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   ws.getCell('A20').value='Total All-In / Unit'; ['C','D','E'].forEach(col=>F(col+20,`${col}18+${col}17+${col}19`,MONEY));
   ws.getCell('A21').value='Profit / Unit'; ['C','D','E'].forEach(col=>F(col+21,`${col}15-${col}20`,MONEY,true));
   ws.getCell('A22').value='Total Project Profit'; ['C','D','E'].forEach(col=>F(col+22,`${col}21*${I('units')}`,MONEY,true));
-  ws.getCell('A23').value='Cash-on-Cash'; ['C','D','E'].forEach(col=>F(col+23,`IF($B$10>0,${col}21/$B$10,0)`,PCT));
+  ws.getCell('A23').value='Cash-on-Cash (profit \u00f7 all-in)'; ['C','D','E'].forEach(col=>F(col+23,`IF(${col}20>0,${col}21/${col}20,0)`,PCT));
   const POS='FF2E8B57',NEG='FFD2645F';
   ws.addConditionalFormatting({ref:'C21:E22',rules:[
     {type:'cellIs',operator:'lessThan',formulae:['0'],priority:1,style:{font:{bold:true,color:{argb:NEG}}}},
@@ -5854,7 +5936,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
    ['C','D','E'].forEach(col=>{for(let r=14;r<=23;r++){ws.getCell(col+r).fill=fill(TINT[col]);}});
    ['A','B','C','D','E'].forEach(col=>{ws.getCell(col+'21').border=Object.assign({},ws.getCell(col+'21').border,{top:{style:'thin',color:{argb:STEEL}}});});}
   band(ws,25,'E','MAX LAND — back-solve for the profit rule (Inputs › Profit Rule)');
-  ws.getCell('A26').value='k1'; F('B26','B7/(1-B7*0.01)','0.0000');
+  ws.getCell('A26').value='k1 (loan % of project)'; F('B26','B7','0.0000');
   ws.getCell('A27').value='loan factor'; F('B27',`${I('rate')}/12*D16+${I('pts')}+0.01`,'0.0000');
   ws.getCell('A28').value='fixed hold / unit'; F('B28',`(${I('doc')}+${I('tax')}/12*D16)/${I('units')}`,MONEY);
   ws.getCell('A29').value='Base ARV ($)'; F('B29','D15',MONEY);
@@ -5873,7 +5955,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
     ws.getCell('C30').value='lower of the floor/unit and %-of-all-in ceilings (set on Inputs)';
     ws.getCell('C30').font={name:'Arial',size:9,italic:true,color:{argb:'FF7A7A7A'}};
   }
-  ws.pageSetup={printArea:'A1:E30'};
+  ws.getCell('A31').value='Cash Through the Hold (Base)'; F('B31',`B12+B8*${I('rate')}/12*D16+${I('tax')}/12*D16`,MONEY,true);
+  ws.getCell('C31').value='cash at closing + Base-term interest and property tax';
+  ws.getCell('C31').font={name:'Arial',size:9,italic:true,color:{argb:'FF7A7A7A'}};
+  ws.pageSetup={printArea:'A1:E31'};
 
   // ---------- Sensitivity ----------
   const wsS=wb.addWorksheet('Sensitivity',{properties:{tabColor:{argb:'FFF0A93C'}}});
@@ -5918,7 +6003,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   head(13,'Total Project Profit (Base)','Scenarios!D22',MONEY,GREEN);
   head(15,'Max Land Cost (profit rule)','Scenarios!B30',MONEY,STEEL);
   head(17,'Loan Amount','Scenarios!B8',MONEY,NAVY);
-  head(19,'Cash Required at Close','Scenarios!B12',MONEY,STEEL);
+  head(19,'Cash at Closing','Scenarios!B12',MONEY,STEEL);
+  head(21,'Cash Through the Hold (Base)','Scenarios!B31',MONEY,STEEL);
   wc.mergeCells('C6:E6'); wc.getCell('C6').value=[M.county,M.zone,M.units+' unit'+(M.units>1?'s':''),M.planName].filter(Boolean).join('  \u00b7  ');
   wc.getCell('C6').font={size:9.5,color:{argb:'FF566B82'},name:'Arial'};
   if(M.gis){let gr=9;
@@ -5930,8 +6016,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
     gline('SWIM / WQ Buffer',M.gis.swim?(M.gis.swim.i?'\u26a0 Intersects':'\u2713 None on parcel'):null,M.gis.swim&&M.gis.swim.i);
     gline('Historic District',M.gis.historic?(M.gis.historic.i?('\u26a0 '+(M.gis.historic.n||'Yes')):'\u2713 No'):null,M.gis.historic&&M.gis.historic.i);
     gr++;const cap=wc.getCell('C'+gr);cap.value='Verify before closing \u00b7 easements: recorded plat';cap.font={italic:true,size:7.5,color:{argb:'FF8A99A6'},name:'Arial'};wc.mergeCells('C'+gr+':E'+gr);}
-  wc.mergeCells('A21:B21'); wc.getCell('A21').value='Prepared '+M.dateStr;
-  wc.getCell('A21').font={size:9,italic:true,color:{argb:'FF566B82'},name:'Arial'};
+  wc.mergeCells('A22:B22'); wc.getCell('A22').value='Prepared '+M.dateStr;
+  wc.getCell('A22').font={size:9,italic:true,color:{argb:'FF566B82'},name:'Arial'};
   ['A','B','C','D','E'].forEach(c=>{wc.getCell(c+'23').border={bottom:{style:'thin',color:{argb:'FFB8AE9C'}}};});
   wc.mergeCells('A24:E24'); wc.getCell('A24').value='Tide & Timber Ventures, LLC   ·   management@tidetimberventures.com   ·   Charlotte, NC';
   wc.getCell('A24').font={size:9,italic:true,color:{argb:'FF566B82'},name:'Arial'};
@@ -5942,7 +6028,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   titleBar(wcb,1,'B','COST BUILD-UP');
   let cr=2; const li=(label,formula,bold,fmtfill)=>{cr++;wcb.getCell('A'+cr).value=label;if(bold)wcb.getCell('A'+cr).font={bold:true,name:'Arial'};const c=wcb.getCell('B'+cr);c.value={formula};c.numFmt=MONEY;c.font={name:'Arial',bold:!!bold};if(fmtfill){c.fill=fill(CREAM);}};
   li('Land',`${I('land')}`); li('Lot Factor',`${I('lot')}`); li('Tap Fees',`${I('tap')}`); li('Survey',`${I('survey')}`); li('Appraisal',`${I('appr')}`); li('Insurance',`${I('ins')}`);
-  li('Build Cost (all units)',`${I('build')}*${I('units')}`); li('Upgrades (all units)',`${I('upg')}*${I('units')}`);
+  li('Custom Plans',`${I('plans')}`);
+  li('Build Cost (all units)',`${I('build')}*${I('units')}`); li('Upgrades (all units, with GC fee)',`${I('upgU')}*${I('units')}`);
   li('Grand Total (incl. Land)','Scenarios!B4+Scenarios!B5',true,true);
   wcb.getCell('A'+cr).fill=fill(CREAM); wcb.getCell('A'+cr).border={top:{style:'medium',color:{argb:STEEL}}}; wcb.getCell('B'+cr).border={top:{style:'medium',color:{argb:STEEL}}};
   wcb.pageSetup={printArea:'A1:B'+cr};
@@ -6148,22 +6235,20 @@ function fitStatus(fpW,fpD){
 
 // Pure per-plan deal math — mirrors calcLoanBase / holdingCost / calcScenarios.
 // Holds land, lot factor, soft costs, tap fee/unit, upgrades/unit and all financing
-// (LTC, rate, points, doc fee, tax, term) constant; loan SIZE and ARV vary by plan.
+// (loan %, rate, points, doc fee, tax, term) constant; loan SIZE and ARV vary by plan.
 function dealForPlan(plan,psf){
   const landCost=mv('land-cost');
-  const softFixed=pv('survey')+pv('appraisal')+pv('insurance');
+  const softFixed=pv('survey')+pv('appraisal')+pv('insurance')+pv('custom-plans');
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
   const tapWaterU=pv('tap-water'),tapSewerU=pv('tap-sewer'),septicLot=pv('septic-cost');
-  const upgPerUnit=Array.from(selectedUpgrades).reduce((acc,id)=>{const u=UPGRADES.find(x=>x.id===id);return acc+(u?u.cost:0);},0);
+  const upgPerUnit=upgradesPerUnit();   // v8.36: with the GC fee
   const u=Math.max(1,plan.u||1);
   const buildTotal=plan.c*u, upgTotal=upgPerUnit*u;
   const tapTot=(skipW?0:tapWaterU*u)+(skipS?0:tapSewerU*u)+(skipS?septicLot:0);
   const allInExL=buildTotal+upgTotal+lotFactor+tapTot+softFixed;
-  const ltcPct=pv('ltc-pct')/100;
-  const loan=ltcPct*(landCost+allInExL)/(1-ltcPct*0.01);
+  const loan=pv('ltc-pct')/100*(landCost+allInExL);   // v8.36: % of project, as calcLoanBase
   const purchaseClosing=loan*0.01;
-  const loanPerUnit=loan/u;
   const salePct=pv('sale-cost-pct')/100;
   const allInPerUnit=(allInExL+landCost)/u;
   const scen={}, T=getTerms();
@@ -6176,7 +6261,7 @@ function dealForPlan(plan,psf){
     const saleCost=arv*salePct;
     const totalAllIn=allInPerUnit+holdPerUnit+saleCost;
     const profit=arv-totalAllIn;
-    const coc=loanPerUnit>0?profit/loanPerUnit*100:0;
+    const coc=totalAllIn>0?profit/totalAllIn*100:0;   // v8.36: profit ÷ all-in
     scen[k]={arv,arvPSF,holdPerUnit,saleCost,totalAllIn,profit,total:profit*u,coc,term};
   });
   return{plan,u,loan,allInPerUnit,buildTotal,scen};
@@ -6227,8 +6312,7 @@ function renderCompare(){
   const body=$('cmp-body');if(!body)return;
   const cc=$('cmp-constants'), T=getTerms();
   if(cc){
-    const upgPerUnit=Array.from(selectedUpgrades).reduce((acc,id)=>{const u=UPGRADES.find(x=>x.id===id);return acc+(u?u.cost:0);},0);
-    cc.innerHTML='Held constant — Land '+fmt(mv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgPerUnit)+'/unit \u00b7 LTC '+pv('ltc-pct')+'% \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+T.w+'/'+T.b+'/'+T.best+'. Loan size & ARV $/sf vary by plan.';
+    cc.innerHTML='Held constant — Land '+fmt(mv('land-cost'))+' \u00b7 Lot Factor '+fmt(lotFactor)+' \u00b7 Upgrades '+fmt(upgradesPerUnit())+'/unit \u00b7 Loan '+pv('ltc-pct')+'% of project \u00b7 Rate '+pv('fin-rate')+'% \u00b7 Term '+T.w+'/'+T.b+'/'+T.best+'. Loan size & ARV $/sf vary by plan.';
   }
   const cols=[0,1,2].filter(i=>CMP[i]).map(i=>{
     const plan=PLANS.find(p=>p.n===CMP[i]);if(!plan)return null;
@@ -6272,7 +6356,7 @@ function renderCompare(){
     h+=row('Holding / unit',c=>fmt(c.deal.scen[k].holdPerUnit));
     h+=row('Profit / unit',c=>c.deal.scen[k].arv>0?money(c.deal.scen[k].profit):'\u2014');
     h+=row('Total Project Profit',c=>c.deal.scen[k].arv>0?money(c.deal.scen[k].total):'\u2014');
-    h+=row('Cash-on-Cash',c=>c.deal.scen[k].arv>0?c.deal.scen[k].coc.toFixed(1)+'%':'\u2014');
+    h+=row('Cash-on-Cash (\u00f7 all-in)',c=>c.deal.scen[k].arv>0?c.deal.scen[k].coc.toFixed(1)+'%':'\u2014');
   });
   h+='</tbody></table>';
   if(arvNotes.length)h+='<div class="warn" role="status">'+escAttr(arvNotes.join(' '))+'</div>';
@@ -6326,17 +6410,18 @@ function updateHero(d,b,F){
       hp.textContent=F(b.profit);hp.classList.toggle('neg',b.profit<0);
       hps.textContent=(d.units>1?F(b.total)+' project total \u00b7 ':'')+b.term+'-mo base case';
       hc.textContent=b.coc.toFixed(1)+'%';hc.classList.toggle('neg',b.coc<0);
-      hcs.textContent='profit \u00f7 '+F(d.fin.loan/(d.units||1))+' loan per unit';
+      // v8.36: CoC = profit ÷ all-in; the target is the profit rule's % (the same test)
+      hcs.textContent='profit \u00f7 '+F(b.totalAllIn)+' all-in per unit \u00b7 target '+profitRuleLabels(d.fin.profitRule).pct;
     }else{
       hp.textContent='\u2014';hp.classList.remove('neg');hps.textContent='Set a Base ARV $/sf to see profit';
-      hc.textContent='\u2014';hc.classList.remove('neg');hcs.textContent='Profit \u00f7 loan per unit';
+      hc.textContent='\u2014';hc.classList.remove('neg');hcs.textContent='Profit \u00f7 all-in per unit';
     }
   }
   const set=(id,t)=>{const e=$(id);if(e)e.textContent=t||'';};
   set('uw-sum-plan',d.plan&&d.plan!=='\u2014'?(d.plan+(d.units>1?' \u00d7 '+d.units:'')+' \u00b7 '+F(d.cost.allInExLand)):'No plan yet');
   set('uw-sum-lf',F(d.cost.lotFactor));
   const rl=profitRuleLabels(d.fin.profitRule);
-  set('uw-sum-fin',d.fin.ltc+'% LTC \u00b7 '+d.fin.rate+'% \u00b7 '+d.terms.w+'/'+d.terms.b+'/'+d.terms.best+' mo \u00b7 rule '+rl.floor+' / '+rl.pct);
+  set('uw-sum-fin',d.fin.ltc+'% loan \u00b7 '+d.fin.rate+'% \u00b7 '+d.terms.w+'/'+d.terms.b+'/'+d.terms.best+' mo \u00b7 rule '+rl.floor+' / '+rl.pct);
   set('uw-sum-comps',d.compStats&&d.compStats.n?d.compStats.n+' comp'+(d.compStats.n===1?'':'s'):'None yet');
 }
 // hook recalcs by rebinding (originals untouched)
@@ -6393,6 +6478,7 @@ function serializeDeal(){
     choices:CHOICES.slice(),
     tapSig:_tapSig,rankSig:_rankSig,   // what the entry-time defaults last applied, so a reopen replays one still due
     tapManual:{w:isManual('tap-water'),s:isManual('tap-sewer')},   // v8.14: typed tap quotes stay typed on reopen
+    autoManual:Object.fromEntries(AUTO_FILL_FIELDS.map(id=>[id,isManual(id)])),   // v8.36: and so do the county / survey fills
     upgrades:Array.from(selectedUpgrades),
     structures:extraStructures.map(st=>({name:st.name,w:st.w,d:st.d,rot:st.rot||0,x:st.x,y:st.y,xFt:st.xFt,yFt:st.yFt})),   // v8.26
     comps:COMPS.map(c=>Object.assign({},c)),
@@ -6526,6 +6612,13 @@ function restoreDeal(d){
     if($('skip-sewer'))onSewerSkip();
     calcLF();calcBuildable();calcAll();calcFinancing();
     if(typeof renderFitCheck==='function')renderFitCheck();
+    // v8.36: the county fills (LF_AUTO_FIELDS: demo, clearing, grading, property tax) and the survey keep the typed-or-default
+    // state they were saved with, like the taps, so a County GIS lookup or a plan / Units change on a reopened deal still
+    // fills the ones nobody typed. Put back last, so every step above ran with them protected and the saved values stand. A
+    // file from before v8.36 has no record of it: they stay typed, as they always did.
+    {const am=(d.autoManual&&typeof d.autoManual==='object')?d.autoManual:null;
+     if(am)AUTO_FILL_FIELDS.forEach(id=>{const e=$(id);if(e&&am[id]===false)delete e.dataset.manual;});
+     renderTaxHint();}
     updateLinks();updateGISLink();   // step 1 built these before the street and ZIP were back
     updateDealPulse();
     // the resume bar's offer is stale now: the autosave is about to write this deal into its slot
@@ -6589,8 +6682,18 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.35', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.36', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.36',date:'Oct 2026',name:'The partners\u2019 money rules',items:[
+   'The loan is now 85% of the total project cost (land + build + every cost), the way our lender does it. Change it per deal under Financing. You bring the other 15% plus the closing costs (1% of the loan), the points and the doc fee. It used to be a 93% loan-to-cost.',
+   'Cash needed is now the full amount: cash at closing (our 15% + closing, points and doc fee) and cash through the hold (plus the interest and property tax for the Base term). Both show under Financing, in the live levers and on the PDF and Excel.',
+   'Cash on Cash is now profit \u00f7 all-in, like the deal sheet (it was profit \u00f7 loan). Its target is the profit rule\u2019s %, 15% by default, shown next to it.',
+   'Upgrades now get the GC fee, the same 14% as the build, like the deal sheet. They used to be added at menu price.',
+   'Loan months are now 12 / 9 / 8 (Worst / Base / Best), like the deal sheet. They were 10 / 8 / 6.',
+   'Survey is one front-end survey per project, from Phoenix\u2019s quote: $1,500 for one house on one lot, $3,000 when the project is split into lots (townhomes, a duet, the triplex, or more than one unit). It was $1,000 / $2,000. The per-house stakeout is in Slate\u2019s build.',
+   'Property tax now starts from the county bill: a County GIS lookup fills it in from the county\u2019s assessed value \u00d7 this year\u2019s county and town rates (Charlotte: 49.27\u00a2 + 29.3\u00a2 per $100). The note under the field shows the math. Type over it if you have the real bill.',
+   'New optional cost: Custom plans (architect / engineer), under Other Soft Costs. $0 unless an architect or engineer has to draw new plans; once per deal and financed like the other costs.',
+   'A deal saved before 8.36 keeps its own saved loan %, months, survey and tax. Check them when you reopen it.']},
  {v:'8.35',date:'Oct 2026',name:'County records back on (backup source)',items:[
    'Since about Oct 9 the county\u2019s main assessor list has been empty, so the Assessor record card was blank and the Street Check said \u201cNo assessor record\u201d. Both now read the county\u2019s backup tables when the main list gives nothing, and switch back by themselves once the county fixes it.',
    'When the backup is in use, the County GIS notes and the Street Check say so.',
@@ -6894,7 +6997,7 @@ updateDealPulse();
 <div class="deal-pulse" id="deal-pulse">
   <div class="dp-item"><span class="dp-lbl">All-In Total</span><span class="dp-val" id="dp-allin">&mdash;</span></div>
   <div class="dp-item"><span class="dp-lbl">Loan</span><span class="dp-val" id="dp-loan">&mdash;</span></div>
-  <div class="dp-item"><span class="dp-lbl">Cash Req.</span><span class="dp-val amb" id="dp-cash">&mdash;</span></div>
+  <div class="dp-item"><span class="dp-lbl">Cash at Close</span><span class="dp-val amb" id="dp-cash">&mdash;</span></div>
   <div class="dp-item"><span class="dp-lbl">Base Profit / Unit</span><span class="dp-val" id="dp-profit">&mdash;</span><span class="dp-sub" id="dp-coc"></span></div>
   <button class="dp-go" onclick="goTo(7)">Offer &rarr;</button>
 </div>
