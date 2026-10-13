@@ -635,6 +635,45 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **One street check, two callers (2026-10-01).** The handler only validates and sends; the work is `streetCheck()`,
   which `api/mcp.js` also calls. `/api/street` output must stay byte-identical when either side changes (see Street
   Data connector). `keep.rows` / `keep.subject` carry CAMA owner fields for the same-site rule: never send them.
+- **City records, traffic and demolition orders (v8.43).** For the street's parcels and the comparison area's
+  (the same rows the checks use), last `RECORD_MONTHS` (24) months:
+  - **Confirmed code violations** (`CodeEnforcementCasesAll`): Nuisance cases whose `Conclusion` says a violation was
+    found (`%Compliance%` or "Vehicle Towed"; dismissed, no-violation and open cases don't count), sorted by the section
+    they cite (`CASE_KINDS`: overgrowth 10-155, vehicles 10-165/166/167, lawn parking 14-216, junk 10-136/138; section
+    number and title, the same rule as `VIOLATIONS` in mcp.js), plus Housing cases whole. The City's "Parking" case type
+    doesn't cite 14-216, so it isn't lawn parking and isn't counted.
+  - **311 condition complaints** (`ServiceRequests311`, CC BY 4.0): the condition request types, then `COMPLAINT_KINDS`
+    by type and by keyword in TITLE for the "HNS HEALTH AND SANITATION" catch-all (yard: weeds, grass, trash,
+    dumping, debris, junk that isn't a vehicle; vehicles: vehicle, parking, parked; boarded). Shown, never
+    judged: the row is `info` and its "Higher" (`more`) never counts as weaker. Who calls 311 varies by street, and new
+    neighbours who call more would make a street read worse.
+  - **Counts only.** The records are fetched in one box around the street's and the area's parcel points (padded
+    ~700 ft) and kept by parcel id here: Code enforcement returns only `OBJECTID, ParcelId, CaseType`, 311 only
+    `OBJECTID, PID`, demolition orders only `OBJECTID, ParcelId`. Each kind is then matched on the City's server on
+    object ids (`returnIdsOnly`): `Conclusion`, `DetailedDescription` and `TITLE` sit only in the `where` and are never
+    requested. Flag any other `outFields` on these layers, any record text in the answer, or a 311 keyword list that
+    grows past things you see from the street. (A list of parcel ids in the `where` stalls the 311 layer for a minute;
+    a box answers in under 2 s.)
+  - **The check row** (`cases_per100`): street vs area per 100 parcels; Weaker = 3+ on the street and at least twice the
+    area's rate (an area at 0 compares as "far above"). It joins the verdict like any judged check.
+  - **Charlotte only.** Accela layer 25 (Code Enforcement Service Areas) says whether the lot is where the City's
+    records reach. Outside it the record rows are left out and a note says the towns keep no open records like these:
+    no records isn't a clean street. Flag a change that shows 0 for a lot outside the City.
+  - **Traffic** (`trafficAt()`): from the lot's own centreline point (the Street View camera spot), the nearest NCDOT
+    traffic segment within 40 ft (HPMS file, calendar year 2021; roads above Local only) and the City's thoroughfare
+    class of the same street by name (Accela layer 5, existing major / minor / freeway; matched on the name before the
+    street type, since the layer spells "Ave" where the centreline has "AV"). Busy = 10,000+ cars a day
+    (`BUSY_AADT`, judgement) or a major thoroughfare / freeway. No centreline point: `traffic` is null.
+  - **Demolition orders** (`CodeEnforcementOrderstoDemolish`, ~15 rows city-wide): a count for the street's parcels.
+  - A busy road or a demolition order turns "in-line" into "watch" and is named in every verdict. With no records and
+    no traffic (a layer down, or outside the City with no centreline) the in-line sentence is the v8.18 one.
+  - **Deadline.** The City's 311 server can stall for a minute, so the records and the traffic count share
+    `RECORDS_MS` (10 s) from when they start; past it they give up with an errors entry and the rest of the answer goes
+    out (`no-store`, like any partial answer). The City check (layer 25) goes first, so a town lot sends nothing else to
+    the City. `vercel.json` gives `api/street.js` a 30 s `maxDuration` (a check takes about 2-6 s; with the deadline
+    the worst case is about 13 s).
+  - This changes `/api/street` on purpose (new `records`, `traffic`, `params.record_months` / `busy_aadt`, two check
+    rows, the verdict text). `mode=view` is unchanged.
 - **Assessor rows come through `camaQuery()` (v8.35).** One `ctx` per request: once a query falls back to the backup
   tables, the rest of the request stays there, and the notes open with `camaBackupNote()`. camadata held one row per
   building, so a lot with two buildings counted twice; the backup holds one row per lot, which runs neighbourhood
@@ -651,8 +690,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     (1–3 PIDs, for a model reading the photos itself in a Claude chat) the outline comes drawn in red (1.1.0).
   It feeds no analyzer screen, save file, PDF or Excel.
 - **Read-only, public data, no secrets.** It's authless, like the other endpoints, and reads only Mecklenburg County,
-  City of Charlotte and NC OneMap public services. Flag a write, an auth token, a key, an env var or another data
-  source.
+  City of Charlotte and NC OneMap public services, plus NCDOT's public traffic segments (ArcGIS Online) through the
+  street check (v8.43). Flag a write, an auth token, a key, an env var or another data source.
 - **No Google, by any route** (the street check's rule, above).
   - Nothing from Google passes through the connector or reaches a model: no Street View, Static Maps, Maps JS, Places or
     Google geocodes.
@@ -742,7 +781,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Versioning.** The connector sits outside the analyzer. An `api/mcp.js`-only change doesn't bump `APP_VERSION` or
   the badge, because no analyzer screen changes; a change to street.js or gis.js output still does. Bump
   `SERVER_INFO.version` when a tool's input or output shape changes, since the Street Walk artifact is built against it
-  (1.1.0: `aerial_crops` `outline`).
+  (1.1.0: `aerial_crops` `outline`; 1.2.0, v8.43: `find_street`'s `profile` adds the street check's `records` and
+  `traffic`).
 - **Fair housing**, as in the street check: buildings, lots and land use only. Flag occupant, ownership-type or
   demographic data.
 

@@ -30,7 +30,8 @@ import { geocodeAddress, parcelAtPoint, findAttr } from './gis.js';
 import { inflateSync, deflateSync } from 'node:zlib';
 
 // 1.1.0 (2026-10-05): aerial_crops takes outline (an input shape change, so a minor bump; AGENTS.md)
-const SERVER_INFO = {name:'ttv-street-data', title:'TTV Street Data', version:'1.1.0'};
+// 1.2.0 (v8.43): find_street's profile carries the street check's City records and traffic (an output shape change)
+const SERVER_INFO = {name:'ttv-street-data', title:'TTV Street Data', version:'1.2.0'};
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];   // newest first; an unknown request gets the newest
 const UA = 'TTV-Street-Data/1.0 (+https://ttv-site-analyzer.vercel.app/api/mcp)';   // some county / state servers 403 bare agents
 
@@ -89,7 +90,7 @@ const VIOLATIONS = [
 
 const INSTRUCTIONS = [
   'TTV Street Data: public Mecklenburg County and City of Charlotte records, plus NC OneMap aerial photos, for Tide & Timber\'s street walks. Read-only.',
-  'find_street takes a street address or an 8-character parcel id (PID) and returns the houses on the lot\'s own stretch of street (1,000 ft each way): assessor facts, City code-enforcement cases opened in the last 24 months (type, dates and status only), and the analyzer\'s county street check (verdict, checks and notes).',
+  'find_street takes a street address or an 8-character parcel id (PID) and returns the houses on the lot\'s own stretch of street (1,000 ft each way): assessor facts, City code-enforcement cases opened in the last 24 months (type, dates and status only), and the analyzer\'s county street check (verdict, checks, City of Charlotte code-violation and 311-complaint counts, traffic, and notes).',
   'aerial_crops returns 220 ft x 220 ft NC OneMap orthophotos (natural colour, 0.5 ft per pixel, north up, flown in winter, leaf-off) centred on up to 6 parcels, with each parcel\'s outline in image pixel coordinates. The images carry no outline; draw it from rings_px. For a model reading the photos itself (e.g. in a Claude chat), pass outline:true and up to 3 pids: the subject parcel comes back outlined in red.',
   'No Google imagery or Google data passes through this server. streetview_url and maps_url are links for a person to walk the street; never fetch them, screenshot them or read them with a model.',
   'Owner names and inspector details are never returned. Every check is about buildings, lots and land use, never who lives there.',
@@ -101,7 +102,7 @@ const strList = {type:'array', items:str};
 const TOOLS = [
   {
     name:'find_street', title:'Find a street',
-    description:'Look up the subject lot\'s own stretch of street in Mecklenburg County from the county\'s public records. Pass an address (e.g. "2723 Dellinger Dr") or a pid (an 8-character parcel id such as "04118535"); one of the two is required, and a pid wins when both are given. An address must match the county\'s address points (house number and street, direction and type included); a ZIP or city helps choose. Returns the subject, every parcel on the same street within 1,000 ft each way (at most 80, sorted by house number, subject flagged; for a street with N and S halves, only the subject\'s half), each with kind (home: a house, town house, condo, duplex or triplex; vacant: an unbuilt house lot; commercial; other: apartments, common areas, parks, rights of way and the like), year built, heated sf, assessor grade, land use, last market sale and City code-enforcement cases opened in the last 24 months (type, opened, closed, status). Also the analyzer\'s county street check for the lot (profile: verdict, checks against its assessor neighbourhood, notes), the NC OneMap flight date for aerial_crops, and link-outs for a person: streetview_url (TTV\'s Street View page) and maps_url (Google Maps). Never pass those links to a model.',
+    description:'Look up the subject lot\'s own stretch of street in Mecklenburg County from the county\'s public records. Pass an address (e.g. "2723 Dellinger Dr") or a pid (an 8-character parcel id such as "04118535"); one of the two is required, and a pid wins when both are given. An address must match the county\'s address points (house number and street, direction and type included); a ZIP or city helps choose. Returns the subject, every parcel on the same street within 1,000 ft each way (at most 80, sorted by house number, subject flagged; for a street with N and S halves, only the subject\'s half), each with kind (home: a house, town house, condo, duplex or triplex; vacant: an unbuilt house lot; commercial; other: apartments, common areas, parks, rights of way and the like), year built, heated sf, assessor grade, land use, last market sale and City code-enforcement cases opened in the last 24 months (type, opened, closed, status). Also the analyzer\'s county street check for the lot (profile: verdict, checks against its assessor neighbourhood, records: City of Charlotte confirmed code violations and 311 condition complaints in the last 24 months as counts for the street and the area, with demolition orders, traffic: NCDOT cars a day and the City thoroughfare class of the lot\'s street, notes), the NC OneMap flight date for aerial_crops, and link-outs for a person: streetview_url (TTV\'s Street View page) and maps_url (Google Maps). Never pass those links to a model.',
     inputSchema:{type:'object', properties:{
       address:{type:'string', description:'Street address in Mecklenburg County, e.g. "2723 Dellinger Dr" or "1500 N Davidson St, Charlotte, NC 28206".'},
       pid:{type:'string', description:'8-character Mecklenburg parcel id (PID), e.g. "04118535" or "08308C99".'},
@@ -118,7 +119,7 @@ const TOOLS = [
       }, required:['pid','address','number','subject','kind','year_built','heated_sf','grade','land_use','last_sale','code_cases'], additionalProperties:false}},
       code_case_window_months:{type:'integer'},
       profile:{type:['object','null'], properties:{verdict:{type:['object','null']}, checks:{type:'array'}, street:{type:['object','null']},
-        neighborhood:{type:['object','null']}, notes:strList}},
+        neighborhood:{type:['object','null']}, records:{type:['object','null']}, traffic:{type:['object','null']}, notes:strList}},
       imagery:{type:'object', properties:{source:str, flight:strN, ft_per_px:{type:'number'}, crop_ft:{type:'number'}, crop_px:{type:'integer'}, licence:str},
         required:['source','flight','ft_per_px','crop_ft','crop_px','licence']},
       streetview_url:str, maps_url:strN, notes:strList, errors:strList,
@@ -382,7 +383,8 @@ async function findStreet(args, ctl){
     stretch_ft:STREET_FT,
     houses,
     code_case_window_months:CASE_MONTHS,
-    profile: sc.street ? {verdict:sc.verdict, checks:sc.checks, street:sc.street, neighborhood:sc.neighborhood, notes:sc.notes} : null,
+    profile: sc.street ? {verdict:sc.verdict, checks:sc.checks, street:sc.street, neighborhood:sc.neighborhood, records:sc.records||null,
+      traffic:sc.traffic||null, notes:sc.notes} : null,
     imagery:Object.assign({}, IMAGERY, {flight}),
     streetview_url:`https://ttv-site-analyzer.vercel.app/streetview.html?pid=${encodeURIComponent(pid)}`,
     maps_url:`https://www.google.com/maps/search/?api=1&query=${+lat.toFixed(7)},${+lng.toFixed(7)}`,

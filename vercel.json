@@ -6,6 +6,9 @@
     "api/comps.js": {
       "maxDuration": 30
     },
+    "api/street.js": {
+      "maxDuration": 30
+    },
     "api/accela.js": {
       "maxDuration": 60
     }
