@@ -75,7 +75,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   house to tear down (`demo-sqft` over 0) `calcLF()` lifts the total to at least `LF_HOUSE_MIN` ($30,000, Adam's minimum),
   once per deal ("per lot" on the decision sheet, against "per unit"), and shows the top-up as its own line ("Minimum with a
   House ($30k)") in the breakdown, `lfItems` and the PDF. The Excel model's LOT FACTOR row is `MAX(sum, IF(Demo Sq Ft>0,
-  30000, 0))`. Flag a floor applied per unit, or one that ignores demo.
+  minimum, 0))`, with the minimum an input (0 = off). The floor follows the `#lf-house-min` box (`houseMinOn()`), ticked
+  on a fresh page; `restoreDeal()` unticks it for a file saved before v8.39 (no such field), so reopening an old teardown
+  deal doesn't move its Max land. The band and the floor go to the Excel model as `lfSopBand` / `lfHouseMin`, outside
+  `lf`, because the deal-sheet hand-off sends `lf` as is (payload `v` 1 unchanged; `lotFactor` already carries both).
+  Flag a floor applied per unit, or one that ignores demo.
 - **Survey is one front-end survey per project (v8.36, Brian 2026-10-12).** `applySurveyDefault()` writes
   `SURVEY_ONE_LOT` ($1,500: one house on one lot) or `SURVEY_SPLIT` ($3,000: a plan with more than one unit, a custom
   footprint with Units (opt) over 1, or Units over 1), from Phoenix Land Surveying's 9/2/2026 quote rounded (the team's
@@ -861,7 +865,8 @@ most deals take.
     Plan & build box `#front-garage`, which takes the plan's `fg` tag when the plan changes (`_garageFor`, like
     `_unitsFor`) and saves with the deal; every other plan (fit grid, comparison, compare table) uses its `fg` tag. `fg` =
     Slate's plan stats list a garage (they don't say which way it faces; on our infill lots it's the front); Athens 3.0
-    and Canton aren't in the stats and carry none. The plan-fit message and the fit cards say when the garage setback
+    and Canton aren't in the stats and carry none. `sb-garage` is a read-only table lookup, so `onZoneChange()` blanks it
+    for no zone or a stub zone with no row (it used to keep the last zone's). The plan-fit message and the fit cards say when the garage setback
     was used. Flag a fit reader that drops the garage argument.
   - **The deal's Units, not one unit (v8.31, audit M2/G10, G8).** `unitsLayout()` / `planLayout(p, units)` /
     `dealLayout()` give the ground a unit count takes; the fit grid, the plan-fit message, the sub-lot card and

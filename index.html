@@ -1337,7 +1337,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="field"><label>Landscaping</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="landscaping" value="500" oninput="calcLF()"></div></div>
         </div>
         <div class="field"><label>Site Work to SOP Band</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="sop-band" value="0" min="0" oninput="markManual(this);calcLF()"></div><p class="note">The County GIS auto-fill tops the site work (clearing through landscaping) up to the SOP band&rsquo;s low end: $15,000 flat and clear, $25,000 trees or slope, $40,000 heavy trees and steep. Type your own figure, or 0, to replace it.</p></div>
-        <p class="note" style="margin-top:6px">With a house to tear down (Structure Size over 0), the lot factor is at least $30,000 (Adam&rsquo;s minimum, per lot).</p>
+        <label class="note" style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer"><input type="checkbox" id="lf-house-min" checked onchange="calcLF()"> <span>$30,000 minimum lot factor with a house to tear down (Structure Size over 0; Adam&rsquo;s minimum, once per deal). A deal saved before v8.39 reopens with this off, so its Max land doesn&rsquo;t move.</span></label>
       </div>
     </div>
     <div class="sidebar">
@@ -2514,9 +2514,11 @@ function onZoneChange(){
   if(_zoneRestoreNote&&_zoneRestoreNote.key!==key)_zoneRestoreNote=null;
   const ab=$('n2-abuts-row'),sbk=SETBACKS[key];if(ab)ab.style.display=(sbk&&sbk.rearNotAbuttingN1!=null)?'flex':'none';
   renderZoneNote();
-  if(!key){showLooseSetbacks();$('zone-udo-link').style.display='none';return;}
+  // v8.39: the garage setback is a read-only table lookup the fit check now reads (garageApplies()), so with no zone row
+  // it goes blank instead of keeping the last zone's
+  if(!key){$('sb-garage').value='';showLooseSetbacks();$('zone-udo-link').style.display='none';calcBuildable();return;}
   const sb=SETBACKS[key];
-  if(!sb){$('zone-info').style.display='';$('zone-udo-link').style.display='none';calcBuildable();return;}   // v8.15: a stub shows its (blank or leftover) setbacks and the note
+  if(!sb){$('sb-garage').value='';$('zone-info').style.display='';$('zone-udo-link').style.display='none';calcBuildable();return;}   // v8.15: a stub shows its (blank or leftover) setbacks and the note
   if(sb){
     $('sb-front').value=sb.front;$('sb-rear').value=zoneRear(sb);
     $('sb-sides').value=sb.sides;$('sb-corner').value=sb.corner;
@@ -2852,6 +2854,9 @@ function siteWorkSubtotal(){
 // v8.39 (partner decision 2026-10-09, 5c; Adam): with a house to tear down the lot factor is at least $30k, per lot (once
 // per deal, like the rest of the lot factor), not per unit
 const LF_HOUSE_MIN=30000;
+// The #lf-house-min box (ticked on a fresh page; restoreDeal() unticks it for a file saved before v8.39, which has no such
+// field, so reopening an old teardown deal doesn't move its Max land)
+const houseMinOn=()=>!!($('lf-house-min')&&$('lf-house-min').checked);
 function applyCountyDefaults(d){
   const filled=[];
   // An analyst's own figure can coincide with a default, so never infer intent from the value —
@@ -4692,7 +4697,7 @@ function calcLF(){
   const band=pv('sop-band');   // v8.39 (5a): the auto-fill's top-up to the SOP band
   const raw=demo+heritage+rowCity+rowLaborTotal+clearing+dirt+grading+sitePrep+util+framing+culverts+land+band;
   // v8.39 (5c): a house to tear down means at least LF_HOUSE_MIN, once per deal; the top-up shows as its own line
-  const houseTop=pv('demo-sqft')>0&&raw<LF_HOUSE_MIN?LF_HOUSE_MIN-raw:0;
+  const houseTop=houseMinOn()&&pv('demo-sqft')>0&&raw<LF_HOUSE_MIN?LF_HOUSE_MIN-raw:0;
   lotFactor=raw+houseTop; // GC fee now lives on Plan & Build (applied to the home build only)
   const items=[
     {l:'Demo / Teardown',v:demo},{l:`Heritage Trees (${pv('her-trees')} × $${herRate.toLocaleString()})`,v:heritage},
@@ -5865,7 +5870,9 @@ function collectModelInputs(d){
         clearing:parseFloat(($('clearing')||{value:'0'}).value)||0,
         dirtLoads:pv('dirt-loads'),dirtRate:pv('dirt-rate'),
         grading:pv('grading'),sitePrep:pv('site-prep'),utilities:pv('utilities'),
-        framing:pv('framing'),culverts:pv('culverts'),landscaping:pv('landscaping'),sopBand:pv('sop-band')},
+        framing:pv('framing'),culverts:pv('culverts'),landscaping:pv('landscaping')},
+    // v8.39: outside `lf`, which the deal-sheet hand-off sends as is (payload v1 unchanged; the sheet side is Chat 11's)
+    lfSopBand:pv('sop-band'),lfHouseMin:houseMinOn()?LF_HOUSE_MIN:0,
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
     // same raw values the screen uses; `||6` etc. would turn a deliberate 0 into a default and move Max Land
@@ -5931,9 +5938,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   inp('grad','Grading',M.lf.grading,MONEY); inp('sprep','Site Prep / Driveway',M.lf.sitePrep,MONEY);
   inp('utilc','Utilities (site)',M.lf.utilities,MONEY); inp('fram','Framing Labor',M.lf.framing,MONEY);
   inp('culv','Culverts',M.lf.culverts,MONEY); inp('lscape','Landscaping',M.lf.landscaping,MONEY);
-  inp('sopb','Site Work to SOP Band',M.lf.sopBand,MONEY);
-  // v8.39 (5c): at least $30,000 when there's a house to tear down (Demo Sq Ft over 0), as calcLF()
-  der('lot','LOT FACTOR (sum; at least $30,000 with a house)',`MAX(${dDemo}+${dHer}+${dRow}+${cClear}+${dDirt}+${IN['grad']}+${IN['sprep']}+${IN['utilc']}+${IN['fram']}+${IN['culv']}+${IN['lscape']}+${IN['sopb']},IF(${IN['demoS']}>0,${LF_HOUSE_MIN},0))`,MONEY);
+  inp('sopb','Site Work to SOP Band',M.lfSopBand,MONEY);
+  inp('hmin','Minimum Lot Factor with a House (0 = off)',M.lfHouseMin,MONEY);
+  // v8.39 (5c): at least that minimum when there's a house to tear down (Demo Sq Ft over 0), as calcLF()
+  der('lot','LOT FACTOR (sum; at least the minimum with a house)',`MAX(${dDemo}+${dHer}+${dRow}+${cClear}+${dDirt}+${IN['grad']}+${IN['sprep']}+${IN['utilc']}+${IN['fram']}+${IN['culv']}+${IN['lscape']}+${IN['sopb']},IF(${IN['demoS']}>0,${IN['hmin']},0))`,MONEY);
   sec('UTILITY TAPS');
   inp('tapw','Water Tap / Unit (0 if existing)',M.tapWaterU,MONEY);
   inp('taps','Sewer Tap / Unit (0 if septic)',M.tapSewerU,MONEY);
@@ -6615,6 +6623,7 @@ function restoreDeal(d){
     // today's default, which may have moved since. Reopening an old deal must not move its Max land.
     ['floor','pct'].forEach(k=>{const e=$('profit-'+k);if(e&&!vals['profit-'+k])e.value=PRE_V82_PROFIT_RULE[k];});
     // 1) jurisdiction first (rebuilds zones, autofills taps)
+    {const hm=$('lf-house-min');if(hm&&!vals['lf-house-min'])hm.checked=false;}   // v8.39: an older deal keeps its lot factor
     setV('addr-city');setV('county-sel');
     onCountyChange();
     // then the zone: onZoneChange() writes the zone table's setbacks, so it must run before the blanket restore, or
@@ -6780,7 +6789,7 @@ const APP_VERSION='8.39', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
  {v:'8.39',date:'Oct 2026',name:'The partners\u2019 lot rules',items:[
    'Lot factor: the County GIS auto-fill now tops each lot up to its SOP band: $15,000 flat and clear, $25,000 trees or slope, $40,000 heavy trees and steep. The extra shows as its own line, Site Work to SOP Band, under Clearing, Grading and Site Work. Type your own figure (or 0) to replace it. Most lots used to come in under their band, which made Max land too high.',
-   'With a house to tear down (Structure Size over 0), the lot factor is now at least $30,000, once per deal (Adam\u2019s minimum). The top-up shows as its own line in the breakdown, on the PDF and in Excel.',
+   'With a house to tear down (Structure Size over 0), the lot factor is now at least $30,000, once per deal (Adam\u2019s minimum). The top-up shows as its own line in the breakdown, on the PDF and in Excel. A deal saved before 8.39 reopens with the minimum off (a box under Clearing, Grading and Site Work), so its Max land doesn\u2019t move; tick it to apply it.',
    'Front-load garages: the fit check now sets a front-garage plan back to the zone\u2019s garage setback when it\u2019s deeper than the front setback (Mecklenburg N1-C to N1-F and N2: 20 ft against a 17 or 10 ft front). Plans whose Slate stats list a garage are ticked by themselves; the Front-load garage box under the plan changes it per deal.',
    'Built-upon area: the limit is now 24% of the lot. Over 5,000 sf is a stormwater warning, not part of the limit (it was the smaller of the two).',
    'PDF memo: the footprint now shows one unit and the whole building (or all the buildings), not just the plan\u2019s listed footprint.']},
