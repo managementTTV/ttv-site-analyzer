@@ -1,5 +1,10 @@
 {
   "functions": {
-    "api/mcp.js": { "maxDuration": 30 }
+    "api/mcp.js": {
+      "maxDuration": 30
+    },
+    "api/comps.js": {
+      "maxDuration": 30
+    }
   }
 }

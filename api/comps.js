@@ -126,6 +126,8 @@ const GUARD_X = 1.5, GUARD_MIN_REF = 5;
 // INFILL_FT of the lot's. On those lots the tool landed 33% within ±5% of the real sale (49% within ±10%, 4.3% low),
 // against 58% in new-build projects, so the page tells Pat to check the ARV (vet).
 const INFILL_FT = 300, INFILL_MIN = 3;
+// Sales come back SALES_PAGE at a time (the layer's maxRecordCount), up to SALES_MAX_PAGES pages (v8.42).
+const SALES_PAGE = 2000, SALES_MAX_PAGES = 10;
 
 // ArcGIS answers a bad field or where-clause with HTTP 200 and an {error:...} body, so check for it.
 async function ajPost(url, params){
@@ -141,52 +143,60 @@ const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 // (address, xcoord = latitude, ycoord = longitude, yearbuilt, heatedarea, bedrooms, fullbath, halfbath, grade,
 // landuse_description, gisacres, neighbordesc, bldgtype). Main layer first; for the PIDs it gives nothing for, the
 // backup tables (v8.34). used.backup counts the PIDs the backup answered; errors go to errs.
+// v8.42: CAMA_CONCURRENCY chunks at a time (they ran one after another; a 1.5 mi wide-area check has ~10 chunks).
+const CAMA_CONCURRENCY = 4;
 async function camaFetch(pids, errs, used){
-  const out = new Map();
-  for(let i=0;i<pids.length;i+=60){
-    const chunk = pids.slice(i,i+60), list = chunk.map(p=>`'${p}'`).join(',');
-    let mainErr = null;
-    try{
-      const j = await ajPost(`${CAMA_LAYER}/query`, {where:`pid IN (${list})`,
-        outFields:'pid,address,yearbuilt,heatedarea,bedrooms,fullbath,halfbath,grade,'
-                 +'landuse_description,xcoord,ycoord,gisacres,neighbordesc,bldgtype',
-        returnGeometry:'false', f:'json'});
-      // one row per building; a lot with two buildings comes back twice and the last row wins (audit C-L4, as before
-      // v8.34). The backup reads building 1 only.
-      (j.features||[]).forEach(f=>out.set(f.attributes.pid, f.attributes));
-    }catch(e){ mainErr = 'cama: '+e.message; }
-    // the PIDs the main layer didn't answer: all of them while it's empty, a fresh split now and then otherwise
-    const rest = chunk.filter(p=>!out.has(p));
-    if(!rest.length) continue;
-    const list2 = rest.map(p=>`'${p}'`).join(','), before = used.backup;
-    try{
-      const [pj, bj] = await Promise.all([
-        ajPost(`${CAMA_PARCELS}/query`, {where:`parcelid IN (${list2})`,
-          outFields:'parcelid,yearid,location_address,streetnumber,streetname,gis1,gis2,num_heatedarea,legalacres,neighborhood_description,landuse_description',
-          returnGeometry:'false', f:'json'}),
-        ajPost(`${CAMA_BUILDINGS}/query`, {where:`parcelid IN (${list2}) AND buildingsequence=1`,
-          outFields:'parcelid,yearid,yearbuilt,grade,buildingtype,bedrooms,fullbath,halfbath,finishedarea',
-          returnGeometry:'false', f:'json'})]);
-      const latest = (rows) => { const m = new Map();
-        (rows.features||[]).forEach(f=>{ const a=f.attributes, p=m.get(a.parcelid); if(!p || (a.yearid||0) > (p.yearid||0)) m.set(a.parcelid, a); });
-        return m; };
-      const P = latest(pj), B = latest(bj);
-      P.forEach((a, pid)=>{
-        const b = B.get(pid) || {};
-        // location_address is the main layer's own address format ("15004 ANNAN CT CHARLOTTE NC"); a pre-v8.34 row
-        // and a backup row for the same sale then read the same
-        out.set(pid, {pid, address:(a.location_address||'').trim() || [a.streetnumber, a.streetname].filter(Boolean).join(' ').trim() || null,
-          yearbuilt:b.yearbuilt||null, heatedarea:a.num_heatedarea!=null ? a.num_heatedarea : (b.finishedarea||null),
-          bedrooms:b.bedrooms||null, fullbath:b.fullbath||null, halfbath:b.halfbath||null, grade:b.grade||null,
-          landuse_description:a.landuse_description||null, xcoord:num(a.gis2), ycoord:num(a.gis1),
-          gisacres:a.legalacres>0 ? a.legalacres : null, neighbordesc:a.neighborhood_description||null,
-          bldgtype:(b.buildingtype||'').trim()||null});   // about 48k buildings carry a blank ' ' type
-        used.backup++;
-      });
-      if(mainErr && used.backup===before) errs.push(mainErr);   // the backup's answer stands in for a failed main layer
-    }catch(e){ if(mainErr) errs.push(mainErr); errs.push('cama_backup: '+e.message); }
-  }
+  const out = new Map(), chunks = [];
+  for(let i=0;i<pids.length;i+=60) chunks.push(pids.slice(i,i+60));
+  let next = 0;
+  const worker = async () => { while(next < chunks.length) await camaChunk(chunks[next++], out, errs, used); };
+  await Promise.all(Array.from({length:Math.min(CAMA_CONCURRENCY, chunks.length)}, worker));
   return out;
+}
+// one 60-PID chunk: the main layer, then the backup tables for the PIDs it gave nothing for
+async function camaChunk(chunk, out, errs, used){
+  const list = chunk.map(p=>`'${p}'`).join(',');
+  let mainErr = null;
+  try{
+    const j = await ajPost(`${CAMA_LAYER}/query`, {where:`pid IN (${list})`,
+      outFields:'pid,address,yearbuilt,heatedarea,bedrooms,fullbath,halfbath,grade,'
+               +'landuse_description,xcoord,ycoord,gisacres,neighbordesc,bldgtype',
+      returnGeometry:'false', f:'json'});
+    // one row per building; a lot with two buildings comes back twice and the last row wins (audit C-L4, as before
+    // v8.34). The backup reads building 1 only.
+    (j.features||[]).forEach(f=>out.set(f.attributes.pid, f.attributes));
+  }catch(e){ mainErr = 'cama: '+e.message; }
+  // the PIDs the main layer didn't answer: all of them while it's empty, a fresh split now and then otherwise
+  const rest = chunk.filter(p=>!out.has(p));
+  if(!rest.length) return;
+  const list2 = rest.map(p=>`'${p}'`).join(',');
+  let added = 0;   // this chunk's backup answers (used.backup is shared by chunks running at the same time)
+  try{
+    const [pj, bj] = await Promise.all([
+      ajPost(`${CAMA_PARCELS}/query`, {where:`parcelid IN (${list2})`,
+        outFields:'parcelid,yearid,location_address,streetnumber,streetname,gis1,gis2,num_heatedarea,legalacres,neighborhood_description,landuse_description',
+        returnGeometry:'false', f:'json'}),
+      ajPost(`${CAMA_BUILDINGS}/query`, {where:`parcelid IN (${list2}) AND buildingsequence=1`,
+        outFields:'parcelid,yearid,yearbuilt,grade,buildingtype,bedrooms,fullbath,halfbath,finishedarea',
+        returnGeometry:'false', f:'json'})]);
+    const latest = (rows) => { const m = new Map();
+      (rows.features||[]).forEach(f=>{ const a=f.attributes, p=m.get(a.parcelid); if(!p || (a.yearid||0) > (p.yearid||0)) m.set(a.parcelid, a); });
+      return m; };
+    const P = latest(pj), B = latest(bj);
+    P.forEach((a, pid)=>{
+      const b = B.get(pid) || {};
+      // location_address is the main layer's own address format ("15004 ANNAN CT CHARLOTTE NC"); a pre-v8.34 row
+      // and a backup row for the same sale then read the same
+      out.set(pid, {pid, address:(a.location_address||'').trim() || [a.streetnumber, a.streetname].filter(Boolean).join(' ').trim() || null,
+        yearbuilt:b.yearbuilt||null, heatedarea:a.num_heatedarea!=null ? a.num_heatedarea : (b.finishedarea||null),
+        bedrooms:b.bedrooms||null, fullbath:b.fullbath||null, halfbath:b.halfbath||null, grade:b.grade||null,
+        landuse_description:a.landuse_description||null, xcoord:num(a.gis2), ycoord:num(a.gis1),
+        gisacres:a.legalacres>0 ? a.legalacres : null, neighbordesc:a.neighborhood_description||null,
+        bldgtype:(b.buildingtype||'').trim()||null});   // about 48k buildings carry a blank ' ' type
+      used.backup++; added++;
+    });
+    if(mainErr && !added) errs.push(mainErr);   // the backup's answer stands in for a failed main layer
+  }catch(e){ if(mainErr) errs.push(mainErr); errs.push('cama_backup: '+e.message); }
 }
 function median(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); const m=s.length>>1;
   return s.length%2 ? s[m] : +((s[m-1]+s[m])/2).toFixed(2); }
@@ -232,7 +242,8 @@ function vetOf(out){
   const reasons = [], inf = out.infill;
   if(!out.arv) reasons.push(out.params.subjectSf ? 'There\u2019s no suggested ARV, so it\u2019s priced by hand.' : 'No plan size was sent, so there\u2019s no suggested ARV.');
   else if(out.confidence && out.confidence.level!=='high') reasons.push(`Confidence is ${out.confidence.level.toUpperCase()}, not HIGH.`);
-  if(!inf || !inf.checked) reasons.push(`The new builds within ${INFILL_FT} ft couldn\u2019t be counted, so the lot may be infill.`);
+  if(inf && inf.skipped){ /* ?infill=0: the caller has the count from another search */ }
+  else if(!inf || !inf.checked) reasons.push(`The new builds within ${INFILL_FT} ft couldn\u2019t be counted, so the lot may be infill.`);
   else if(inf.infill) reasons.push(`Infill lot: ${inf.new_builds} new build${inf.new_builds===1?'':'s'} (built ${inf.min_year}+) within ${INFILL_FT} ft, fewer than ${INFILL_MIN}.`);
   return {check:reasons.length>0, reasons,
     rule:`Pat checks the ARV when confidence isn\u2019t HIGH or the lot is infill (fewer than ${INFILL_MIN} new builds within ${INFILL_FT} ft).`};
@@ -278,6 +289,7 @@ export default async function handler(req, res){
   const product = PRODUCT_TYPES[(q.product||'').toLowerCase()] ? q.product.toLowerCase() : 'any';
   const finish = FINISH_GRADES[(q.finish||'').toLowerCase()] ? q.finish.toLowerCase()
                : (q.finish||'').toLowerCase()==='any' ? 'any' : 'standard';
+  const countInfill = q.infill !== '0';   // v8.42: ?infill=0 skips the new-builds-within-300-ft count
 
   const out = { subject:null, params:{pid,radius,months,wideMonths,minYear,solidYear,minPrice,subjectSf,product,finish},
                 comps:[], summary:null, arv:null, rule:null, guard:null, infill:null, vet:null, flags:[], notes:[], errors:[] };
@@ -287,6 +299,8 @@ export default async function handler(req, res){
   let infillP = Promise.resolve(null);
   const settle = async () => {
     const nb = await infillP;
+    if(!countInfill){ out.infill = {checked:false, skipped:true, new_builds:null, infill:null, radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN};
+      out.vet = vetOf(out); return; }
     const known = nb && !(nb.partial && nb.count<INFILL_MIN);
     out.infill = known ? {checked:true, new_builds:nb.count, infill:nb.count<INFILL_MIN, partial:!!nb.partial, radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN}
                        : {checked:false, new_builds:nb?nb.count:null, infill:null, partial:!!(nb&&nb.partial), radius_ft:INFILL_FT, min_year:minYear, min_new_builds:INFILL_MIN};
@@ -330,7 +344,7 @@ export default async function handler(req, res){
     }
     if(subjLat==null || subjLng==null)
       out.flags.push(`The lot’s location couldn’t be found, so the ${radius} mi radius wasn’t applied: check every row by hand.`);
-    else infillP = newBuildsNear(pid, centre, subjLat, subjLng, minYear)
+    else if(countInfill) infillP = newBuildsNear(pid, centre, subjLat, subjLng, minYear)
       .catch(e=>{ out.errors.push('infill_check: '+e.message); return null; });
 
     // 2) every recorded sale in the envelope over the window. ArcGIS takes a rectangle, so this
@@ -351,13 +365,22 @@ export default async function handler(req, res){
       .then(j=>(j.features||[]).filter(f=>f.geometry && f.geometry.paths)
         .map(f=>({name:(f.attributes && f.attributes.WholeStreet)||'a major road', paths:f.geometry.paths})))
       .catch(e=>{ out.errors.push('major_roads: '+e.message); return null; });
-    const sj = await ajPost(`${SALES_LAYER}/query`, {
-      geometry:env, geometryType:'esriGeometryEnvelope', inSR:String(SR),
-      spatialRel:'esriSpatialRelIntersects',
-      where:`saledate >= DATE '${since}' AND saleprice > ${minPrice}`,
-      outFields:'parcelid,saleprice,saledate,salesvalidity,landuse,soldasvacantflag,naldesc,legalreference,transferid',
-      returnGeometry:'false', f:'json'});
-    const allSales = (sj.features||[]).map(f=>f.attributes);
+    // v8.42: paged. The layer answers at most 2,000 rows a request and says exceededTransferLimit past that; a 0.5 mi box
+    // stays under it, a 1.5 mi wide-area check in a busy pocket may not, and a cut-off list would drop sales silently.
+    const allSales = [];
+    for(let off=0, pages=0; ; off+=SALES_PAGE){
+      const sj = await ajPost(`${SALES_LAYER}/query`, {
+        geometry:env, geometryType:'esriGeometryEnvelope', inSR:String(SR),
+        spatialRel:'esriSpatialRelIntersects',
+        where:`saledate >= DATE '${since}' AND saleprice > ${minPrice}`,
+        outFields:'parcelid,saleprice,saledate,salesvalidity,landuse,soldasvacantflag,naldesc,legalreference,transferid',
+        orderByFields:'objectid', resultOffset:String(off), resultRecordCount:String(SALES_PAGE),
+        returnGeometry:'false', f:'json'});
+      const fs = sj.features||[];
+      fs.forEach(f=>allSales.push(f.attributes));
+      if(!sj.exceededTransferLimit || !fs.length) break;
+      if(++pages >= SALES_MAX_PAGES){ out.flags.push(`Over ${allSales.length.toLocaleString()} sales in the search box: only the first ${allSales.length.toLocaleString()} were read.`); break; }
+    }
     out.notes.push(`${allSales.length} recorded sales in the ${radius} mi search box since ${since}`);
     // C-F2 (v8.34): one deed can convey several parcels, and the sales layer repeats the deed's whole price on every
     // one of them. A deed is its book-page (legalreference) on one date at one price; transferid when there's no
