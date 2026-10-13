@@ -73,7 +73,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   0.9933, 4 is 0.99, 6 is 0.9867. Evidence: in 196 hot-ZIP rows, inner units sold a median 4.2% under the ends of the same
   row (1.7% per sf; lower in 158). Every reader of $/sf × sf applies it: `calcScenarios`, `maxLandSolve`, `baseProfitAt`,
   `getReportData` (`arvFactor`, `innerUnits`; the PDF sensitivity grid), `dealForPlan` (with that plan's own `u`, so the
-  deal's column in Compare builds still equals `getReportData().scenarios`) and Excel (Inputs "ARV factor for inner units",
+  deal's column in Compare builds still equals `getReportData().scenarios`) and Excel (Inputs "ARV factor for inner units", a formula on Inputs › Units for a row or the triplex, 1 otherwise,
   read by Scenarios row 15 and the Sensitivity grid). The comps' $/sf, Apply and the comps box don't change: a sale's
   $/sf is one unit's, ends and inner units mixed. The locked deal sheet prices every unit at $/sf × sf, so the hand-off
   adds a note (`innerUnitNotes()`) saying how much higher the sheet's ARV is. The `#inner-cut` box (`arvFactorFor()`,

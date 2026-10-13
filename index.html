@@ -1137,7 +1137,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="field"><label for="arv-b">Base ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-b" placeholder="your comp $/sf" oninput="calcScenarios()"></div></div>
         <div class="field"><label for="arv-best">Best ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()"></div></div>
       </div>
-      <label id="inner-cut-row" class="note" style="display:none;align-items:center;gap:8px;margin-top:8px;cursor:pointer"><input type="checkbox" id="inner-cut" checked onchange="calcAll();calcScenarios()"> <span>Inner units of a townhome row or the triplex sell 2% less per sq ft than the end units (partner pick). A deal saved before v8.42 reopens with this off, so its Max land doesn&rsquo;t move.</span></label>
+      <label id="inner-cut-row" class="note" style="display:none;align-items:center;gap:8px;margin-top:8px;cursor:pointer"><input type="checkbox" id="inner-cut" checked onchange="calcAll();calcScenarios()"> <span>Inner units of a townhome row or the triplex sell 2% less per sq ft than the end units (partner pick; here and in Compare builds). A deal saved before v8.42 reopens with this off, so its Max land doesn&rsquo;t move.</span></label>
       <div id="arv-check" class="arv-check" style="display:none">
         <div id="arv-check-vet" role="status"></div>
         <div id="arv-check-wide" style="display:none;margin-top:6px;color:var(--text-mid)"></div>
@@ -2049,7 +2049,10 @@ async function pullCountyComps(){
       say(vetBox+esc((d.rule&&d.rule.label)||('No new-build sales found within 0.5 mi in the last '+((d.params&&d.params.months)||12)+' months.'))
         +(errs.length?'<div style="color:var(--text-dim);margin-top:4px;font-size:11px">Also: '+errs.map(esc).join(' \u00b7 ')+'</div>':'')
         +(replaced?'<div style="margin-top:4px">The '+replaced+' comps from the last pull were taken out of the table.</div>':'')
-        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):''),'var(--amber)');
+        +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):'')
+        +'<div class="county-wide" style="display:none;margin-top:6px;font-size:12px"></div>','var(--amber)');
+      // v8.42: an infill lot with no sales nearby is where the 1.5 mi number helps most
+      if(tool&&d.infill&&d.infill.infill&&sf&&_arvTool===tool)checkWideArea(Q,pid,gen,tool);
       return;
     }
     // Nearest first; outside the ARV set, keep it to a readable dozen.
@@ -5370,7 +5373,7 @@ function calcScenarios(){
   const T=getTerms();
   const rule=getProfitRule(), ruleL=profitRuleLabels(rule);
   const arvF=dealArvFactor(), inner=innerCount(currentPlanObj(),units);   // v8.42: inner units
-  {const r=$('inner-cut-row');if(r)r.style.display=innerUnitCount(currentPlanObj(),units)>0?'flex':'none';}
+  {const r=$('inner-cut-row');if(r)r.style.display='flex';}   // shown always: Compare builds prices other rows with it too
 
   ['w','b','best'].forEach(k=>{
     const arvId=k==='w'?'arv-w':k==='b'?'arv-b':'arv-best';
@@ -6213,6 +6216,7 @@ function collectModelInputs(d){
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
     arvBase:mv('arv-b'),arvWorst:rawW>0?rawW:'',arvBest:rawBest>0?rawBest:'',
     arvFactor:dealArvFactor(),   // v8.42: inner units
+    innerType:(()=>{const pl=currentPlanObj();return !innerCutOn()||!pl?'':pl.t==='th'?'th':(pl.t==='mf'&&(pl.u||1)===3)?'mf3':'';})(),
     moneyNotes:{land:readMoney('land-cost').note||'',arvB:readMoney('arv-b').note||'',arvW:readMoney('arv-w').note||'',arvBest:readMoney('arv-best').note||''},
     termW:d.terms.w,termB:d.terms.b,termBest:d.terms.best,termDefaults:termDefaults(),termMax:parseFloat(($('term-b')||{}).max)||36,
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
@@ -6254,7 +6258,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   const der=(key,label,formula,fmt)=>{ir++;wsI.getCell('A'+ir).value=label;wsI.getCell('A'+ir).font={italic:true,color:{argb:'FF566B82'},name:'Arial'};const c=wsI.getCell('B'+ir);c.value={formula};if(fmt)c.numFmt=fmt;c.font={name:'Arial',bold:true};c.fill=fill(CREAM);if(key)IN[key]='B'+ir;return 'B'+ir;};
   sec('DEAL'); inp('addr','Property Address',M.address); inp('county','County',M.county); inp('zone','Zone',M.zone); inp('units','Units',M.units);
   sec('PLAN'); inp('plan','Plan',M.planName); inp('sf','Sq Ft / Unit',M.sf,SF);
-  inp('arvF','ARV factor for inner units (1 = none; −2% $/sf each)',M.arvFactor==null?1:M.arvFactor,'0.0000');   // v8.42
+  {const t=M.innerType;   // v8.42: 'th' (a row), 'mf3' (the triplex) or '' (none, or the box is off)
+   if(t==='th')der('arvF','ARV factor for inner units (row: ends 1, inner −2%)',`1-0.02*MAX(0,ROUND(${IN['units']},0)-2)/MAX(1,ROUND(${IN['units']},0))`,'0.0000');
+   else if(t==='mf3')der('arvF','ARV factor for inner units (triplex: 1 inner per building, −2%)',`1-0.02*INT(MAX(1,ROUND(${IN['units']},0))/3)/MAX(1,ROUND(${IN['units']},0))`,'0.0000');
+   else inp('arvF','ARV factor for inner units (1 = none)',1,'0.0000');}
   inp('base',M.customBuild?'Custom Plan Build Cost / Unit (as entered)':'Slate Base Cost / Unit',M.baseUnit,MONEY); inp('gcfee','GC Fee % (on build)',M.gcFeePct,PCT);
   // v8.13: a custom Build Cost is used exactly as the app does (no rounding to whole dollars)
   der('build','Build Cost / Unit (= base \u00d7 (1+fee))',M.customBuild?`${IN['base']}*(1+${IN['gcfee']})`:`ROUND(${IN['base']}*(1+${IN['gcfee']}),0)`,MONEY);
