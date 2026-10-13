@@ -748,7 +748,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.33 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.35 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1444,8 +1444,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div id="comps-warn" class="warn" style="display:none" role="status"></div>
     <div id="county-comps-msg" style="display:none;margin-top:10px;border:1px solid rgba(94,128,149,0.35);border-radius:8px;padding:10px 12px;background:rgba(94,128,149,0.08);font-size:12.5px"></div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:12px;font-size:12px;color:var(--text-mid)" title="The team rule: sales from the last 12 months, within 0.5 mi, on this side of the major roads, of the same product and finish. The search widens one rule at a time only when too few sales meet it, at lower confidence.">
-      <label>County comps: comp against <select id="comps-product"><option value="auto">the plan&rsquo;s product</option><option value="sfh">single-family</option><option value="th">townhomes</option><option value="duet">duets (attached)</option><option value="any">any product</option></select></label>
-      <label>Finish <select id="comps-finish"><option value="standard">Slate standard (county grade Average&ndash;Good)</option><option value="upgraded">upgraded (adds Very Good)</option><option value="any">any, incl. luxury</option></select></label>
+      <label>County comps: comp against <select id="comps-product" onchange="checkCountyCompsStale()"><option value="auto">the plan&rsquo;s product</option><option value="sfh">single-family</option><option value="th">townhomes</option><option value="duet">duets (attached)</option><option value="any">any product</option></select></label>
+      <label>Finish <select id="comps-finish" onchange="checkCountyCompsStale()"><option value="standard">Slate standard (county grade Average&ndash;Good)</option><option value="upgraded">upgraded (adds Very Good)</option><option value="any">any, incl. luxury</option></select></label>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
       <button class="btn btn-ghost" id="county-comps-btn" onclick="pullCountyComps()" title="Recent new-construction sales from Mecklenburg County records">&#128225; Pull new-build comps (Meck)</button>
@@ -1803,7 +1803,12 @@ function renderShortlist(){
 }
 function addComp(){COMPS.push({addr:'',sqft:'',sold:'',adj:'',date:'',dist:'',mom:'',notes:'',url:''});renderComps();renderShortlist();}
 function removeComp(i){COMPS.splice(i,1);renderComps();}
-function onComp(i,f,v){if(COMPS[i]){COMPS[i][f]=v;renderComps();}}
+function onComp(i,f,v){if(COMPS[i]){if(isCountyComp(COMPS[i]))COMPS[i].src='county-edited';COMPS[i][f]=v;renderComps();}}
+// v8.34 (C-F4): rows a county pull added carry src:'county', the parcel they were pulled for (srcPid) and the comp's own
+// parcel (cpid), so the next pull replaces them instead of stacking a second set on top. A pulled row you edit becomes
+// yours (src:'county-edited'): a pull keeps it and doesn't add that sale again. Rows pulled before v8.34 carry no tag;
+// their Other Notes end with the pull's "solid" or "context" tier, which a typed note doesn't.
+const isCountyComp=c=>!!c&&(c.src==='county'||(!c.src&&/(^| \u00b7 )(solid|context)$/.test(String(c.notes||''))));
 // v8.12 COMPS TABLE CELLS. Sq Ft, Sold $ and Adjustments are free text, so a pasted "$352,500" works. The old
 // compNum() stripped "$", commas and spaces and ran parseFloat, so "352.5k" was a $352.50 sale and "352,5" was
 // $3,525, and either one fed the median $/sf that "Apply median" writes into Base ARV, with no warning. The cells
@@ -1853,15 +1858,32 @@ function compPPSF(c){return readComp(c).ppsf;}
 // R: COMPS already read by readComp(), when the caller has them
 function compIssues(R){
   R=R||COMPS.map(readComp);
-  return COMPS.map((c,i)=>{const n=R[i].notes, a=String(c.addr||'').trim();
+  const out=COMPS.map((c,i)=>{const n=R[i].notes, a=String(c.addr||'').trim();
     return n.length?{i,msg:`Comp ${i+1}${a?' ('+a+')':''}: ${n.join(' ')}`}:null;}).filter(Boolean);
+  // v8.34 (C-F4): county rows pulled for a parcel that isn't this deal's (the address moved since the pull)
+  const g=(typeof window!=='undefined'&&window._lastGis)||null;
+  const other=COMPS.filter(c=>c.src==='county'&&c.srcPid&&!(g&&g.pid===c.srcPid));
+  if(other.length)out.push({i:-1,msg:`${other.length} county comp${other.length===1?' was':'s were'} pulled for parcel ${other[0].srcPid}, which isn\u2019t this deal\u2019s County GIS parcel${g&&g.pid?' ('+g.pid+')':' (run the auto-fill)'}. Pull comps again to replace ${other.length===1?'it':'them'}.`});
+  return out;
 }
 function compStats(){
-  const v=COMPS.map(compPPSF).filter(x=>x>0).sort((a,b)=>a-b);
+  const R=COMPS.map(readComp).filter(r=>r.ppsf>0);
+  const v=R.map(r=>r.ppsf).sort((a,b)=>a-b);
   const avg=v.length?v.reduce((a,b)=>a+b,0)/v.length:0;
   const median=v.length?(v.length%2?v[(v.length-1)/2]:(v[v.length/2-1]+v[v.length/2])/2):0;
   const min=v.length?v[0]:0,max=v.length?v[v.length-1]:0;
-  return {n:v.length,avg,median,min,max};
+  // v8.34 (C-F3): the highest counted sale (Sold $ + Adjustments), the SOP's ARV cap
+  const cap=R.length?Math.max(...R.map(r=>r.sold+r.adj)):0;
+  return {n:v.length,avg,median,min,max,cap};
+}
+// v8.34 (C-F3): the comps table's suggested ARV for sf square feet, capped the way /api/comps caps the county box:
+// $/sf (the median unless psf is given) × sf, but never above the highest sale in the table (SOP: never let $/sf math
+// run past a real sale). Before, the box said $767,500 on Katonah while the table, Apply median, the PDF and Excel said
+// $836,882. {raw, arv, capped, psf}: psf is what Apply writes into Base ARV.
+function compArv(st,sf,psf){
+  psf=psf==null?st.median:psf;
+  const raw=psf*sf, capped=sf>0&&st.cap>0&&raw>st.cap, arv=capped?st.cap:raw;
+  return {raw,arv,capped,psf:capped?arv/sf:psf};
 }
 function renderComps(){
   const t=$('comps-table');if(!t)return;
@@ -1887,6 +1909,12 @@ function renderComps(){
       +'</tr>';
   });
   h+='</tbody>'; t.innerHTML=h;
+  renderCompsSummary(R);
+}
+// The line above the table and the note under it. v8.34: also run from calcAll, so a plan change re-prices the
+// suggested ARV at the new plan's sf (it used to keep the old plan's until the table was edited).
+function renderCompsSummary(R){
+  R=R||COMPS.map(readComp);
   const warn=$('comps-warn');
   if(warn){const w=compIssues(R).map(x=>x.msg).join(' ');warn.textContent=w;warn.style.display=w?'':'none';}
   const st=compStats(), sum=$('comps-summary'), left=R.filter(r=>r.left).length;
@@ -1894,7 +1922,8 @@ function renderComps(){
     if(!st.n){sum.innerHTML=left?'No comp can be counted yet \u2014 see the note under the table.':'Add comps to see blended adjusted $/sf.';}
     else{
       const subjSf=(typeof sfPerUnit!=='undefined'?sfPerUnit:0)||0;
-      const arv=subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf): <b>$${Math.round(st.median*subjSf).toLocaleString()}</b>`:'';
+      const A=compArv(st,subjSf);
+      const arv=subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf${A.capped?', capped at the highest sale':''}): <b>$${Math.round(A.arv).toLocaleString()}</b>${A.capped?` = $${Math.floor(A.psf)}/sf`:''}`:'';
       sum.innerHTML=`Comps: <b>${st.n}</b>${left?` (${left} left out)`:''} &nbsp;\u00b7&nbsp; Median adj $/SF: <b>$${st.median.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Avg: <b>$${st.avg.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Range: <b>$${st.min.toFixed(0)}\u2013$${st.max.toFixed(0)}</b>${arv}`;
     }
   }
@@ -1917,11 +1946,8 @@ async function pullCountyComps(){
   }
   const county=($('county-sel')||{}).value||'';
   if(county&&!/mecklenburg/i.test(county)){ say('County records are wired for <b>Mecklenburg</b> only. For '+county+', pull comps manually or from DealMachine.','var(--amber)'); return; }
-  const sf=sfPerUnit>0?sfPerUnit:'';
-  // v8.23: the team rule. Comp the product the plan builds (or what the analyst picked) at its finish.
-  const plan=currentPlanObj(), pick=($('comps-product')||{}).value||'auto';
-  const product=pick!=='auto'?pick:(plan&&['sfh','th','duet','mf'].includes(plan.t)?plan.t:'any');
-  const finish=($('comps-finish')||{}).value||'standard';
+  const Q=countyCompsQuery(), sf=Q.sf, product=Q.product, finish=Q.finish;
+  _countyPull=null;
   if(btn){btn.disabled=true;btn.textContent='Pulling\u2026';}
   say('Searching county sales records\u2026');
   const gen=_dealGen;
@@ -1929,16 +1955,39 @@ async function pullCountyComps(){
   try{
     const url='/api/comps?pid='+encodeURIComponent(pid)+'&radius=0.5&months=12&product='+product+'&finish='+finish+(sf?('&sf='+sf):'');
     const r=await fetch(url);
-    const d=await r.json();
+    let d=null; try{d=await r.json();}catch(_){ }
     if(gen!==_dealGen)return;   // another deal was opened meanwhile: these comps are the old one's
+    if(gis.addrSig&&gis.addrSig!==gisAddressSignature())return;   // v8.34: the address moved mid-pull: these are the old parcel's
+    if(!d){ say('Comps lookup failed: the server answered '+r.status+' with no readable result.','var(--red)'); return; }
     if(d.error){ say('Comps lookup failed: '+esc(d.error),'var(--red)'); return; }
+    // v8.34 (C-F7): the server answers 200 with errors[] when a county layer is down. Read with no rows, that used to
+    // say "no new-build sales found", which is a market fact the data never showed.
+    const errs=(d.errors||[]).map(String);
+    // only the parcel or assessor look-ups failing make an empty answer meaningless; a road or address layer doesn't
+    const dataDown=errs.some(e=>/^(county_records|cama|subject_parcel|fatal|No parcel geometry)/.test(e));
     // Every comp behind the suggested ARV goes in the table, so its median is the rule's. With no ARV (no plan sf),
     // the sales that meet the whole team rule, nearest 12, or failing those the window's new builds.
     const used=(d.comps||[]).filter(c=>c.used);
     const meet=(d.comps||[]).filter(c=>c.meets_rule);
     const rows=used.length?used:meet.length?meet:(d.comps||[]).filter(c=>(c.tier==='solid'||c.tier==='context')&&c.in_window!==false);
+    if(!rows.length&&dataDown){
+      say('<b>County records didn\u2019t answer</b>, so this is not a \u201cno sales\u201d result. Try again later, or add comps by hand.'
+        +'<div style="color:var(--text-dim);margin-top:4px;font-size:11px">'+errs.map(esc).join(' \u00b7 ')+'</div>','var(--red)');
+      return;
+    }
+    // v8.34 (C-F4): this pull replaces the last one's rows. Typed rows and pulled rows you edited stay.
+    const kept=COMPS.filter(c=>!isCountyComp(c));
+    const editedPids=new Set(kept.filter(c=>c.src==='county-edited'&&c.cpid).map(c=>c.cpid));
+    // a pre-v8.34 pulled row edited since carries no cpid: match it on its address instead
+    const addrKey=a=>String(a||'').replace(/ \(builder sale\)$/,'').trim().toUpperCase();
+    const editedAddrs=new Set(kept.filter(c=>c.src==='county-edited'&&!c.cpid).map(c=>addrKey(c.addr)));
+    const replaced=COMPS.length-kept.length;
+    COMPS.length=0; kept.forEach(c=>COMPS.push(c));
     if(!rows.length){
-      say(esc((d.rule&&d.rule.label)||'No new-build sales found within 0.5 mi in the last 24 months.')
+      renderComps(); scheduleAutosave();
+      say(esc((d.rule&&d.rule.label)||('No new-build sales found within 0.5 mi in the last '+((d.params&&d.params.months)||12)+' months.'))
+        +(errs.length?'<div style="color:var(--text-dim);margin-top:4px;font-size:11px">Also: '+errs.map(esc).join(' \u00b7 ')+'</div>':'')
+        +(replaced?'<div style="margin-top:4px">The '+replaced+' comps from the last pull were taken out of the table.</div>':'')
         +((d.notes||[]).length?('<div style="color:var(--text-dim);margin-top:4px">'+d.notes.map(esc).join(' \u00b7 ')+'</div>'):''),'var(--amber)');
       return;
     }
@@ -1946,8 +1995,8 @@ async function pullCountyComps(){
     rows.sort((a,b)=>(a.distance_mi??99)-(b.distance_mi??99));
     const take=used.length?rows:rows.slice(0,12);
     const PROD={sfh:'single-family',th:'townhouse',plex:'plex'};
-    take.forEach(c=>{
-      COMPS.push({addr:(c.address||c.pid)+(c.builder_sale?' (builder sale)':''),
+    take.filter(c=>!editedPids.has(c.pid)&&!editedAddrs.has(addrKey(c.address||c.pid))).forEach(c=>{
+      COMPS.push({src:'county',srcPid:pid,cpid:c.pid,addr:(c.address||c.pid)+(c.builder_sale?' (builder sale)':''),
         sqft:c.heated_sf?String(Math.round(c.heated_sf)):'',
         sold:c.sale_price?String(Math.round(c.sale_price)):'',
         adj:'', date:c.sale_date||'',
@@ -1957,19 +2006,24 @@ async function pullCountyComps(){
           c.grade?(c.grade+(c.finish==='luxury'?' (luxury)':c.finish==='upgraded'?' (above Slate standard)':'')):'',
           c.size_vs_plan_pct!=null?((c.size_vs_plan_pct>0?'+':'')+c.size_vs_plan_pct+'% sf vs plan'):'',
           c.across?('across '+c.across):'',c.in_window===false?'older than 12 mo':'',
+          c.unverified?'unverified (county review pending)':'',
+          c.deed_parcels>1?('deed also covers '+(c.deed_parcels-1)+' other parcel'+(c.deed_parcels>2?'s':'')):'',
           c.tier==='solid'?'solid':'context'].filter(Boolean).join(' \u00b7 '),
         url:''});
     });
     renderComps(); if(typeof renderShortlist==='function')renderShortlist();
+    scheduleAutosave();   // C-L8: a pull changes the deal
     const S=d.summary&&d.summary.solid, N=d.summary&&d.summary.new_build;
     const money=n=>'$'+Math.round(n).toLocaleString();
-    let h='<b>'+take.length+(used.length?' comps behind the suggested ARV added':' new-build comps added')+'</b> from Mecklenburg County records \u00b7 '
+    let h='<b>'+take.length+(used.length?' comps behind the suggested ARV added':' new-build comps added')+'</b> from Mecklenburg County records'
+      +(replaced?' (they replace the '+replaced+' from the last pull)':'')+' \u00b7 '
       +esc(d.notes&&d.notes[0]?d.notes[0]:'');
+    if(errs.length)h+='<div style="color:var(--red);margin-top:4px">\u26a0 Part of the county lookup failed, so check the rows: '+errs.map(esc).join(' \u00b7 ')+'</div>';
     if(d.rule&&d.rule.label)h+='<div style="margin-top:4px">'+esc(d.rule.label)+'</div>';
     // v8.14: say which sales the server left out (lot sales; sales dated before the assessor's year built)
-    {const lo=(d.notes||[]).filter(n=>/lot sales|before the assessor/.test(n));
+    {const lo=(d.notes||[]).filter(n=>/lot sales|before the assessor|several homes at once/.test(n));
      if(lo.length)h+='<div style="margin-top:4px;color:var(--text-dim);font-size:11px">Left out: '+lo.map(n=>esc(String(n).replace(/\s+(were\s+)?left out$/,''))).join(' \u00b7 ')+'</div>';}
-    {const ac=(d.notes||[]).filter(n=>/ sit across /.test(n));
+    {const ac=(d.notes||[]).filter(n=>/ sit across |unverified|using backup|parcel outline/.test(n));
      if(ac.length)h+='<div style="margin-top:2px;color:var(--text-dim);font-size:11px">'+ac.map(esc).join(' \u00b7 ')+'</div>';}
     const win=(d.params&&d.params.months)||12;
     if(N&&N.count)h+='<div style="margin-top:4px">Built '+(d.params.minYear)+'+, last '+win+' months: <b>'+N.count+'</b> sales of any product, median <b>$'+N.median_psf+'/sf</b> (range $'+N.min_psf+'\u2013$'+N.max_psf+') \u00b7 highest sold '+money(N.highest_sold)+'</div>';
@@ -1981,22 +2035,49 @@ async function pullCountyComps(){
         +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+esc(d.confidence.reason)+'</div></div>';
     }
     if(d.arv)h+='<div style="margin-top:6px">Suggested ARV for '+Math.round(d.arv.subject_sf).toLocaleString()+' sf: <b>'+money(d.arv.arv)+'</b> = <b>$'+d.arv.retail_psf+'/sf</b>'
-      +' <button class="btn btn-ghost" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="applyCountyArv('+d.arv.retail_psf+')">Apply \u2192 Base ARV</button>'
+      +' <button class="btn btn-ghost county-apply" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="applyCountyArv()">Apply \u2192 Base ARV</button>'
+      +'<div class="county-stale" style="display:none;color:var(--red);font-size:11px;margin-top:2px">The plan size, product, finish or parcel changed since this pull, so this ARV is for the old search. Pull comps again.</div>'
       +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+esc(d.arv.basis||'')+'</div>'
       +'<div style="color:var(--text-dim);font-size:11px;margin-top:2px">'+esc(d.arv.note)+'</div></div>';
     (d.flags||[]).filter(f=>!(d.rule&&f===d.rule.label)).forEach(f=>{h+='<div style="color:var(--amber);margin-top:4px">\u26a0 '+esc(f)+'</div>';});
     h+='<div style="color:var(--text-dim);font-size:11px;margin-top:6px">County deed records only \u2014 no MLS status, concessions or photos. Recording lags closing by 1\u20133 weeks. Check each row before you lean on it.</div>';
     say(h);
+    if(d.arv)_countyPull={sig:countyPullSig(Q,pid),psf:d.arv.retail_psf,capped:!!d.arv.capped};
   }catch(e){ if(gen===_dealGen)say('Comps lookup failed: '+e.message,'var(--red)'); }
   finally{ if(btn){btn.disabled=false;btn.innerHTML='\ud83d\udce1 Pull new-build comps (Meck)';} }
 }
-function applyCountyArv(psf){
-  const f=$('arv-b'); if(f&&psf>0){ f.value=Math.round(psf); if(typeof calcScenarios==='function')calcScenarios(); }
+// v8.34 (C-F9): what a county pull searches for. The box's Apply carries that pull's $/sf, so once the plan size, the
+// product, the finish or the parcel changes, the box says so and Apply stops (it used to write the old plan's $/sf).
+let _countyPull=null;   // {sig, psf} of the pull the box shows
+function countyCompsQuery(){
+  // v8.23: the team rule. Comp the product the plan builds (or what the analyst picked) at its finish.
+  const plan=currentPlanObj(), pick=($('comps-product')||{}).value||'auto';
+  return {sf:sfPerUnit>0?sfPerUnit:'',
+    product:pick!=='auto'?pick:(plan&&['sfh','th','duet','mf'].includes(plan.t)?plan.t:'any'),
+    finish:($('comps-finish')||{}).value||'standard'};
 }
+const countyPullSig=(q,pid)=>[pid||'',q.product,q.finish,q.sf].join('|');
+function countyPullStale(){
+  const g=(typeof window!=='undefined'&&window._lastGis)||null;
+  return !_countyPull||countyPullSig(countyCompsQuery(),g&&g.pid)!==_countyPull.sig;
+}
+function checkCountyCompsStale(){
+  const box=$('county-comps-msg'); if(!box||!_countyPull)return;
+  const stale=countyPullStale(), b=box.querySelector('.county-apply'), n=box.querySelector('.county-stale');
+  if(b)b.disabled=stale; if(n)n.style.display=stale?'':'none';
+}
+function applyCountyArv(){
+  if(countyPullStale()){checkCountyCompsStale();return;}
+  // a capped $/sf rounds down, so Base ARV × sf stays at or under the cap the box states
+  const f=$('arv-b'), psf=_countyPull.psf; if(f&&psf>0){ f.value=_countyPull.capped?Math.floor(psf):Math.round(psf); if(typeof calcScenarios==='function')calcScenarios(); }
+}
+// C-F3: the median or average, capped like the suggested ARV: never past the highest sale in the table
 function applyCompsArv(stat){
   const st=compStats(), v=stat==='median'?st.median:st.avg;
   if(!(v>0)){alert(compIssues().length?'No comp can be counted yet: see the note under the comps table.':'Add at least one comp with Sq Ft and Sold price first.');return;}
-  const f=$('arv-b'); if(f){f.value=Math.round(v); if(typeof calcScenarios==='function')calcScenarios();}
+  const A=compArv(st,sfPerUnit>0?sfPerUnit:0,v);
+  const f=$('arv-b'); if(f){f.value=A.capped?Math.floor(A.psf):Math.round(A.psf); if(typeof calcScenarios==='function')calcScenarios();}
+  if(A.capped&&typeof showToast==='function')showToast(`Capped at the highest sale in the table (${fmt(st.cap)}): $${Math.floor(A.psf)}/sf, not $${Math.round(v)}/sf.`);
 }
 let buildableArea=0, allInExLand=0, sfPerUnit=0, units=1, currentPlanCost=0;
 let lotFactor=0, tapTotal=0;
@@ -2165,6 +2246,8 @@ function invalidateGisIfAddressMoved(){
     hideStreetCheck();
     setGisStatus('Address changed \u2014 run the County GIS auto-fill again before pulling comps.');
     const msg=$('county-comps-msg'); if(msg){msg.style.display='none';}
+    _countyPull=null;
+    renderCompsSummary();   // v8.34: names county comps pulled for the old parcel
   }catch(_){ }
 }
 // v8.16: an address's words in one spelling, to tell two spellings of the same address apart from two addresses
@@ -5416,7 +5499,7 @@ function buildReportHTML(canvasDataUrl){
   const compSummary=st.n
     ? '<div class="comp-sum"><b>'+st.n+'</b> comps &nbsp;·&nbsp; Median adj $/SF <b>$'+st.median.toFixed(0)+'</b>'
       +' &nbsp;·&nbsp; Avg <b>$'+st.avg.toFixed(0)+'</b> &nbsp;·&nbsp; Range <b>$'+st.min.toFixed(0)+'–$'+st.max.toFixed(0)+'</b>'
-      +(subjSf>0?(' &nbsp;·&nbsp; Suggested ARV (median × '+subjSf.toLocaleString()+' sf) <b>$'+Math.round(st.median*subjSf).toLocaleString()+'</b>'):'')+'</div>'
+      +(subjSf>0?(()=>{const A=compArv(st,subjSf);return ' &nbsp;·&nbsp; Suggested ARV (median × '+subjSf.toLocaleString()+' sf'+(A.capped?', capped at the highest sale':'')+') <b>$'+Math.round(A.arv).toLocaleString()+'</b>';})():'')+'</div>'
     : '<div class="comp-sum muted">Add comps with Sq Ft and Sold price to compute blended adjusted $/SF.</div>';
   // v8.12: the comps table's notes (cells that couldn't be read, likely typos), only when there are any
   const compNotes=compIssues().map(x=>x.msg).join(' ');
@@ -5890,7 +5973,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
     const last=rr-1, rng=`E${first}:E${last}`;
     rr++; const stat=(lbl,formula,hi)=>{const r=rr++;wco.mergeCells('C'+r+':D'+r);const lc=wco.getCell('C'+r);lc.value=lbl;lc.font={bold:true,name:'Arial'};lc.alignment={horizontal:'right'};const c=wco.getCell('E'+r);c.value={formula};c.numFmt=MONEY2;if(hi)c.font={bold:true,color:{argb:GREEN},name:'Arial'};};
     stat('Median $/SF',`MEDIAN(${rng})`); stat('Average $/SF',`AVERAGE(${rng})`); stat('Min $/SF',`MIN(${rng})`); stat('Max $/SF',`MAX(${rng})`);
-    const sr=rr++;wco.mergeCells('C'+sr+':D'+sr);const slc=wco.getCell('C'+sr);slc.value='Suggested ARV (median)';slc.font={bold:true,name:'Arial'};slc.alignment={horizontal:'right'};const c=wco.getCell('E'+sr);c.value={formula:`MEDIAN(${rng})*${I('sf')}`};c.numFmt=MONEY;c.font={bold:true,color:{argb:GREEN},name:'Arial'};
+    // v8.34 (C-F3): capped like the app, at the highest Sold $ + Adjustments (every row here is a counted comp)
+    const sr=rr++;wco.mergeCells('C'+sr+':D'+sr);const slc=wco.getCell('C'+sr);slc.value='Suggested ARV (median, capped)';slc.font={bold:true,name:'Arial'};slc.alignment={horizontal:'right'};const c=wco.getCell('E'+sr);c.value={formula:`MIN(MEDIAN(${rng})*${I('sf')},SUMPRODUCT(MAX(C${first}:C${last}+D${first}:D${last})))`};c.numFmt=MONEY;c.font={bold:true,color:{argb:GREEN},name:'Arial'};
     }
     if(compNotes.length){
       const t='Check comps: '+compNotes.join(' '), nr=++rr; rr++;
@@ -6258,7 +6342,7 @@ function updateHero(d,b,F){
 // hook recalcs by rebinding (originals untouched)
 (function(){
   const _ca=calcAll,_cs=calcScenarios;
-  calcAll=function(){_ca();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ }};
+  calcAll=function(){_ca();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ } try{checkCountyCompsStale();renderCompsSummary();}catch(_){ }};
   calcScenarios=function(){_cs();try{updateDealPulse();}catch(_){ } try{scheduleAutosave();}catch(_){ }};
 })();
 // v8: address, zoning and lot share one screen, so refresh the GIS link and property summary as
@@ -6345,7 +6429,7 @@ function restoreDeal(d){
     });
     // The previous deal's county card, its status line and its comps box (whose Apply button carries that deal's
     // $/sf) sit outside .page, so clear them too. The offer letter resets itself for a new address (generateOfferLetter).
-    {const g=$('gis-result'),m=$('county-comps-msg');if(g)g.style.display='none';if(m)m.style.display='none';setGisStatus('');}
+    {const g=$('gis-result'),m=$('county-comps-msg');if(g)g.style.display='none';if(m)m.style.display='none';_countyPull=null;setGisStatus('');}
     hideStreetCheck();   // v8.18: the street card is the last deal's too
     _tapSig=null;   // taps were just reset, so let the jurisdiction autofill in step 1 run again
     ['tap-water','tap-sewer'].forEach(id=>{const e=$(id);if(e)delete e.dataset.manual;});   // v8.14: nor the last deal's typed quotes
@@ -6505,8 +6589,22 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.33', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.35', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.35',date:'Oct 2026',name:'County records back on (backup source)',items:[
+   'Since about Oct 9 the county\u2019s main assessor list has been empty, so the Assessor record card was blank and the Street Check said \u201cNo assessor record\u201d. Both now read the county\u2019s backup tables when the main list gives nothing, and switch back by themselves once the county fixes it.',
+   'When the backup is in use, the County GIS notes and the Street Check say so.',
+   'The Street Check now counts each lot once. The old list had one row per building, so a lot with two buildings counted twice; neighbourhood counts can run a few percent lower.',
+ ]},
+ {v:'8.34',date:'Oct 2026',name:'Comps you can trust',items:[
+   'One ARV everywhere. The comps table, Apply median / avg, the PDF and the Excel Comps sheet now cap the suggested ARV at the highest sale in the table, the way the county box always did. On Katonah the box said $767,500 while the table, the PDF and Excel said $836,882; they all say $767,500 now.',
+   'Pull comps again and the new pull replaces the last one\u2019s rows instead of adding a second copy under them. Comps you typed stay, and so does a pulled row you edited. A county comp pulled for a different parcel (the address changed) gets a note under the table, on the PDF and in Excel.',
+   'Change the plan, the product or the finish after a pull and the county box says its ARV is for the old search; its Apply button stops until you pull again. Before, it wrote the old plan\u2019s $/sf into Base ARV.',
+   'When the county\u2019s records don\u2019t answer, the box says so in red instead of \u201cno new-build sales found\u201d. The empty result says 12 months, not 24. If the major roads couldn\u2019t be checked, the rule line and a warning say so.',
+   'The county\u2019s main building-records layer has been empty since Oct 9, which made every pull come back empty. Comps now read the same records from the county\u2019s backup tables when that happens, and the box says which source it used.',
+   'A deed that sold several homes at once (a portfolio or a builder takedown) no longer counts as several full-price sales; it\u2019s left out, and the box says how many. A deed of one home plus a side parcel counts once.',
+   'A lot with no assessor record yet (a fresh split) takes its location from the parcel outline, so the 0.5 mi radius and the major-road rule still apply. Before, both quietly switched off.',
+   'Sales the county hasn\u2019t reviewed yet (TEMP) now count, marked \u201cunverified\u201d on the row and in the box (partner decision, Oct 9).']},
  {v:'8.33',date:'Oct 2026',name:'No more silent wrong numbers',items:[
    'A blank Slate GC fee now uses the 14% default and says so under the field. It used to price every plan at 0% with no warning. A typed 0 still means 0%.',
    'Zones with no setbacks in the app (CG, TOD-UC, MUDD…), a county with no zone list, or any blank front, rear or side setback: the fit check, the plan line, the overlay and the plan comparison now say “Fit not checked” until the setbacks are entered. A blank used to count the whole lot as buildable. Type 0 for a setback that really is zero.',
