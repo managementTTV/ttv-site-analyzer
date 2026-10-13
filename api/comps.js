@@ -116,13 +116,13 @@ const STEPS = [
   {older:true,  across:true,  finish:false, product:true},
   {older:true,  across:true,  finish:false, product:false},
 ];
-// Outlier guard (v8.37, research/12 Q4, Brian 2026-10-12). A new-build sale whose $/sf is more than GUARD_X times, or under
+// Outlier guard (v8.41, research/12 Q4, Brian 2026-10-12). A new-build sale whose $/sf is more than GUARD_X times, or under
 // 1/GUARD_X of, the median $/sf of the planned product's new builds in the radius is left out before the rule runs. It is
 // nearly always an odd county heated area (W Tyvola: $625k on 1,300 sf). It needs GUARD_MIN_REF same-product sales to set
 // that median. On our 79 deals it dropped 74 comps and moved 2 ARVs by about 1%; on the 47 of 1,077 test sales where it
 // moved the ARV, the average miss against the real sale fell from +31% to +10%.
 const GUARD_X = 1.5, GUARD_MIN_REF = 5;
-// Infill (v8.37, research/12 Q2): fewer than INFILL_MIN other buildings built minYear+ whose assessor point is within
+// Infill (v8.41, research/12 Q2): fewer than INFILL_MIN other buildings built minYear+ whose assessor point is within
 // INFILL_FT of the lot's. On those lots the tool landed 33% within ±5% of the real sale (49% within ±10%, 4.3% low),
 // against 58% in new-build projects, so the page tells Pat to check the ARV (vet).
 const INFILL_FT = 300, INFILL_MIN = 3;
@@ -204,7 +204,7 @@ function milesBetween(lat1,lng1,lat2,lng2){
   return 2*R*Math.asin(Math.sqrt(a));
 }
 function isoDate(ms){ return (typeof ms==='number' && ms>0 && ms<4e12) ? new Date(ms).toISOString().slice(0,10) : null; }
-// The infill count (v8.37): the other parcels built minYear+ whose assessor point is within INFILL_FT of the lot's point,
+// The infill count (v8.41): the other parcels built minYear+ whose assessor point is within INFILL_FT of the lot's point,
 // sold or not, as research/12 counted them. The parcel layer finds the parcels near the lot's centre (SR 2264 feet, with a
 // margin, since a parcel's assessor point isn't its outline's centre); the assessor records give each one's year built and
 // point. Throws when a layer doesn't answer, so the caller can say the count is unknown instead of "not infill".
@@ -224,7 +224,7 @@ async function newBuildsNear(pid, centre, lat, lng, minYear){
   // some chunks didn't answer: a partial count can only be low, so it settles "not infill" but never "infill"
   return {count:n, parcels:pids.length, partial:errs.length>0};
 }
-// "Pat should check" (v8.37, research/12 Q2, Brian 2026-10-12): the ARV goes to Pat when confidence isn't HIGH (or there is
+// "Pat should check" (v8.41, research/12 Q2, Brian 2026-10-12): the ARV goes to Pat when confidence isn't HIGH (or there is
 // no ARV), or the lot is infill. On the 1,077 test sales "not HIGH" alone flagged 29% and caught 64% of the misses over
 // 10%; infill adds the weakest group. An infill count that couldn't be made counts as a reason, not as "not infill".
 // The wide-spread line (over 1.6x) only caught 12% of the big misses, so it is a note now, not a reason.
@@ -283,7 +283,7 @@ export default async function handler(req, res){
                 comps:[], summary:null, arv:null, rule:null, guard:null, infill:null, vet:null, flags:[], notes:[], errors:[] };
   if(!pid){ res.status(400).json({error:'pass ?pid= (Mecklenburg parcel id)'}); return; }
 
-  // v8.37: the infill count runs beside the sales search; every answer waits for it and carries the vet verdict
+  // v8.41: the infill count runs beside the sales search; every answer waits for it and carries the vet verdict
   let infillP = Promise.resolve(null);
   const settle = async () => {
     const nb = await infillP;
@@ -667,7 +667,7 @@ export default async function handler(req, res){
     const solidWhere = poolUsed && STEPS[step].older ? `in the last ${wideMonths} months` : `in the last ${months} months`;
     if(solidN<=1) out.flags.push(`Only ${solidN} solid comp${solidN===1?'':'s'} (built ${solidYear}+) ${solidWhere}${poolUsed?' among the sales the ARV could use':''}: thin evidence, say so on the sheet.`);
     if(context.length && Math.max(...context.map(r=>r.sale_price))>1000000) out.flags.push('Luxury-tier comp above $1M nearby: outside the normal buy box, flag before underwriting further.');
-    // v8.37: a note, not a flag. It caught 12% of the misses over 10% (research/12); the vet verdict decides who checks.
+    // v8.41: a note, not a flag. It caught 12% of the misses over 10% (research/12); the vet verdict decides who checks.
     if(basis && spread > 1.6) out.notes.push(`The comps\u2019 $/sf spread is wide (${spread}\u00d7 high to low): worth a look at the rows`);
     if(out.arv && out.arv.capped) out.flags.push('ARV capped at the highest sold comp.');
     if(out.confidence && out.confidence.level!=='high') out.flags.push('Confidence '+out.confidence.level+': '+out.confidence.reason);
