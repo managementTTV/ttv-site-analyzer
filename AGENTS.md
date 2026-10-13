@@ -330,8 +330,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   from Drive, and folding that churn into `index.html` would put automated changes inside
   the underwriting file. The single-file rule above still governs the calculator itself —
   flag calculator logic moving into `permits.html`, or permitting logic into `index.html`.
-- **Data path (read):** the TTV Permit Listener (scheduled Claude task) maintains
-  `ttv-permit-state.json` in Google Drive; `api/permits.js` GET proxies it (server-side
+- **Data path (read):** the TTV Permit Listener (scheduled Claude task) and the Accela sync
+  (below) maintain `ttv-permit-state.json` in Google Drive; `api/permits.js` GET proxies it (server-side
   fetch, 30-second edge cache, `?k=<gate hash>` check); the page paints its baked-in
   `seed()` snapshot instantly, then swaps to the live payload — and falls back to the
   snapshot with a visible "offline" banner when the API is unreachable. **The listener
@@ -374,6 +374,37 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - The Drive FILE ID in `api/permits.js` is intentionally committed (link-shared file
   holding the same data the board renders — not a secret). `PERMITS_FILE_ID` env var
   overrides it; don't flag the literal.
+- **Accela owns City-record status (v4.6, `api/accela.js`, Brian 2026-10-13).** Email finds,
+  Accela updates: the Permit Listener's email scan discovers new items and puts their City record
+  numbers on the board; from then on every milestone whose `ref` holds a City record
+  (`LDIRL-…`, `LDPLAT-…`, matched by `REF_RE`) takes its **status** from Accela Citizen Access
+  (`aca-prod.accela.com/CHARLOTTE`, public pages, no login, no key). The board calls
+  `POST /api/accela {k, op:'sync'}` on every load; a Vercel cron (`vercel.json`, daily 10:00 UTC,
+  before the 7:30 ET listener) runs the same sync. The sync reads the Drive JSON, looks each record
+  up (record page + the page's own `GetProcessingData` / `GetBuildCapTree` calls), and saves through
+  the feed as editor `"Accela"`: `status`, `started` (only when blank) and a compact `accela` block
+  `{rec,status,type,opened,asOf,board,why,step,stepStatus,stepDate,owns}`. Rules to enforce:
+  - **Approval signal:** done = record status approved/issued/closed/complete…, **or** the
+    `Plan Collection` step's newest-dated entry is Approved/Ok. Record status alone is wrong: an
+    LDIRL stays "In Progress" after approval while the Urban Forestry inspection is open
+    (LDIRL-2026-04500). Same-day history entries come back in no fixed order — compare dates, never
+    trust position. Flag a change that derives "done" from record status only.
+  - **Mapping:** `LDIRL` sets `dev-ldirl`; `LDPLAT` sets `plat-app` / `subplat-app`. A plat number
+    parked on a `-rec` (RECORDED) step drives the matching `-app` step — recording is at the Register
+    of Deeds, which Accela doesn't show. Any other pairing is display-only (`owns:false`). Flag a
+    change that lets Accela set a `-rec` step or a County step.
+  - **Lock:** the status picker is disabled on `owns` milestones and `setStatus()` refuses them;
+    owner / due / vendor / ref stay editable. Accela's status is shown even when the save fails.
+  - **No staff names, no comments in Drive:** reviewer names are dropped at parse; review comments
+    ride only the live response (hover text), never the stored block.
+  - **Writes are sequential and only on change** (one feed call per changed milestone); the
+    in-memory 10-minute memo is per function instance. `MAX_REFS` caps a sync at 25 records.
+  - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
+    when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
+    write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.
+  - County building permits (`R-TH-…`) are not in Accela's public search (re-checked 2026-10-13 on
+    the `MECKLENBURG` agency); they stay email-driven. Don't add County lookups without a working
+    public path.
 
 ### Comps (`api/comps.js`, v7.14; team rule v8.23)
 - **Mecklenburg-only**, same rule as the GIS proxy. It joins `TaxParcelSales` to

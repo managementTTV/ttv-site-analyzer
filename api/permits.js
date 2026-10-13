@@ -14,8 +14,8 @@
 // The Drive FILE ID below is deliberately committed — it points at a link-shared
 // file holding the same data the board renders, so it is not a secret. If the file
 // ever moves, set the PERMITS_FILE_ID env var on Vercel instead of editing code.
-const FILE_ID = process.env.PERMITS_FILE_ID || '1BKJf7_fDSw8nKBogxU2rD6vC5WqrbrPC';
-const GATE_HASH = '9b748ce71c59791771ab14a3de4bb0a2822eac70555d3e292ac7160af8fa1cc6'; // keep in sync with permits.html
+export const FILE_ID = process.env.PERMITS_FILE_ID || '1BKJf7_fDSw8nKBogxU2rD6vC5WqrbrPC';
+export const GATE_HASH = '9b748ce71c59791771ab14a3de4bb0a2822eac70555d3e292ac7160af8fa1cc6'; // keep in sync with permits.html (api/accela.js imports it)
 
 export default async function handler(req, res){
   res.setHeader('Access-Control-Allow-Origin','*');
