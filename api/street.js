@@ -188,11 +188,13 @@ async function conditionRecords(lat, lng, stRows, areaRows, fetchSignal, notes){
   const city = await ajPost(`${CITY}/${CE_AREA_LAYER}/query`, Object.assign({where:'1=1', returnCountOnly:'true', f:'json'}, at), fetchSignal);
   if(!(city.count > 0)) return {city:false};
   const now = Date.now(), since = isoDay(now - RECORD_MONTHS*30.44*86400000), until = isoDay(now + 86400000);
+  // v8.44: code violations go back two windows (the RECORD_MONTHS before `since` too) for the trend line
+  const priorSince = isoDay(now - 2*RECORD_MONTHS*30.44*86400000), cut = Date.parse(since+'T00:00:00Z');
   const sP = new Set(stRows.map(r=>pidKey(r.pid))), aP = areaRows ? new Set(areaRows.map(r=>pidKey(r.pid))) : null;
   const box = boxAround(stRows.concat(areaRows||[]), lat, lng);
   const [ce, sr, demo] = await Promise.all([
-    allRows(CE_LAYER, Object.assign({where:`CaseType IN ('Nuisance','Housing') AND DateCreated >= DATE '${since}' AND ${CONFIRMED}`,
-      orderByFields:'OBJECTID'}, box), 'OBJECTID,ParcelId,CaseType', fetchSignal),
+    allRows(CE_LAYER, Object.assign({where:`CaseType IN ('Nuisance','Housing') AND DateCreated >= DATE '${priorSince}' AND ${CONFIRMED}`,
+      orderByFields:'OBJECTID'}, box), 'OBJECTID,ParcelId,CaseType,DateCreated', fetchSignal),
     allRows(SR311_LAYER, Object.assign({where:`RECEIVED_DATE >= DATE '${since}' AND RECEIVED_DATE < DATE '${until}' AND REQUEST_TYPE IN (${COMPLAINT_TYPES.map(t=>`'${t}'`).join(',')})`,
       orderByFields:'OBJECTID'}, box), 'OBJECTID,PID', fetchSignal),
     allRows(DEMOLISH_LAYER, {where:'1=1', orderByFields:'OBJECTID'}, 'OBJECTID,ParcelId', fetchSignal)]);
@@ -205,12 +207,15 @@ async function conditionRecords(lat, lng, stRows, areaRows, fetchSignal, notes){
     kindsOf(SR311_LAYER, srRows.map(r=>r.OBJECTID), COMPLAINT_KINDS, k=>k.where, fetchSignal)]);
   const housing = r => r.CaseType==='Housing' ? 'housing' : null;
   const caseKeys = CASE_KINDS.map(k=>k.key).concat('housing'), compKeys = COMPLAINT_KINDS.map(k=>k.key);
-  const sc = tally(ceRows, 'ParcelId', sP, caseKinds, caseKeys, housing), scomp = tally(srRows, 'PID', sP, complaintKinds, compKeys);
+  const ceNow = ceRows.filter(r=>r.DateCreated >= cut), ceBefore = ceRows.filter(r=>!(r.DateCreated >= cut));
+  const sc = tally(ceNow, 'ParcelId', sP, caseKinds, caseKeys, housing), scomp = tally(srRows, 'PID', sP, complaintKinds, compKeys);
   const demolition = demo.rows.filter(r=>sP.has(pidKey(r.ParcelId))).length;
-  const out = {city:true, months:RECORD_MONTHS, since,
-    street:{parcels:sP.size, cases:sc.total, cases_by:sc.by, complaints:scomp.total, complaints_by:scomp.by, demolition_orders:demolition},
+  const out = {city:true, months:RECORD_MONTHS, since, prior_since:priorSince,
+    street:{parcels:sP.size, cases:sc.total, cases_by:sc.by, cases_prior:tally(ceBefore, 'ParcelId', sP, caseKinds, caseKeys, housing).total,
+      complaints:scomp.total, complaints_by:scomp.by, demolition_orders:demolition},
     area:null};
-  if(aP) out.area = {parcels:aP.size, cases:tally(ceRows, 'ParcelId', aP, caseKinds, caseKeys, housing).total,
+  if(aP) out.area = {parcels:aP.size, cases:tally(ceNow, 'ParcelId', aP, caseKinds, caseKeys, housing).total,
+    cases_prior:tally(ceBefore, 'ParcelId', aP, caseKinds, caseKeys, housing).total,
     complaints:tally(srRows, 'PID', aP, complaintKinds, compKeys).total};
   return out;
 }
@@ -246,6 +251,79 @@ async function trafficAt(lat, lng, cam, fetchSignal){
   const aadt = best && best.aadt>0 ? Math.round(best.aadt) : null;
   return {aadt, aadt_year: aadt ? AADT_YEAR : null, thoroughfare,
     busy: (aadt||0) >= BUSY_AADT || thoroughfare==='major' || thoroughfare==='freeway'};
+}
+
+// ── v8.44: the street's direction (Brian, 2026-10-12: "streets will gentrify and change and nice streets could also go
+// down hill") ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Three signals, each the street against its comparison area, so a market-wide rise doesn't read as the street rising:
+//  - price: the median home-sale $/sf of the last TREND_MONTHS against the TREND_MONTHS before (TaxParcelSales, every
+//    market sale, not only each home's last one; same filters as the street's sales: market-valid, $50k+, not sold as
+//    vacant, not before the house was built), as a change in % street minus area;
+//  - builds: homes built in the last TREND_BUILD_YEARS, street share against area share (only ever points up);
+//  - violations: confirmed code violations in the last RECORD_MONTHS against the RECORD_MONTHS before (City only).
+// Rising = 2+ up and none down. Slipping = 2+ down and none up, or one strong down (price 20+ pts behind the area, or
+// violations at least doubled to 5+) with nothing up and prices not keeping pace (no price signal, or behind the area).
+// Mixed signals read Steady. Too little history = no price and no violations signal. Code violations rise on streets
+// that are being rebuilt too (construction, new neighbours who call), so a lot of new building counts as up and a
+// violations rise alone can't call a rebuilding street Slipping.
+// Display only, like the rest of the check; the thresholds are judgement, not backtested.
+export const TREND_MONTHS = 36, TREND_BUILD_YEARS = 5;
+const TREND_GAP_PTS = 10;
+async function salesTrend(lat, lng, stRows, areaRows, fetchSignal){
+  const now = Date.now(), mid = now - TREND_MONTHS*30.44*86400000, start = now - 2*TREND_MONTHS*30.44*86400000;
+  const {rows, truncated} = await allRows(SALES_LAYER, Object.assign({where:`saledate >= DATE '${isoDay(start)}' AND saleprice >= ${MIN_SALE}`,
+    orderByFields:'objectid'}, boxAround(stRows.concat(areaRows), lat, lng)), 'parcelid,saleprice,saledate,salesvalidity,soldasvacantflag', fetchSignal);
+  const home = new Map(); stRows.concat(areaRows).forEach(r=>{ if(isHome(r)) home.set(pidKey(r.pid), r); });
+  const sP = new Set(stRows.map(r=>pidKey(r.pid))), aP = new Set(areaRows.map(r=>pidKey(r.pid)));
+  const w = {s:{recent:[], earlier:[]}, a:{recent:[], earlier:[]}};
+  rows.forEach(x=>{
+    const k = pidKey(x.parcelid), h = home.get(k), d = x.saledate, p = num(x.saleprice), sf = h && num(h.heatedarea);
+    if(!h || !(sf>0) || !(p>=MIN_SALE) || typeof d!=='number') return;
+    if(!MARKET_VALIDITY.includes((x.salesvalidity||'').trim().toUpperCase()) || /^Y/i.test((x.soldasvacantflag||'').trim())) return;
+    if(h.yearbuilt && new Date(d).getUTCFullYear() < h.yearbuilt) return;   // the lot or the old house, not this one
+    const win = d >= mid ? 'recent' : 'earlier';
+    if(sP.has(k)) w.s[win].push(p/sf);
+    if(aP.has(k)) w.a[win].push(p/sf);
+  });
+  const side = o => ({recent_psf:o.recent.length ? Math.round(median(o.recent)) : null, earlier_psf:o.earlier.length ? Math.round(median(o.earlier)) : null,
+    n_recent:o.recent.length, n_earlier:o.earlier.length,
+    change:o.recent.length && o.earlier.length ? Math.round((median(o.recent)/median(o.earlier)-1)*100) : null});
+  return {months:TREND_MONTHS, street:side(w.s), area:side(w.a), truncated};
+}
+function buildsTrend(stRows, areaRows){
+  const since = new Date().getUTCFullYear() - TREND_BUILD_YEARS;
+  const side = rows => { const homes = [...new Map(rows.filter(isHome).map(r=>[pidKey(r.pid), r])).values()];
+    const n = homes.filter(r=>r.yearbuilt >= since).length; return {homes:homes.length, new:n, pct:homes.length ? Math.round(n/homes.length*1000)/10 : null}; };
+  return {since, street:side(stRows), area:side(areaRows)};
+}
+// sales / builds / rec may each be null (a lookup down, or outside the City for rec). area: 'its neighbourhood' etc.
+export function trendFor(sales, builds, rec, area){
+  const sig = {}, words = [];
+  const ss = sales && sales.street, sa = sales && sales.area;
+  if(ss && ss.n_recent>=3 && ss.n_earlier>=3 && sa.n_recent>=10 && sa.n_earlier>=10){
+    const gap = ss.change - sa.change;
+    sig.price = {dir:gap>=TREND_GAP_PTS ? 'up' : gap<=-TREND_GAP_PTS ? 'down' : 'flat', gap, strong:gap<=-2*TREND_GAP_PTS};
+    words.push(`home sales ${ss.change>0?'up '+ss.change+'%':ss.change<0?'down '+(-ss.change)+'%':'flat'} a sq ft over ${TREND_MONTHS/12} years, against ${sa.change>=0?'+':''}${sa.change}% for ${area}`);
+  } else sig.price = {dir:'thin'};
+  const bs = builds && builds.street, ba = builds && builds.area;
+  if(bs && ba && bs.homes>=5 && ba.homes>=10){
+    // up: well ahead of the area, or a fifth of the street rebuilt in TREND_BUILD_YEARS whatever the area is doing
+    sig.builds = {dir:bs.new>=2 && (bs.pct >= ba.pct + TREND_GAP_PTS || (bs.new>=3 && bs.pct>=20)) ? 'up' : 'flat'};
+    if(bs.new) words.push(`${bs.new} of ${bs.homes} homes built since ${builds.since} (${ba.pct}% for ${area})`);
+  } else sig.builds = {dir:'thin'};
+  if(rec && rec.city && rec.area && rec.street.parcels>=5){
+    const s = rec.street, a = rec.area, ratio = (r, p) => p>0 ? r/p : (r>0 ? Infinity : 1);
+    const rs = ratio(s.cases, s.cases_prior), ra = ratio(a.cases, a.cases_prior);
+    const down = s.cases>=3 && rs>=1.5 && rs>=ra+0.5, up = !down && s.cases_prior>=3 && rs<=0.5 && rs<=ra-0.3;
+    sig.violations = {dir:down ? 'down' : up ? 'up' : 'flat', strong:down && rs>=2 && s.cases>=5, recent:s.cases, prior:s.cases_prior};
+    words.push(`code violations ${s.cases} in the last ${RECORD_MONTHS/12} years against ${s.cases_prior} in the ${RECORD_MONTHS/12} before`);
+  } else sig.violations = {dir:'thin'};
+  const all = Object.values(sig), ups = all.filter(x=>x.dir==='up').length, downs = all.filter(x=>x.dir==='down').length;
+  const level = sig.price.dir==='thin' && sig.violations.dir==='thin' ? 'thin'
+    : ups>=2 && !downs ? 'rising'
+    : !ups && (downs>=2 || (downs===1 && all.some(x=>x.dir==='down' && x.strong) && !(sig.price.gap > 0))) ? 'slipping' : 'steady';
+  const head = {rising:'Rising', steady:'Steady', slipping:'Slipping', thin:'Too little history to tell'}[level];
+  return {level, signals:sig, text: words.length ? `${head}: ${words.join('; ')}.` : `${head}.`};
 }
 
 // fetchSignal (every helper below passes it on): optional, a function giving each request its own AbortSignal. api/mcp.js
@@ -465,7 +543,8 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
   // v8.43: the City's records and the traffic count, only in the full answer (not mode=view)
-  if(!view){ out.params.record_months = RECORD_MONTHS; out.params.busy_aadt = BUSY_AADT; out.records = null; out.traffic = null; }
+  if(!view){ out.params.record_months = RECORD_MONTHS; out.params.busy_aadt = BUSY_AADT; out.params.trend_months = TREND_MONTHS;
+    out.records = null; out.traffic = null; out.trend = null; }
   const ctx = {};   // camaQuery()'s state for this request
   let recTimer = null;   // v8.43: the records' deadline, cleared in finally whichever way this ends
   try{
@@ -585,6 +664,9 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
       .catch(e=>{ out.errors.push('records: '+late(e)+' (no City code violations or 311 complaints counted)'); return null; }) : Promise.resolve(null);
     const trafficP = street ? trafficAt(lat, lng, cam, recSignal)
       .catch(e=>{ out.errors.push('traffic: '+late(e)+' (busy road not checked)'); return null; }) : Promise.resolve(null);
+    // v8.44: every market sale over the last two TREND_MONTHS windows, for the direction line
+    const salesP = stRows && area ? salesTrend(lat, lng, stRows, area.rows, recSignal)
+      .catch(e=>{ out.errors.push('trend sales: '+late(e)+' (direction without the price signal)'); return null; }) : Promise.resolve(null);
     const since = Date.now() - SALE_MONTHS*30.44*86400000;
     let lots = new Set();
     const salePids = [...new Set([...(stRows||[]), ...(area?area.rows:[])].filter(r=>isHomeSale(r, since)).map(r=>r.pid))];
@@ -593,7 +675,7 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     if(stRows) out.street = Object.assign({label:`${label} within ${ft.toLocaleString()} ft`}, profile(stRows, since, lots));
     if(area) out.neighborhood = Object.assign({label:area.label, kind:area.kind}, profile(area.rows, since, lots));
     if(out.street && out.street.lot_sales_left_out) out.notes.push(`${out.street.lot_sales_left_out} lot purchase${out.street.lot_sales_left_out===1?'':'s'} (sold as vacant) left out of the street's sales.`);
-    const [rec, traffic] = await Promise.all([recP, trafficP]);
+    const [rec, traffic, sales] = await Promise.all([recP, trafficP, salesP]);
     out.traffic = traffic;
     if(rec && rec.city === false) out.notes.push('Outside the City of Charlotte’s code-enforcement area, so no City code violations or 311 complaints are counted (the towns keep no open records like these). No records here doesn’t mean a clean street.');
     if(rec && rec.city){
@@ -610,6 +692,11 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
       out.verdict = verdictFor(out.checks, out.street, out.neighborhood.kind==='radius'?'the half mile around it':'its neighbourhood',
         {records:!!out.records, traffic:!!traffic, aadt:traffic&&traffic.aadt, thoroughfare:traffic&&traffic.thoroughfare, busy:!!(traffic&&traffic.busy),
           demolition_orders:out.records ? out.records.street.demolition_orders : 0});
+      // v8.44: the street's direction, beside the verdict (it doesn't change the verdict)
+      if(sales && sales.truncated) out.notes.push('More county sales in this area than one lookup returns, so the direction\u2019s price signal may be off.');
+      const builds = buildsTrend(stRows, area.rows);
+      out.trend = Object.assign(trendFor(sales, builds, out.records,
+        out.neighborhood.kind==='radius' ? 'the half mile around it' : 'its neighbourhood'), {sales, builds});
     }
 
     // 6) Street View camera: the nearest point on the lot's own street centreline, facing the lot (no key: see mode=view)
