@@ -210,7 +210,7 @@ async function conditionRecords(lat, lng, stRows, areaRows, fetchSignal, notes){
   const ceNow = ceRows.filter(r=>r.DateCreated >= cut), ceBefore = ceRows.filter(r=>!(r.DateCreated >= cut));
   const sc = tally(ceNow, 'ParcelId', sP, caseKinds, caseKeys, housing), scomp = tally(srRows, 'PID', sP, complaintKinds, compKeys);
   const demolition = demo.rows.filter(r=>sP.has(pidKey(r.ParcelId))).length;
-  const out = {city:true, months:RECORD_MONTHS, since, prior_since:priorSince,
+  const out = {city:true, months:RECORD_MONTHS, since, prior_since:priorSince, truncated:!!(ce.truncated || sr.truncated),
     street:{parcels:sP.size, cases:sc.total, cases_by:sc.by, cases_prior:tally(ceBefore, 'ParcelId', sP, caseKinds, caseKeys, housing).total,
       complaints:scomp.total, complaints_by:scomp.by, demolition_orders:demolition},
     area:null};
@@ -275,19 +275,20 @@ async function salesTrend(lat, lng, stRows, areaRows, fetchSignal){
     orderByFields:'objectid'}, boxAround(stRows.concat(areaRows), lat, lng)), 'parcelid,saleprice,saledate,salesvalidity,soldasvacantflag', fetchSignal);
   const home = new Map(); stRows.concat(areaRows).forEach(r=>{ if(isHome(r)) home.set(pidKey(r.pid), r); });
   const sP = new Set(stRows.map(r=>pidKey(r.pid))), aP = new Set(areaRows.map(r=>pidKey(r.pid)));
-  const w = {s:{recent:[], earlier:[]}, a:{recent:[], earlier:[]}};
+  // one sale per house per window (the newest), so a flip can't fill a street's window; the area's baseline leaves the
+  // street's own houses out, so the gap is the street against the rest of its area
+  const w = {s:{recent:new Map(), earlier:new Map()}, a:{recent:new Map(), earlier:new Map()}};
   rows.forEach(x=>{
     const k = pidKey(x.parcelid), h = home.get(k), d = x.saledate, p = num(x.saleprice), sf = h && num(h.heatedarea);
     if(!h || !(sf>0) || !(p>=MIN_SALE) || typeof d!=='number') return;
     if(!MARKET_VALIDITY.includes((x.salesvalidity||'').trim().toUpperCase()) || /^Y/i.test((x.soldasvacantflag||'').trim())) return;
     if(h.yearbuilt && new Date(d).getUTCFullYear() < h.yearbuilt) return;   // the lot or the old house, not this one
-    const win = d >= mid ? 'recent' : 'earlier';
-    if(sP.has(k)) w.s[win].push(p/sf);
-    if(aP.has(k)) w.a[win].push(p/sf);
+    const win = d >= mid ? 'recent' : 'earlier', side = sP.has(k) ? w.s : aP.has(k) ? w.a : null;
+    if(side && !(side[win].has(k) && side[win].get(k).d >= d)) side[win].set(k, {d, psf:p/sf});
   });
-  const side = o => ({recent_psf:o.recent.length ? Math.round(median(o.recent)) : null, earlier_psf:o.earlier.length ? Math.round(median(o.earlier)) : null,
-    n_recent:o.recent.length, n_earlier:o.earlier.length,
-    change:o.recent.length && o.earlier.length ? Math.round((median(o.recent)/median(o.earlier)-1)*100) : null});
+  const side = m => { const r = [...m.recent.values()].map(v=>v.psf), e = [...m.earlier.values()].map(v=>v.psf);
+    return {recent_psf:r.length ? Math.round(median(r)) : null, earlier_psf:e.length ? Math.round(median(e)) : null,
+      n_recent:r.length, n_earlier:e.length, change:r.length && e.length ? Math.round((median(r)/median(e)-1)*100) : null}; };
   return {months:TREND_MONTHS, street:side(w.s), area:side(w.a), truncated};
 }
 function buildsTrend(stRows, areaRows){
@@ -300,7 +301,8 @@ function buildsTrend(stRows, areaRows){
 export function trendFor(sales, builds, rec, area){
   const sig = {}, words = [];
   const ss = sales && sales.street, sa = sales && sales.area;
-  if(ss && ss.n_recent>=3 && ss.n_earlier>=3 && sa.n_recent>=10 && sa.n_earlier>=10){
+  // a truncated lookup drops the newest rows (objectid order), so it gives no price signal rather than a biased one
+  if(ss && !sales.truncated && ss.n_recent>=3 && ss.n_earlier>=3 && sa.n_recent>=10 && sa.n_earlier>=10){
     const gap = ss.change - sa.change;
     sig.price = {dir:gap>=TREND_GAP_PTS ? 'up' : gap<=-TREND_GAP_PTS ? 'down' : 'flat', gap, strong:gap<=-2*TREND_GAP_PTS};
     words.push(`home sales ${ss.change>0?'up '+ss.change+'%':ss.change<0?'down '+(-ss.change)+'%':'flat'} a sq ft over ${TREND_MONTHS/12} years, against ${sa.change>=0?'+':''}${sa.change}% for ${area}`);
@@ -311,7 +313,7 @@ export function trendFor(sales, builds, rec, area){
     sig.builds = {dir:bs.new>=2 && (bs.pct >= ba.pct + TREND_GAP_PTS || (bs.new>=3 && bs.pct>=20)) ? 'up' : 'flat'};
     if(bs.new) words.push(`${bs.new} of ${bs.homes} homes built since ${builds.since} (${ba.pct}% for ${area})`);
   } else sig.builds = {dir:'thin'};
-  if(rec && rec.city && rec.area && rec.street.parcels>=5){
+  if(rec && rec.city && rec.area && !rec.truncated && rec.street.parcels>=5){
     const s = rec.street, a = rec.area, ratio = (r, p) => p>0 ? r/p : (r>0 ? Infinity : 1);
     const rs = ratio(s.cases, s.cases_prior), ra = ratio(a.cases, a.cases_prior);
     const down = s.cases>=3 && rs>=1.5 && rs>=ra+0.5, up = !down && s.cases_prior>=3 && rs<=0.5 && rs<=ra-0.3;
