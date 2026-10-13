@@ -609,7 +609,7 @@ body[data-screen="1"] #sub-nav-site,body[data-screen="2"] #sub-nav-uw{display:fl
 .ask-gap div+div{margin-top:2px}
 .hero-dirt .hero-offer{color:var(--paper);font-weight:600;font-size:12.5px;margin-top:6px}
 .stress-line{font-size:12px;color:var(--text-dim);margin:-4px 0 14px;line-height:1.4}
-.stress-line.warn{margin:-4px 0 14px;font-size:12px}
+.stress-line.warn{margin:-4px 0 14px;font-size:12px;color:var(--amber)}
 .lever-stats{display:flex;flex-direction:column;gap:8px;padding-top:22px}
 .lever-stat{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--text-mid);border-bottom:1px solid var(--border);padding-bottom:6px}
 .lever-stat b{font-size:16px;color:var(--ink)}
@@ -1106,7 +1106,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="card-title"><span class="dot"></span>Live levers</div>
     <div class="lever-grid">
       <div class="field lever-land"><label for="land-cost">Land cost</label>
-        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="markManual(this);calcAll();calcScenarios()"></div>
+        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="landInput(this);calcAll();calcScenarios()" onblur="syncLandToAsking()"></div>
       </div>
       <div class="field"><label for="asking-price">Asking price</label>
         <div class="input-wrap"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" oninput="syncLandToAsking();calcScenarios()"></div>
@@ -1118,7 +1118,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="lever-stat"><span>Cash through the hold</span><b id="exit-cash-hold" class="pos">&mdash;</b></div>
       </div>
     </div>
-    <p class="note">Listed deals: land cost starts at the asking price until you type your own. Move the offer down until the profit rule clears. Never up.</p>
+    <p class="note">Listed deals: land cost starts at the asking price until you type your own (empty it to follow asking again). Move the offer down until the profit rule clears. Never up.</p>
     <div class="lever-arv">
       <div class="lever-arv-head">ARV &mdash; sale price per sq ft <span>Base is required. Worst fills at &minus;10% and Best at +10% if left blank. Pull comps in <a href="#" onclick="goTo(8);return false">Sales comps</a>.</span></div>
       <div class="fr3">
@@ -5082,7 +5082,9 @@ function getTerms(){
 // edit and re-renders once focus has moved on. Nothing is held while the window itself is unfocused.
 const _editingFields=new Set();
 function renderInputWarnings(rule,terms){
-  const held=id=>document.hasFocus()&&_editingFields.has(id)&&$(id)===document.activeElement;
+  const typing=id=>document.hasFocus()&&_editingFields.has(id)&&$(id)===document.activeElement;
+  // v8.38: an untyped land cost follows the asking price, so its note waits while asking is being typed too
+  const held=id=>typing(id)||(id==='land-cost'&&!isManual('land-cost')&&typing('asking-price'));
   [['profit-rule-warn',(rule||getProfitRule()).issues],['term-warn',(terms||getTerms()).issues],['lever-warn',moneyIssues()]].forEach(([wid,issues])=>{
     const w=$(wid);if(!w)return;
     const t=issues.filter(i=>!held(i.id)).map(i=>i.msg).join(' ');
@@ -5213,13 +5215,14 @@ function baseProfitAt(land,o){
   return {arv,term,totalAllIn,profit:arv-totalAllIn};
 }
 // v8.38 (row 2c): where a land price leaves the deal against the profit rule: 'pass' (clears it), 'under' (profit, but
-// under the rule) or 'neg' (a loss). The deal bar's colour and the "at asking" check read this. A cent's slack so a land
-// price at Max land, which clears the rule exactly, isn't called under it by rounding.
+// under the rule) or 'neg' (a loss). The deal bar's colour and the "at asking" check read this. Max land is shown rounded
+// to the dollar, so a land price up to 50¢ over the exact ceiling still passes: typing the Max land on screen clears it.
 function ruleStatusAt(land,rule){
   const r=baseProfitAt(land);if(!r)return null;
   rule=rule||getProfitRule();
+  const clears=x=>{const q=baseProfitAt(x);return q.profit>=Math.max(rule.floor,rule.pct/100*q.totalAllIn)-0.01;};
   const need=Math.max(rule.floor,rule.pct/100*r.totalAllIn);
-  return {profit:r.profit,need,status:r.profit<0?'neg':r.profit>=need-0.01?'pass':'under'};
+  return {profit:r.profit,need,status:r.profit<0?'neg':clears(land-0.5)?'pass':'under'};
 }
 // Everything the offer lines show, for the screen and the report. null without a Base ARV or a plan.
 function offerCheck(landCost){
@@ -5255,20 +5258,23 @@ function renderOfferLines(landCost){
   if(sl){
     if(!oc){sl.textContent='';sl.className='stress-line';}
     else{
-      const t=`SOP-08 stress test (ARV −10%, ${oc.stress.term} months, build +15%) at this land cost: ${oc.stress.profit<0?'−'+fmt(-oc.stress.profit):fmt(oc.stress.profit)} profit per unit.`;
+      const t=`SOP-08 stress test (ARV −10%, Base months + 3 = ${oc.stress.term}, build +15%) at this land cost: ${oc.stress.profit<0?'−'+fmt(-oc.stress.profit):fmt(oc.stress.profit)} profit per unit.`;
       sl.textContent=oc.stress.warn?`⚠ ${t} That’s under the $10k per unit the SOP asks for. Max land doesn’t change; check the deal before you offer.`:t;
       sl.className='stress-line'+(oc.stress.warn?' warn':'');
     }
   }
 }
 // v8.38 (row 2c): while nobody has typed a land cost, it follows the asking price (blank asking → the default again).
-// A typed land cost (markManual) is left alone, and so is a reopened deal's (restoreDeal marks it).
+// A typed land cost (markManual) is left alone, and so is a reopened deal's (restoreDeal marks it). Emptying the land
+// field hands it back to the asking price (landInput): it refills when you leave the field, not while you're typing.
+function landInput(el){if(String(el.value).trim()==='')delete el.dataset.manual;else markManual(el);}
 function syncLandToAsking(){
   const l=$('land-cost');if(!l||isManual('land-cost'))return;
+  if(readMoney('asking-price').msg)return;   // mid-typing ("185,") or unreadable: leave the land where it is
   const ask=mv('asking-price');
   const v=ask>0?Math.round(ask).toLocaleString('en-US'):fieldDefault(l);
   if(l.value===v)return;
-  l.value=v;calcAll();
+  l.value=v;calcAll();calcScenarios();
 }
 
 // ═══════════════════ SUMMARY ═══════════════════
@@ -5498,7 +5504,7 @@ function buildReportHTML(canvasDataUrl){
       h+='<div class="avoid" style="border-left:3px solid '+col+';padding:5px 10px;margin:6px 0;font-size:10px"><b>Asking '+F(o.asking)+':</b> '
         +(ok?'clears the profit rule.':'misses the profit rule'+(o.maxLand>0?' ('+F(o.asking-o.maxLand)+' over max land).':' even at $0 land.'))+'</div>';
     }
-    if(o.stress.warn)h+=noteBox('SOP-08 stress test','ARV \u221210%, '+o.stress.term+' months, build +15%: '+S(o.stress.profit)
+    if(o.stress.warn)h+=noteBox('SOP-08 stress test','ARV \u221210%, Base months + 3 = '+o.stress.term+', build +15%: '+S(o.stress.profit)
       +' profit per unit at '+F(d.cost.land)+' land, under the $10k per unit the SOP asks for. Max land doesn\u2019t change.');
     return h;
   })();
@@ -6798,10 +6804,10 @@ checkResumeBanner();
 const APP_VERSION='8.38', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
  {v:'8.38',date:'Oct 2026',name:'Opening offer, asking check and the stress test',items:[
-   'Under Max land there\u2019s now an Opening offer: about 20% under Max land, rounded down to the nearest $1,000. Max land stays the walk-away ceiling ($50k or 15% of all-in per unit, the SOP).',
+   'Under Max land there\u2019s now an Opening offer: about 20% under Max land, rounded down to the nearest $1,000. Max land stays the walk-away ceiling: the profit rule, the greater of $50k per unit or 15% of all-in by default (the SOP).',
    'Under the asking price, a line says whether asking clears the same profit rule, or how far over Max land it is.',
    'The SOP-08 stress test runs on every deal: ARV \u221210%, the Base months + 3 and build cost +15%. Under $10k profit per unit it shows a warning, on screen and on the PDF. It doesn\u2019t change Max land.',
-   'Land cost starts at the asking price and follows it until you type your own land cost.',
+   'Land cost starts at the asking price and follows it until you type your own land cost. Empty the land field to make it follow asking again.',
    'The bottom bar\u2019s Base profit is green only when the deal clears the profit rule, amber when it makes money but less than the rule, red for a loss.',
    'The offer letter is unchanged: it still fills in Max land.']},
  {v:'8.36',date:'Oct 2026',name:'The partners\u2019 money rules',items:[
