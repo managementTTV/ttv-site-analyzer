@@ -61,19 +61,57 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `#plan-info-*` text only for a Slate plan, so on a custom or no-plan deal it still shows the last
   Slate plan, and every reader of `getReportData().plan` / `.footprint` (the PDF, the hero, the Excel
   model) would print that plan. Flag a new read of `#plan-info-*` text as data.
-- **Upgrades are NOT marked up.** The GC fee applies to the Slate base build only; upgrades are
-  added at their flat menu price (Brian, 2026-09-22). Flag any path that applies the fee to upgrades.
+- **Upgrades carry the GC fee (v8.36, partner decision 2026-10-09).** This reverses Brian's 2026-09-22 flat-menu-price
+  rule. Upgrades get the same % as the build: the GC fee box (`gcFeePct()`, 14% by default), also on a custom build,
+  as the team sheet does (B16 = build + upgrades × 1.14). Every reader prices them through `upgradesPerUnit()` (menu
+  × (1 + fee)); `upgradeMenuPerUnit()` is the menu total, for labels and the Excel input. The Excel model holds the menu
+  price and "GC Fee % on Upgrades" as inputs and derives `upgU`. Flag a path that adds upgrades at menu price, or that
+  takes the fee from `planCostSplit()` (0% on a custom build).
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
-  Per-**lot** costs stay singular ×1: lot factor, septic, survey, appraisal, insurance.
+  Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, appraisal, insurance, custom plans.
   Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
+- **Lot factor stays one per deal, with a $30k floor when there's a house (v8.39, partner decisions 2026-10-09, 5b / 5c).**
+  Even on a deal of several sub-lots (Dellinger's three) the lot factor is charged once (5b: per deal, as today). With a
+  house to tear down (`demo-sqft` over 0) `calcLF()` lifts the total to at least `LF_HOUSE_MIN` ($30,000, Adam's minimum),
+  once per deal ("per lot" on the decision sheet, against "per unit"), and shows the top-up as its own line ("Minimum with a
+  House ($30k)") in the breakdown, `lfItems` and the PDF. The Excel model's LOT FACTOR row is `MAX(sum, IF(Demo Sq Ft>0,
+  minimum, 0))`, with the minimum an input (0 = off). The floor follows the `#lf-house-min` box (`houseMinOn()`), ticked
+  on a fresh page; `restoreDeal()` unticks it for a file saved before v8.39 (no such field), so reopening an old teardown
+  deal doesn't move its Max land. The band and the floor go to the Excel model as `lfSopBand` / `lfHouseMin`, outside
+  `lf`, because the deal-sheet hand-off sends `lf` as is (payload `v` 1 unchanged; `lotFactor` already carries both).
+  Flag a floor applied per unit, or one that ignores demo.
+- **Survey is one front-end survey per project (v8.36, Brian 2026-10-12).** `applySurveyDefault()` writes
+  `SURVEY_ONE_LOT` ($1,500: one house on one lot) or `SURVEY_SPLIT` ($3,000: a plan with more than one unit, a custom
+  footprint with Units (opt) over 1, or Units over 1), from Phoenix Land Surveying's 9/2/2026 quote rounded (the team's
+  go-to). It runs after Units settles in `onPlanChange()` and on every `onUnitsChange()`, and never over a typed value
+  (`data-manual`). `SURVEY_ONE_LOT` must equal `#survey`'s HTML value. The per-house stakeout survey is in Slate's build
+  contract (paid through the loan draws), so it isn't a separate line. Before v8.36: $1,000 / $2,000.
+- **Custom plans (v8.36).** `custom-plans` (Other Soft Costs, "Custom plans (architect / engineer)"), $0 by default: once
+  per deal, inside `allInExLand`, so it's financed like the other costs. The cost stack, the PDF cost build-up, the Excel
+  Inputs / Scenarios!B4 / Cost Build-Up and `dealForPlan()` all carry it. It isn't in the deal-sheet payload yet (the
+  sheet has no cell for it: Chat 11).
 - **Per-unit special cases stay intact:** Arcadia Triplex priced per unit
   ($416,608 ÷ 3) with the footprint kept as the whole 3-unit building; duets priced per
   side (`u:2`); townhomes per single unit (`u:1`). Flag changes that re-triple-count.
 
 ### Financing math (subtle — easy to "simplify" wrongly)
-- **Preserve the circular loan solve.** `loan = LTC% × costBase / (1 − LTC%×0.01)`
-  because purchase closing (1% of the loan) is itself inside the loan base. Flag any
-  naive `loan = LTC% × costBase` that drops the closed-form term.
+- **The loan is a % of the total project cost (v8.36, partner decision 2026-10-09, Wendell).** `loan = loan% ×
+  (land + allInExLand)`, `ltc-pct` default **85**, editable per deal (the same field and id the 93% LTC used). We bring
+  the rest plus the closing costs and fees: purchase closing (1% of the loan), the points and the doc fee are paid in cash,
+  not financed, so there is **no circular term**. This replaces v7.12's `loan = LTC% × costBase / (1 − LTC%×0.01)`
+  (93%, closing inside the base). `calcLoanBase()` is the one formula; `dealForPlan()`, the Max land back-solve (`k1 =
+  loan%`) and the Excel model (`Scenarios!B8 = B7*B6`, `B26 = B7`) mirror it. Flag a change that puts the closing back
+  inside the loan base (or the old divisor back) without a partner decision.
+- **Cash needed is the full amount (v8.36, audit M5).** `calcLoanBase().cash` is the **cash at closing**: our share
+  (project − loan) + purchase closing + points + doc fee (it used to leave out the points and the doc fee).
+  `cashThroughHold(lb, term)` adds the interest and property tax for the term; every surface shows it for the **Base**
+  term (Financing sidebar, live levers, `getReportData().fin.cashHold`, PDF cover and Financing detail, Excel
+  `Scenarios!B31` and the Cover). Flag a cash figure that drops a piece or uses another term.
+- **Cash on Cash = profit ÷ all-in (v8.36, partner decision 2026-10-09, audit M4).** `totalAllIn` per unit (land, costs,
+  holding, sale costs), the sheet's definition; it was profit ÷ loan per unit. Its **target is the profit rule's %**
+  (`getProfitRule().pct`, 15% by default): profit ≥ 15% of all-in is the same test as CoC ≥ 15%, so at Max land with the
+  % leg binding the CoC reads exactly the target. The scenario cards, the hero, the PDF and the Excel (`Scenarios` row 23
+  = row 21 ÷ row 20) all use it. Flag a second CoC definition or a hard-coded 15%.
 - **Max-supportable-land back-solve** targets the Deal Analyst **PROFIT RULE** (v7.12,
   2026-09-22): base profit/unit must clear the **greater of a flat floor or a % of all-in per
   unit**. It solves both rules and takes the lower land ceiling.
@@ -106,14 +144,15 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   those two cells, and the note in column C beside each rule cell compares what was typed with what
   was used, plus the same typo thresholds. Flag a change to one side that isn't made on the other.
 - **Exports read the same raw values the screen uses.** `getReportData()` (`fin`),
-  `collectModelInputs()` and the plan-compare header take LTC, rate, points, fees, tax and sale cost
+  `collectModelInputs()` and the plan-compare header take the loan %, rate, points, fees, tax and sale cost
   straight from the fields, as `calcLoanBase()` / `holdingCost()` / `calcScenarios()` do. Flag a
   `pv(x)||default` fallback on a field where 0 is a real answer (0 points, 0% sale cost): it makes
   the PDF and Excel Max Land disagree with the tile. Where blank should mean a default, test for the blank
   field instead, as `calcBUA()` does for `bua-hardscape` since v8.8 (blank = its HTML default, 500 sf; 0 = none).
 - **Loan terms go through `getTerms()` (v8.7)**, the one reader for `term-w` / `term-b` / `term-best`:
   the scenario cards, Max land, the hero (via `getReportData().terms`), the PDF, the Excel inputs and
-  the plan comparison. A blank term is the field's HTML default (10 / 8 / 6, also its placeholder), not
+  the plan comparison. A blank term is the field's HTML default (12 / 9 / 8 since v8.36, the sheet's; 10 / 8 / 6
+  before; also its placeholder), not
   0 months, and is silent, as with the profit rule. An unreadable term also gets the default, a term under
   1 month is raised to 1, and one over the field's max (36) applies as typed; each of those shows a note in
   `#term-warn`. Flag a direct `pv('term-…')` read. The Excel model mirrors this once (v8.13): Scenarios row
@@ -299,6 +338,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   that compute layout from completion state instead of flags+catalog (layout must be
   identical for every project with the same flags), and flag removal of the legacy
   migration while old payloads can still exist in Drive.
+- **Dependency grammar (`depGroups()`):** a catalog `dep` of `'a|b'` waits on ALL of a and
+  b; `'a/b'` waits on ANY ONE of them (whichever is done first). An any-of group is staged
+  after its earliest alternative and unlocks when one alternative is done. `address` uses
+  it on sublot paths (`'dev-ldirl/plat-app'`): the County files addresses only after an
+  approved LDIRL or LDPLAT (Brian-approved 2026-10-12, INTEL-067). Flag a change that
+  collapses it back to a single gate, or that reads `dep` without going through `depGroups()`.
 - **Storage rule:** `permits.html` uses NO browser storage — its `ttv-permit-auth`
   `sessionStorage` key went away with the passcode gate on 2026-09-17. That key now lives
   only in `capital-raise.html` (still gated) and is the one allowed browser-storage key
@@ -430,6 +475,31 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Server errors are errors (v8.34, C-F7).** The server answers 200 with `errors[]`. With no rows and errors the
   box says the county records didn't answer (red), not "no sales"; with rows it lists them. The empty-result text
   uses the request's window (12 months).
+- **The outlier guard (v8.41, research/12 Q4, Brian 2026-10-12).** Before the team rule runs, a new-build candidate
+  whose $/sf is over `GUARD_X` (1.5) times, or under 1/`GUARD_X` of, the median $/sf of the planned product's new builds
+  in the radius (all 24 months; any product when `product` is `any`) is left out, once `GUARD_MIN_REF` (5) such sales
+  set that median. It is nearly always an odd county heated area (W Tyvola: $625k on 1,300 sf; 3018 Reid Ave). The row
+  gets `odd_sf` ('high' / 'low') and `odd_meets` (whether the chosen step, or the team rule when there's no ARV, would
+  have used it); `out.guard` and a note say how many. The page lists the `odd_meets` rows in the comps table as
+  `out:'odd_sf'` (with `outWhy`), and `readComp()` counts such a row as left out until its Sq Ft, Sold $ or
+  Adjustments is edited (`onComp()` drops `out`). Measured on the research/12 engine: 74 comps over 79 deals, 2 ARVs
+  moved by ~1%; on the 47 of 1,077 test sales it moved, the mean miss vs the real sale went +31% → +10%. Flag a
+  change that lets a guarded row count silently, or drops the table listing.
+- **Infill and the vet verdict (v8.41, research/12 Q2, Brian 2026-10-12).** `out.infill` counts the other parcels
+  built `minYear`+ (2020) whose assessor point is within `INFILL_FT` (300 ft) of the lot's, sold or not
+  (`newBuildsNear()`: the parcel layer around the lot's centre, then `camaFetch()`); fewer than `INFILL_MIN` (3) is
+  infill. On infill lots the tool landed 33% within ±5% of the real sale (58% in new-build projects). `out.vet` =
+  `{check, reasons, rule}`: check when there is no ARV, confidence isn't high, the lot is infill, or the count couldn't
+  be made (`infill.checked` false; never read an unknown count as "not infill"). Every answer, early returns and the
+  fatal catch included, goes through `settle()` so it carries both. The wide-spread (>1.6×) line is a note now, not a
+  flag: it caught 12% of the misses over 10%. The page keeps the pull's verdict as `_arvTool` (saved with the deal as
+  `arvTool`, shown only while `_lastGis.pid` is its parcel) under the ARV fields and in the comps box.
+- **Pat's one-tap "why" (v8.41, research/12 Q1).** When Base ARV is $1/sf or more off `_arvTool.psf` (Apply writes the
+  $/sf rounded, or rounded down when capped, so an applied ARV is never a change), chips ask why (`ARV_WHY`: infill,
+  across a busy road, older stock, weaker street, finish, other) into `#arv-why-code` plus `#arv-why-note`, plain
+  `.page` inputs saved like any other. `arvCheckNotes()` sends the verdict and the reason to the deal sheet as `notes[]`
+  lines (the live Apps Script prints them on the Analyzer Snapshot tab) and to the PDF; the hand-off payload's shape and
+  `v` don't change. A structured field and the central reasons log belong to the Sheet chat's next payload version.
 
 ### Street check (`api/street.js`, v8.18)
 - **What it is:** the lot's own stretch of street (same CAMA `streetname`, `STREET_FT` = 1,000 ft; CAMA drops the
@@ -497,7 +567,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **One street check, two callers (2026-10-01).** The handler only validates and sends; the work is `streetCheck()`,
   which `api/mcp.js` also calls. `/api/street` output must stay byte-identical when either side changes (see Street
   Data connector). `keep.rows` / `keep.subject` carry CAMA owner fields for the same-site rule: never send them.
-- **City records, traffic and demolition orders (v8.38).** For the street's parcels and the comparison area's
+- **City records, traffic and demolition orders (v8.43).** For the street's parcels and the comparison area's
   (the same rows the checks use), last `RECORD_MONTHS` (24) months:
   - **Confirmed code violations** (`CodeEnforcementCasesAll`): Nuisance cases whose `Conclusion` says a violation was
     found (`%Compliance%` or "Vehicle Towed"; dismissed, no-violation and open cases don't count), sorted by the section
@@ -553,7 +623,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   It feeds no analyzer screen, save file, PDF or Excel.
 - **Read-only, public data, no secrets.** It's authless, like the other endpoints, and reads only Mecklenburg County,
   City of Charlotte and NC OneMap public services, plus NCDOT's public traffic segments (ArcGIS Online) through the
-  street check (v8.38). Flag a write, an auth token, a key, an env var or another data source.
+  street check (v8.43). Flag a write, an auth token, a key, an env var or another data source.
 - **No Google, by any route** (the street check's rule, above).
   - Nothing from Google passes through the connector or reaches a model: no Street View, Static Maps, Maps JS, Places or
     Google geocodes.
@@ -643,7 +713,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Versioning.** The connector sits outside the analyzer. An `api/mcp.js`-only change doesn't bump `APP_VERSION` or
   the badge, because no analyzer screen changes; a change to street.js or gis.js output still does. Bump
   `SERVER_INFO.version` when a tool's input or output shape changes, since the Street Walk artifact is built against it
-  (1.1.0: `aerial_crops` `outline`; 1.2.0, v8.38: `find_street`'s `profile` adds the street check's `records` and
+  (1.1.0: `aerial_crops` `outline`; 1.2.0, v8.43: `find_street`'s `profile` adds the street check's `records` and
   `traffic`).
 - **Fair housing**, as in the street check: buildings, lots and land use only. Flag occupant, ownership-type or
   demographic data.
@@ -675,12 +745,36 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   value-based check silently overwrote it — a Codex P1 on PR #17. Auto-fill gates on the explicit
   `data-manual` flag instead: `markManual()` sets it on any human edit, `restoreDeal()` sets it on
   every field of a saved deal, and `isManual()` is what `applySurveyDefault()`,
-  `applyCountyDefaults()` and (v8.14) `applyTapDefaults()` check. Flag any auto-fill that compares
+  `applyCountyDefaults()` (v8.36: property tax too) and (v8.14) `applyTapDefaults()` check. Two exceptions keep the
+  typed-or-default state they were saved with instead: the taps (`tapManual`, v8.14) and, since v8.36, `AUTO_FILL_FIELDS`
+  (`LF_AUTO_FIELDS` + `survey`, saved as `autoManual`, put back at the very end of `restoreDeal()` so every step ran with
+  them protected). So a County GIS lookup or a plan / Units change on a reopened deal still fills what nobody typed. Files
+  from before v8.36 have no `autoManual`: those fields stay typed, as before. Flag any auto-fill that compares
   against a default value, or an input added without `markManual(this)` on its handler.
+- **The auto-fill lands each lot inside its SOP band (v8.39, partner decision 2026-10-09, 5a; audit N1.1).** The base SOP
+  and Addendum §5 put the lot factor at about $15k flat and clear, $25–30k with trees or slope, and $40k+ with heavy trees
+  on steep ground. `sopBand()` reads the county's canopy and slope classes: cleared/light canopy on flat ground is the
+  $15k band, heavy/extreme canopy on severe slope the $40k band, everything else the $25k band. `applyCountyDefaults()`
+  then fills an untouched `sop-band` ("Site Work to SOP Band") with the gap between the band's low end and the site-work
+  lines as they stand after clearing and grading (`siteWorkSubtotal()`: clearing through landscaping; demo, heritage and
+  ROW trees are on top of the band). All 15 canopy × slope classes now land in their band; before, 19 of 26 real lots
+  fell short (median $6,150). The gap is worked once, at the lookup, like the other fills: a later edit to clearing
+  doesn't move it. `sop-band` is in `LF_AUTO_FIELDS` (cleared with the site, reset and named when a lookup has no canopy
+  or no slope class, saved in `autoManual`; a file from before v8.39 has none, so its field counts as untouched). It
+  calls `markManual(this)`: a typed figure, 0 included, wins. Flag a band raise that rewrites the clearing or grading
+  tiers, or that re-applies on every recalculation over the analyst's own site-work figures.
 - **The three mappings are deliberate:** demo square footage from the assessor's heated area (falling
   back to the mapped footprint when there is no CAMA record, e.g. a newly created lot); clearing tier
   from canopy % (`CANOPY_CLEARING`); grading from the slope band (`SLOPE_GRADING`). These are
   screening estimates and the UI says so — don't present them as quotes.
+- **Property tax starts from the county bill (v8.36, partner decision 2026-10-09, audit M6).** `applyCountyDefaults()`
+  fills an untouched `fin-tax` with `countyTaxEstimate()`: the assessor's `cama.total_value` × the rates in `MECK_TAX`
+  (cents per $100: Mecklenburg 49.27¢ plus the town of the county address point, `match.point.city`; FY2027, the 2026
+  bills). A town not in the table (unincorporated) gets the county rate only, and `#tax-hint` says so; fire and special
+  districts aren't included. `fin-tax` is in `LF_AUTO_FIELDS`, so a lookup with no value resets an untouched field to $0
+  and names it, and an address move clears it with the site. `fin-tax` calls `markManual(this)`: a typed bill wins, and
+  the hint shows the county figure beside it. A new sub-lot has no assessed value yet (Dellinger's three), so it stays $0
+  with the "enter it by hand" note. **Update `MECK_TAX` each July** when the new rates are adopted.
 
 ### Domain-correctness (don't let geometry override the rulebook)
 > These two rules describe the **target state**; the current code differs. Flag against
@@ -778,7 +872,9 @@ most deals take.
     - rear = among the back-facing edges that reach within 30 ft of the deepest point (**ROW edges included**: alley
       and through lots), the most length facing the street, weighted by depth, plus the rest of that line (pieces that
       face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
-      those 30 ft or at least 40% of the lot's width (an L-shaped lot's step; a notch stays a side);
+      those 30 ft or at least 40% of the lot's width (an L-shaped lot's step; a notch stays a side). **Decided
+      (2026-10-09, row 6): an L-lot's step counts as rear (keep; Pat checks odd lots in Plat Sketch). Alley and through
+      lots take the rear setback on the back street (keep; Pat confirms with the UDO).** Flag a change to either;
     - corner = ROW edges running on from the front that turn 45° or more away from it (a side street), and the pieces
       that follow it bending gently (a curving side street). A ROW piece the corner walk reaches that runs back within 45°
       of the street is front (street line past a longer jog). A reached ROW piece never ends up a side;
@@ -814,7 +910,8 @@ most deals take.
   - Flag any return to intersecting neighbouring offset lines. That left spikes into the setbacks and turned inside out
     when the setbacks met across the lot (audit G4, G12).
   - This half-plane reading is stricter on irregular lots with obtuse corners than "distance to the nearest point of
-    the lot line". Flag a change that switches between the two without saying so.
+    the lot line". **Decided (partner decision sheet 2026-10-09, row 6: keep, it errs safe).** Flag a change that
+    switches between the two.
 - **Fit check.**
   - **One verdict, `fitStatus()`** (fits / tight / no; `rotated` only on a rect "fits"). The fit grid, the sub-lot card,
     the plan comparison (`getReportData().planComp` → PDF), the compare table and the plan-fit message
@@ -823,6 +920,19 @@ most deals take.
     orientation). The message words it per mode, and on a rect lot says when a tight plan fits only rotated 90°, which it
     reads off `rectEnvelopeFt()` because `fitStatus()` keeps `rotated` for "fits" (its result goes into `planComp`). Before v8.28 the message worked out its own rect fit with no tight tier, so a plan could read
     "✓ fits" there and "⚠ Tight" in the PDF. Flag a reader that computes its own fit.
+  - **Front-load garage plans sit back at the garage setback (v8.39, partner decision 2026-10-09, row 6; audit G15).**
+    `fitStatus(w, d, garage)`: with `garage` true and the zone's `sb-garage` deeper than `sb-front` (`garageApplies()`;
+    Mecklenburg N1-C to N1-F, N2 and UR: 20 ft against a 17 or 10 ft front), the plan is tested with the front setback at
+    the garage setback: `rectEnvelopeFt(w, d, true)` in rect mode, `planOverlay.garagePolysFt` in poly mode (a second
+    envelope `redrawEditor()` builds through `insetPolygonPerEdge(pts, des, garageFrontFt())` only when it applies;
+    `clearEnvelope()` drops it). Only the fit verdict reads it: the drawn envelope, `buildableArea`, BUA and the canvas
+    overlay's drag check stay on the front setback. Which plans: `frontGarageFor(p)`. The deal's own plan follows the
+    Plan & build box `#front-garage`, which takes the plan's `fg` tag when the plan changes (`_garageFor`, like
+    `_unitsFor`) and saves with the deal; every other plan (fit grid, comparison, compare table) uses its `fg` tag. `fg` =
+    Slate's plan stats list a garage (they don't say which way it faces; on our infill lots it's the front); Athens 3.0
+    and Canton aren't in the stats and carry none. `sb-garage` is a read-only table lookup, so `onZoneChange()` blanks it
+    for no zone or a stub zone with no row (it used to keep the last zone's). The plan-fit message and the fit cards say when the garage setback
+    was used. Flag a fit reader that drops the garage argument.
   - **The deal's Units, not one unit (v8.31, audit M2/G10, G8).** `unitsLayout()` / `planLayout(p, units)` /
     `dealLayout()` give the ground a unit count takes; the fit grid, the plan-fit message, the sub-lot card and
     `calcBUA()` all read it. A townhome (`t:'th'`) or a **custom footprint** is one unit of an attached row: Units × its
@@ -830,12 +940,33 @@ most deals take.
     holding `plan.u` units (house 1, duet 2, triplex 3); more Units means `ceil(Units / plan.u)` buildings side by side,
     `2 × sb-sides` apart, as if the lot were split (Brian, 2026-10-08). The fit grid tests every plan at the deal's Units.
     BUA counts the buildings' footprints, not the gaps. `onUnitsChange()` redraws the grid, the message and BUA.
+    **The BUA limit is 24% of the lot only (v8.39, partner decision 2026-10-09, row 6; audit G19).** It was min(24%,
+    5,000 sf), which tripped on most bigger lots. 5,000 sf of built-upon area is where the county's post-construction
+    stormwater rules start (the proxy's `BUA_RULE` text), so `calcBUA()` shows it as a separate warning
+    (`BUA_STORMWATER_SF`), never as part of the limit. Flag a change that puts the 5,000 sf back into the limit.
+    The PDF memo shows one unit's footprint and the whole building's (`memoFootprints()`: `footprintUnit` /
+    `footprintBldg` in `getReportData()`, from `dealLayout()`; one unit of a duet or the triplex is the building's width
+    ÷ `plan.u`), decided 2026-10-09 (row 6). `footprint` stays the plan's listed footprint.
     `unitsWarnings()` says when Units is more than one building holds, when a row passes the county's
     `maxBuildingLen`, and how many units (or whole buildings) fit when the deal doesn't. The fit test may turn the
-    whole layout 90° (separate buildings then stand one behind the other; the message says so). Still open: the plan
-    comparison (`buildPlanComparison()`, the compare table, `dealForPlan()`) tests and prices each plan at its catalogue
-    `plan.u` (X-F2), and the hardscape stays one flat figure per deal. Flag a new fit or BUA reader that uses one
-    unit's footprint for a multi-unit deal.
+    whole layout 90° (separate buildings then stand one behind the other; the message says so). Since v8.40 the plan
+    comparison (`buildPlanComparison()`, the compare table, `dealForPlan()`) builds each plan at the deal's Units too:
+    `unitsForPlan(p, Units)` keeps Units for a house or a townhome row and rounds a duet or the triplex up to whole
+    buildings, and the fit is `planLayout(p, thatUnits)`. The deal's own plan keeps the deal's Units exactly, so its
+    column matches the page. Still open: the hardscape stays one flat figure per deal. Flag a new fit or BUA reader that
+    uses one unit's footprint for a multi-unit deal.
+  - **Plan comparison (v8.40, audit N4.x; Brian 2026-10-13: "comps by plan type").** Columns: the deal's plan, then the
+    Compare shortlist picks (the deal's plan is never dropped; nothing picked = no column, never Akron), then on PDF
+    sheet 4 plans that fit at the deal's Units ('fits', then 'tight') to make 3. A plan too large never fills a slot.
+    Each plan's $/sf (`planPsf()`): the deal's ARV for the deal's plan; for the others the `/api/comps` suggested ARV
+    $/sf for the plan's own product (`t`) and sf (`fetchPlanComps()`, cached in `PLAN_COMPS` by pid|product|finish|sf),
+    Worst/Best at the deal's spread; the deal's $/sf when there are no comps, or when the API had to widen to any
+    product (`rule.relaxed` has 'product'), said in the column. A $/sf typed in the
+    comparison is kept by plan name for the deal and the PDF uses it. The badge (`bestPlanIndex()`) goes to the most
+    Base total profit among plans that fit and meet `getProfitRule()` per unit (`dealForPlan().rule`); none qualifies =
+    no badge, and `noBadgeWhy()` says why. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
+    its window first so the wait can't trip the pop-up blocker). Flag a badge that ignores the fit or the rule, or a
+    compared plan priced at a catalogue unit count.
   - The plan-fit message is drawn by `onPlanChange()` and by `calcBuildable()`, so a lot, setback or corner edit
     redraws it with the grid (before v8.28 only a plan change did, and it kept the old verdict). Lot edits go through
     `calcBuildable()`, not `redrawEditor()` alone: the canvas scale input and `addSide()` called only `redrawEditor()`
@@ -883,9 +1014,11 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   (`renderSheetHandoff()`), shown while the deal on screen is the one sent (`isSentDeal()`: same `addrWords()` street,
   same city when both have one). A blocked pop-up is not recorded as sent.
 - Sending is blocked without a street, a plan or a Base ARV, or while `moneyIssues()` has a note.
-- The sheet's locked formulas don't follow the app's math in several places: it adds 14% to upgrades, finances 60% of
-  land + 100% of build, prices survey at $1,000 / $2,000 per unit and sale costs at 5% + 1%, and its Worst / Best are
-  Base ∓ $10/sf. The hand-off doesn't force the sheet to match; it records both in the snapshot. Changing the
+- The sheet's locked formulas don't follow the app's math in several places: it finances 60% of land + 100% of build
+  (the app: 85% of the project since v8.36), prices survey at $1,000 / $2,000 per unit (the app: once per project) and
+  sale costs at 5% + 1%, has no custom-plans cell, and its Worst / Best are Base ∓ $10/sf. Since v8.36 both add the GC fee
+  to upgrades, run 12 / 9 / 8 months and read CoC as profit ÷ all-in. Chat 11 brings the sheet in line (the partner
+  decisions), and any new payload field bumps `v` and `HANDOFF_VERSION` together. The hand-off doesn't force the sheet to match; it records both in the snapshot. Changing the
   template's formulas is a separate decision for the partners.
 - The Apps Script source is not in this repo; a reference copy lives in Brian's project folder
   (`New Dev UW'er 5000/Code.gs.v3-analyzer-handoff-*.gs`). The Apps Script side is changed by pasting the whole
@@ -954,12 +1087,31 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   (PID 04118536, 3,455 sf) and 2731 (PID 04118537, 4,312 sf), all N1-B, Central Catawba. The older
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
-  Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the Max land and hash below are v8.30's):
+  Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
-  - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$263,493** at the 9.75% default (it was
-    $262,309 at 10% through v8.29), lot factor $25,850. Base interest $38,425, profit $117,845 per the report.
-  - **Reference hash (v8.35, 2026-10-12): `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
+  - 3 × Dayton Townhomes, land $75,000, $265/sf, ZIP 28269: Max land **$262,975** (v8.36: loan 85% of the project,
+    12 / 9 / 8 months, survey $3,000; no upgrades, property tax $0 because the new sub-lot has no assessed value yet),
+    lot factor $25,850. Loan $536,122, cash at closing $106,082, through the hold (9 mo) $145,286. Base interest $39,204,
+    profit $117,618, CoC 47.2% per the report. v8.30–v8.35: $263,493 (93% LTC, 10 / 8 / 6, survey $2,000; base interest
+    $38,425, profit $117,845); $262,309 at 10% through v8.29. v8.36 step by step: 85% loan alone $269,249; + 12 / 9 / 8
+    $263,975; + survey $3,000 $262,975.
+  - **Reference hash (v8.40 on v8.39, 2026-10-13): `fea47778bc02`**, Max land $262,975 unchanged. v8.40 moves only `planComp`
+    (PDF sheet 4): Compare builds builds every plan at the deal's Units and prices it per plan (planPsf()). With
+    `planComp` deleted the hash is `078c1d24648a`, the same as v8.39's. Sheet 4 for Dellinger: Dayton ×3 (the deal, too
+    large as a row of 3), Yarmouth ×3, Wheatley ×3, all at the deal's $/sf. Record it **without opening Compare builds or
+    the PDF first**: sheet 4's notes then read "Comps not pulled yet" (after a pull they say "No townhome comps near this
+    lot", since Dellinger has no county comps of any type within 0.5 mi, and the hash differs).
+  - v8.39 hash (on v8.38), 2026-10-13: `0708b9ad0413`, Max land $262,975 (unchanged): the new
+    `footprintUnit` / `footprintBldg` fields and the plans' `fg` tag inside `planComp` move it; with those taken out it is
+    v8.38's `640a28b8cc7d` (`07209e9d2995` on v8.36 before v8.38 merged). 2723's canopy is extreme and its slope moderate (the $25k band), and its site work is already
+    $25,850, so the SOP band adds $0. With a 100 sf house the $30k floor adds $3,250 (Max land $258,825).
+  - v8.38 hash, 2026-10-13: `640a28b8cc7d`, Max land $262,975 (unchanged). v8.38 adds `offer` to
+    `getReportData()` (opening offer $210,000, rule status, asking check, SOP-08 stress $52,789/unit at $75k land);
+    with `offer` deleted the hash is still `89e653639f61`. At land = Max land the stress gives −$16,127/unit (warns).
+  - v8.36 hash, 2026-10-13: `89e653639f61`, Max land $262,975, with the county's main assessor layer
+    back (`gis.cama.source` "Mecklenburg County CAMA"). The same day main v8.35 gives `beff46071a6e` ($263,493). On 10/12,
+    with the backup tables, v8.36 gave `3855c6d7ca29`. Earlier: **v8.35 `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
     county's backup tables (`gis.cama.source` "… (backup tables)"). History, no figure moving at any step:
     `c7e8f10b0bd7` (v8.30 on 10/08, main layer up); `31e8e99b1fe8` (v8.31–v8.33 while `TaxParcel_camadata` was empty
     and the assessor block blank); `d5b26a3d3bfb` (v8.34 adds `compStats.cap`); `ae9025aadcaa` (v8.35 brings the
@@ -971,6 +1123,9 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     before any rect case (a rect run first changes `lotW`/`lotD`).
   - Rect mode, N1-B: 40×180 → 3,540 sf, 80×180 → 8,260 sf. With Corner lot ticked and Corner Side 13.5: 2,537 /
     7,257 sf; with Corner Side blank it falls back to the side setback (v8.27): 3,540 / 8,260.
+    BUA limits (v8.39, 24% only): 2723 Dellinger 1,715 sf, 40×180 1,728, 80×180 3,456 (all unchanged); a 150×200 lot
+    7,200 (was capped at 5,000). Garage check: N1-C, 50×100, Centerville (22.5×53, `fg`) is "tight" at the 17 ft front
+    and "doesn't fit" at the 20 ft garage setback; Westerville (no garage) stays "tight".
   Flag a math-touching PR that ships without one.
 
 ---

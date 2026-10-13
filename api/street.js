@@ -30,7 +30,7 @@
 //   TaxParcelBoundaries  -> the subject's centre when the CAMA record has no coordinates
 //   Accela 1             -> address points, to tell N Davidson St from S Davidson St (CAMA drops the direction)
 //   Accela 2 / 3         -> City / State maintained street centrelines (camera spot for Street View)
-//   v8.38, condition records (see conditionRecords()):
+//   v8.43, condition records (see conditionRecords()):
 //   Accela 25            -> Code Enforcement Service Areas: whether the lot is where the City's records reach
 //   HNS/CodeEnforcementCasesAll   -> confirmed code violations by the section they cite (counts only)
 //   ODP/ServiceRequests311        -> 311 condition complaints (counts only; complaints, not findings)
@@ -53,7 +53,7 @@ const CAMERA_MAX_FT = 400;       // a centreline further than this from the lot 
 const SALE_MONTHS = 60;          // one street has only a few sales a year; the same window applies to both sides
 const MIN_SALE = 50000;          // drops family transfers the validity code missed
 const NEW_SINCE = 2020;          // same "new build" line as api/comps.js minYear
-export const RECORD_MONTHS = 24; // v8.38 condition records: the same window as the connector's code cases (api/mcp.js CASE_MONTHS)
+export const RECORD_MONTHS = 24; // v8.43 condition records: the same window as the connector's code cases (api/mcp.js CASE_MONTHS)
 const AREA_FT = 2640;            // the fallback comparison area: every parcel within half a mile
 const MIN_AREA_HOMES = 30;       // fewer homes than this in the assessor neighbourhood: too few to compare with
 // The assessor also codes parcels to commercial market areas ("APARTMENT - NORTHWEST SUBMARKET", "RETAIL - …",
@@ -84,7 +84,7 @@ const CHECKS = [
     enough:(s,n)=>s.parcels>=5 && n.parcels>=10, weaker:(g,s)=>s.nonres>=2 && g>=10},
   {key:'new_builds_pct', label:`Homes built ${NEW_SINCE}+`, gap:'pts', info:true,   // a good sign, never a weakness
     enough:(s,n)=>s.homes>=5 && n.homes>=10, stronger:(g,s)=>s.new_builds>=2 && g>=10},
-  // v8.38: City of Charlotte records, per 100 parcels on each side (records:true rows are left out when there are no
+  // v8.43: City of Charlotte records, per 100 parcels on each side (records:true rows are left out when there are no
   // records: outside the City, or the City's layers didn't answer). Weaker = 3+ on the street and at least twice the
   // area's rate. 311 complaints are shown, not judged (info): who calls 311 varies street by street, and a street whose
   // new neighbours call more would read worse for it.
@@ -96,7 +96,7 @@ const CHECKS = [
     more:(g,s)=>s.complaints>=3 && g>=1},
 ];
 
-// ── v8.38: condition records, traffic and demolition orders ───────────────────────────────────────────────────────────
+// ── v8.43: condition records, traffic and demolition orders ───────────────────────────────────────────────────────────
 // The City's records of the things a street walk looks for (overgrown yards, junked cars, cars on the lawn, junk and
 // dumping, boarded houses), counted for the street's parcels and the comparison area's. Counts only: no record is
 // returned, and no complainant, inspector, address or description text is ever requested (TITLE and
@@ -352,7 +352,7 @@ function profile(rows, since, lots){
 }
 
 // Street vs area, check by check. 'thin' = too little evidence on either side to say.
-// v8.38: the records rows (records:true) only when there are records (s.cases set); 'more' is the info-only 311 row's
+// v8.43: the records rows (records:true) only when there are records (s.cases set); 'more' is the info-only 311 row's
 // "higher than the area" (shown, never counted as weaker). A records row whose area rate is 0 compares as "far above"
 // when the street has any (b=0 would otherwise read "too few").
 function compare(s, n){
@@ -366,7 +366,7 @@ function compare(s, n){
 }
 // The record rows' names in the verdict sentence
 const SHORT = {cases_per100:'code violations'};
-// area: 'its neighbourhood' or 'the half mile around it'. flags (v8.38): {aadt, busy, demolition_orders}; a busy road
+// area: 'its neighbourhood' or 'the half mile around it'. flags (v8.43): {aadt, busy, demolition_orders}; a busy road
 // or a demolition order on the street turns "in line" into "watch" and is named in every verdict.
 function verdictFor(checks, s, area, flags){
   const weak = checks.filter(c=>c.verdict==='weaker'), strong = checks.filter(c=>c.verdict==='stronger');
@@ -464,10 +464,10 @@ export default async function handler(req, res){
 export async function streetCheck(pid, ft, view, keep, fetchSignal){
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
-  // v8.38: the City's records and the traffic count, only in the full answer (not mode=view)
+  // v8.43: the City's records and the traffic count, only in the full answer (not mode=view)
   if(!view){ out.params.record_months = RECORD_MONTHS; out.params.busy_aadt = BUSY_AADT; out.records = null; out.traffic = null; }
   const ctx = {};   // camaQuery()'s state for this request
-  let recTimer = null;   // v8.38: the records' deadline, cleared in finally whichever way this ends
+  let recTimer = null;   // v8.43: the records' deadline, cleared in finally whichever way this ends
   try{
     // 1) the subject: street name, neighbourhood code and a point
     const a = (await camaQuery({pids:[pid]}, CAMA_FIELDS, {ctx, fetchSignal})).rows[0];
@@ -575,7 +575,7 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
       }catch(e){ out.errors.push('area: '+e.message); }
     }
 
-    // 5) profiles, after one sold-as-vacant check over every home sale either side counts. v8.38: the City's condition
+    // 5) profiles, after one sold-as-vacant check over every home sale either side counts. v8.43: the City's condition
     //    records and the NCDOT traffic count run alongside; either one down costs only itself (an errors entry).
     const recAbort = new AbortController(); recTimer = setTimeout(()=>recAbort.abort(), RECORDS_MS);
     // AbortSignal.any is Node 20.3+; without it the connector's per-request signal is dropped here and the deadline still holds

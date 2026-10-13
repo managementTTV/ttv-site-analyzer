@@ -30,7 +30,7 @@ import { geocodeAddress, parcelAtPoint, findAttr } from './gis.js';
 import { inflateSync, deflateSync } from 'node:zlib';
 
 // 1.1.0 (2026-10-05): aerial_crops takes outline (an input shape change, so a minor bump; AGENTS.md)
-// 1.2.0 (v8.38): find_street's profile carries the street check's City records and traffic (an output shape change)
+// 1.2.0 (v8.43): find_street's profile carries the street check's City records and traffic (an output shape change)
 const SERVER_INFO = {name:'ttv-street-data', title:'TTV Street Data', version:'1.2.0'};
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];   // newest first; an unknown request gets the newest
 const UA = 'TTV-Street-Data/1.0 (+https://ttv-site-analyzer.vercel.app/api/mcp)';   // some county / state servers 403 bare agents
