@@ -181,6 +181,27 @@
   .refin{width:130px}
   .tag.both{background:#6b4f86;color:#fff}
 
+  /* Accela (v4.6): the City's record sets the status of every step that carries an LDIRL / LDPLAT number */
+  .acchip{display:inline-block;font-size:7.5px;font-weight:800;letter-spacing:.3px;border-radius:3px;padding:0 5px;white-space:nowrap;border:1px solid transparent;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+  .acchip.ac-done{background:#e4ece1;color:#42604e;border-color:#c9d8c4}
+  .acchip.ac-submitted{background:#fdf1db;color:#8a6412;border-color:#ecd7a8}
+  .acchip.ac-active{background:#f6e3c4;color:#7a4f0a;border-color:#e2bf83}
+  .acchip.ac-blocked{background:#f3d4d4;color:var(--red);border-color:#e3b3b3}
+  .acchip.ac-none{background:#eef0f2;color:#54606c;border-color:#dde1e5}
+  .node a.acref{color:var(--slate);font-weight:700;text-decoration:none}
+  .node a.acref:hover{text-decoration:underline}
+  .acbox{margin-top:9px;border:1px solid var(--line);border-radius:8px;background:#fbf9f4;padding:8px 11px;font-size:11px}
+  .acbox .ach{font-weight:700;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .acbox a{color:var(--navy)}
+  .acbox .acw{margin-top:3px;color:#54606c}
+  .acsteps{margin-top:6px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:2px 14px}
+  .acsteps div{font-size:10px;color:#54606c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acsteps b{color:var(--navy);font-weight:600}
+  .acsteps .ok::before{content:"✓ ";color:var(--pine)}
+  .acsteps .now::before{content:"● ";color:var(--amber)}
+  .acsteps .wait::before{content:"○ ";color:#b8bfc6}
+  .lockn{font-size:8.5px;color:var(--slate);font-weight:600;text-transform:none;letter-spacing:0}
+
 </style>
 </head>
 <body>
@@ -246,7 +267,8 @@
 /* TTV MECKLENBURG PERMITTING DASHBOARD — v4.
    Renders TTV_Permit_State (Drive) and WRITES team edits back through
    POST /api/permits → TTV Permit Feed (token held server-side on Vercel).
-   Flow shapes are generated from two setup questions: Subdivide? × Sublot?. */
+   Flow shapes are generated from two setup questions: Subdivide? × Sublot?.
+   v4.6: steps carrying a City record number take their STATUS from Accela (see syncAccela). */
 
 const STATUSES=[
   {k:'todo',label:'Not started'},{k:'active',label:'In progress'},
@@ -502,11 +524,12 @@ function nodeHtml(p,m){
   let mult='';
   if(m.perUnit&&(p.units||0)>1)mult=`<span class="unitchip">×${p.units}</span>`;
   else if(m.perLot&&(p.lots||0)>1)mult=`<span class="unitchip">×${p.lots}</span>`;
-  const ref=c.ref?` <span class="nm" style="color:var(--slate);font-weight:700">${esc(c.ref)}</span>`:'';
+  const cref=cityRef(c.ref);
+  const ref=c.ref?` <span class="nm" style="color:var(--slate);font-weight:700">${cref?`<a class="acref" href="${ACCELA_URL(cref)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open in Accela">${esc(c.ref)}</a>`:esc(c.ref)}</span>`:'';
   return `<div class="node st-${c.status} ${m.gate?'gate':''} ${selMs===m.id?'msSel':''}" onclick="selectMs('${m.id}')">
     <div class="nt">${m.t}${mult}</div>
     <div class="nm">${esc(c.vendor||m.agency)}${ref}</div>
-    <div class="nb">${m.gate?'<span class="gatechip">Gate</span>':''}${m.crit?'<span class="critchip">Watch</span>':''}${badge}${pd}${held}</div>
+    <div class="nb">${m.gate?'<span class="gatechip">Gate</span>':''}${m.crit?'<span class="critchip">Watch</span>':''}${badge}${pd}${held}${accelaChip(c.accela)}</div>
   </div>`;
 }
 
@@ -515,6 +538,7 @@ function detailHtml(p,m){
   const byId=Object.fromEntries(catalogFor(p.flags).map(x=>[x.id,x]));
   const depTxt=depGroups(m,p,byId).map(g=>g.map(id=>byId[id].t).join(' or ')).join(' + ');
   const opts=STATUSES.map(st=>`<option value="${st.k}" ${c.status===st.k?'selected':''}>${st.label}</option>`).join('');
+  const own=accelaOwned(p,c);
   return `<div class="detail">
     <div class="dt">${m.t} ${m.gate?'<span class="gatechip">Gate</span>':''} ${m.crit?'<span class="critchip">Watch</span>':''}
       <button class="xbtn" onclick="selectMs(null)">close ✕</button></div>
@@ -522,13 +546,14 @@ function detailHtml(p,m){
     ${depTxt?`<div class="dn dep">${depTxt}</div>`:''}
     ${m.note?`<div class="dn">${m.note}</div>`:''}
     <div class="ctl">
-      <div class="cg"><label>Status</label><select onchange="setStatus('${p.id}','${m.id}',this.value)">${opts}</select></div>
+      <div class="cg"><label>Status${own?' <span class="lockn">· set by Accela</span>':''}</label><select ${own?'disabled title="Set by Accela — change it in Accela, not here"':''} onchange="setStatus('${p.id}','${m.id}',this.value)">${opts}</select></div>
       <div class="cg"><label>Owner</label><input type="text" style="width:120px" value="${esc(c.owner||'')}" onchange="setField('${p.id}','${m.id}','owner',this.value)"></div>
       <div class="cg"><label>Vendor / who's doing it</label><input type="text" style="width:150px" value="${esc(c.vendor||'')}" placeholder="${esc(m.agency)}" onchange="setField('${p.id}','${m.id}','vendor',this.value)"></div>
       <div class="cg"><label>Started</label><input type="date" value="${c.started||''}" onchange="setField('${p.id}','${m.id}','started',this.value||null)"></div>
       <div class="cg"><label>Due date</label><input type="date" value="${c.due||''}" onchange="setField('${p.id}','${m.id}','due',this.value)"></div>
       <div class="cg"><label>Ref # (LDIRL / LDPLAT / permit)</label><input type="text" class="refin" value="${esc(c.ref||'')}" placeholder="e.g. LDIRL-2026-02598" onchange="setField('${p.id}','${m.id}','ref',this.value)"></div>
     </div>
+    ${accelaBox(p,c)}
   </div>`;
 }
 
@@ -554,6 +579,8 @@ function renderProject(){
       ? `🔄 <b>Live shared data</b> — from <b>TTV_Permit_State</b> (Drive) via /api/permits${DATA_META.updated?`, updated ${esc(String(DATA_META.updated).slice(0,10))}`:''}. <b>Edits here SAVE for the whole team</b> (your name goes on the edit log); the Permit Listener reconciles them with email evidence each weekday morning.`
       : `⚠ <b>Offline snapshot</b> — /api/permits unreachable (${esc(DATA_META.error||'unknown')}); showing the last baked-in snapshot. Edits will NOT save until the API is back. Reload to retry.`;
   html+=`<div class="banner">${srcNote}</div>`;
+  const acNote=accelaNote();
+  if(acNote)html+=`<div class="banner">${acNote}</div>`;
   html+=`<div class="pathnote">${pathNotes[p.flags.path]}</div>`;
   html+=`<div class="kstrip">
     <div class="kpi"><div class="l">Progress</div><div class="v">${s.pct}% <span style="font-size:10px;font-weight:600;color:#6a7580">(${s.done}/${s.total})</span></div></div>
@@ -569,6 +596,7 @@ function renderProject(){
     <div class="li"><span class="swatch" style="background:var(--red)"></span>Blocked</div>
     <div class="li"><span class="gatechip">Gate</span>do-not-reverse</div>
     <div class="li"><span class="critchip">Watch</span>silent-staller</div>
+    <div class="li"><span class="acchip ac-done">Accela</span>status from the City's record</div>
     <div class="li" style="color:#8a94a0">click any step to edit</div>
     <div class="viewtoggle"><button class="${viewMode==='tracks'?'on':''}" onclick="setView('tracks')">Tracks</button><button class="${viewMode==='phases'?'on':''}" onclick="setView('phases')">Phases</button></div>
   </div>`;
@@ -594,11 +622,12 @@ function renderProject(){
   html+=`<details class="sys"><summary>§ Systems layer — where this lives &amp; build notes</summary>
   <p><b>Where everything lives:</b> the <b>record</b> is the newest "TTV_Permit_State" doc in Drive (republished on every change). This <b>board</b> renders that record: the listener POSTs fresh data to the TTV Permit Feed endpoint, which updates the Drive JSON this page fetches via <b>/api/permits</b> on every load. The <b>listener</b> is a scheduled task (weekdays ~7:30am) that reads Gmail, updates the record, publishes the board data, and leaves a digest in Brian's Gmail drafts. The <b>intel log</b> (inside the state doc) holds proposed catalog changes awaiting Brian's approval.</p>
   <p><b>Team edits (v4):</b> status/owner/due/ref changes, new projects, and deletions save through <b>POST /api/permits</b> — the proxy holds the feed's write token as a server-side secret and patches the Drive JSON in place, so edits stick for everyone with no git and no deploys. Every edit is tagged with the editor's name; the Listener adopts overnight edits into the system of record and flags any that contradict email evidence instead of silently overwriting.</p>
+  <p><b>Accela (v4.6) — email finds, Accela updates:</b> the listener's email scan finds new items and puts their City record numbers on the board; from then on every step carrying one (LDIRL-…, LDPLAT-…) takes its <b>status from Accela Citizen Access</b>. Each time the board opens it asks <b>/api/accela</b> to read those records — the public record page, its review steps and related records, no login — and saves Accela's answer to the shared record as editor "Accela"; a daily early-morning run does the same before the listener, even when nobody opens the board. The status picker is locked on those steps. "Approved" = the record is approved/closed, or its <b>Plan Collection</b> review step is approved (an LDIRL stays "In Progress" for the Urban Forestry inspection after its plans are approved). A plat number on a RECORDED step drives that plat's approval step: recording happens at the Register of Deeds, which Accela doesn't show. County building permits (R-TH-…) aren't in Accela's public search, so they stay email-driven.</p>
   <p><b>The Dellinger address-stall fix:</b> Mecklenburg County GIS quotes 5–7 business days for Address Assignment, but it can only be filed once the LDIRL or LDPLAT is approved — on this board it's a Watch gate with a days-in-stage clock, an owner, and a due date, so "sitting" becomes visible and pingable.</p>
   <p><b>County-specific by design:</b> this is the Mecklenburg catalog; Union/Cabarrus/Iredell get cloned catalogs with swapped agencies + timelines — same engine, same paths.</p>
   </details>`;
 
-  html+=`<div class="footer"><b>TTV Permitting Dashboard v4.5</b> · Subdivide × Sublot flow engine (mtg 2026-08-13) · team edits save to the shared record · timeline target: beat the ~17-week Dellinger baseline · Mecklenburg County / City of Charlotte · Tracks view staging is computed from the live dependency graph; week labels are indicative (from expected durations), not commitments. Audited Aug 2026 vs charlottenc.gov, mecknc.gov, charlotteudo.org, gis.mecknc.gov + TTV Development Brain + SOP-04 + live project email history. Confirm live figures with each agency before they drive a permit, contract, or underwrite.</div>`;
+  html+=`<div class="footer"><b>TTV Permitting Dashboard v4.6</b> · Subdivide × Sublot flow engine (mtg 2026-08-13) · team edits save to the shared record · timeline target: beat the ~17-week Dellinger baseline · Mecklenburg County / City of Charlotte · Tracks view staging is computed from the live dependency graph; week labels are indicative (from expected durations), not commitments. Audited Aug 2026 vs charlottenc.gov, mecknc.gov, charlotteudo.org, gis.mecknc.gov + TTV Development Brain + SOP-04 + live project email history. Confirm live figures with each agency before they drive a permit, contract, or underwrite.</div>`;
   content.innerHTML=html;
   if(viewMode==='tracks')requestAnimationFrame(drawGateDrop);
 }
@@ -606,6 +635,7 @@ function renderProject(){
 function selectMs(id){selMs=(selMs===id?null:id);renderProject();}
 function setStatus(pid,mid,val){
   const p=PROJECTS.find(x=>x.id===pid),c=p.state[mid];
+  if(accelaOwned(p,c)){toast('⚠ This step\'s status comes from Accela — change it in Accela, not here',true);render();return;}
   if((val==='active'||val==='submitted')&&!c.started)c.started=fmtDate(today);
   if(val==='todo')c.started=null;
   c.status=val;render();
@@ -613,7 +643,8 @@ function setStatus(pid,mid,val){
 }
 function setField(pid,mid,field,val){
   const c=PROJECTS.find(x=>x.id===pid).state[mid];c[field]=val;render();
-  saveState({op:'setMilestone',projectId:pid,milestoneId:mid,changes:{...c}});
+  const saved=saveState({op:'setMilestone',projectId:pid,milestoneId:mid,changes:{...c}});
+  if(field==='ref'&&cityRef(val))saved.then(ok=>{if(ok)syncAccela();}); /* a new City number: let Accela set the status now */
 }
 
 function openNew(){document.getElementById('overlay').classList.add('show');}
@@ -665,7 +696,8 @@ async function saveState(patch){
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
     toast('✓ Saved to the shared record');
-  }catch(e){toast('⚠ Save failed ('+((e&&e.message)||e)+') — change is on this screen only',true);}
+    return true;
+  }catch(e){toast('⚠ Save failed ('+((e&&e.message)||e)+') — change is on this screen only',true);return false;}
 }
 function toast(msg,bad){
   let t=document.getElementById('toast');
@@ -674,6 +706,85 @@ function toast(msg,bad){
   clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),3500);
 }
 
+
+/* ── Accela (v4.6): email FINDS, Accela UPDATES ─────────────────────────────
+   The Permit Listener's email scan finds new items and puts their City record numbers on the board;
+   from then on Accela Citizen Access owns the STATUS of every step carrying an LDIRL / LDPLAT number.
+   On each load the board asks /api/accela to sync: the server reads the shared record, looks each
+   City record up in Accela (public pages, no login) and saves Accela's answer back (editor "Accela").
+   Accela's status is shown even if that save fails — it is the source of truth. The status picker is
+   locked on those steps; owner / due / vendor / ref stay editable. In-memory only (no storage keys). */
+const CITY_REF=/\b(LD[A-Z]{2,6}|ZV|ZUP|CPB|RSVA)-\d{4}-\d{3,7}\b/i;
+function cityRef(s){const m=CITY_REF.exec(String(s||''));return m?m[0].toUpperCase():null;}
+const ACCELA_URL=ref=>'https://aca-prod.accela.com/CHARLOTTE/Cap/GlobalSearchResults.aspx?QueryText='+encodeURIComponent(ref);
+let ACCELA={state:'idle'};
+/* owned = the block says this record sets the step AND that record number is still on the project
+   (a removed / moved ref must not leave the step locked) */
+function accelaOwned(p,c){return !!(c&&c.accela&&c.accela.owns&&c.accela.board&&p&&Object.values(p.state).some(x=>cityRef(x&&x.ref)===c.accela.rec));}
+function shortDate(d){const[y,m,dd]=String(d||'').split('-').map(Number);return m&&dd?m+'/'+dd:'';}
+function accelaChip(a){
+  if(!a)return'';
+  const lbl=a.board==='done'?'✓ '+(a.stepDate?shortDate(a.stepDate):'approved')
+    :'· '+(a.board==='active'?(/fee/i.test(a.why||'')?'fees due':/revision/i.test(a.why||'')?'revisions':'on us')
+    :a.board==='submitted'?'in review':String(a.status||'no status').toLowerCase());
+  return `<span class="acchip ac-${a.board||'none'}" title="${esc(a.why||'')}">Accela ${esc(lbl)}</span>`;
+}
+function accelaBox(p,c){
+  const a=c.accela;if(!a)return'';
+  const rec=ACCELA.records&&ACCELA.records[a.rec];
+  let h=`<div class="acbox"><div class="ach">🏛 Accela · <a href="${ACCELA_URL(a.rec)}" target="_blank" rel="noopener">${esc(a.rec)}</a>${a.type?` · ${esc(a.type)}`:''} · record status <b>${esc(a.status||'—')}</b> ${accelaChip(a)}</div>`;
+  h+=`<div class="acw">${esc(a.why||'')}${a.step?` · ${a.board==='done'?'':'now: '}${esc(a.step)} — ${esc(a.stepStatus||'')}${a.stepDate?' '+shortDate(a.stepDate):''}`:''}</div>`;
+  h+=`<div class="acw">${accelaOwned(p,c)?'<b>Accela sets this step\'s status</b> — change it in Accela, not here.':'Shown for reference — this record doesn\'t set this step\'s status.'} Opened ${esc(a.opened||'—')} · last City activity ${esc(a.asOf||'—')}${rec&&rec.ok?' · checked just now':''}</div>`;
+  if(rec&&rec.ok&&rec.tasks&&rec.tasks.length)
+    h+=`<div class="acsteps">`+rec.tasks.map(t=>{
+      const l=t.latest,cls=t.state==='active'?'now':t.state==='complete'?'ok':'wait';
+      const tip=t.history.map(x=>x.status+(x.date?' '+x.date:'')).join(' → ')+(t.comment?' — '+t.comment:'');
+      return `<div class="${cls}" title="${esc(tip)}"><b>${esc(t.name)}</b>${l?` — ${esc(l.status)}${l.date?' '+shortDate(l.date):''}`:''}</div>`;
+    }).join('')+`</div>`;
+  if(rec&&rec.related&&rec.related.length)
+    h+=`<div class="acw">Related in Accela: ${rec.related.map(r=>`<a href="${ACCELA_URL(r.ref)}" target="_blank" rel="noopener">${esc(r.ref)}</a>${r.type?' ('+esc(r.type)+')':''}`).join(', ')}</div>`;
+  if(rec&&!rec.ok)h+=`<div class="acw">⚠ Accela lookup failed just now (${esc(rec.error||'unknown')}) — showing the last saved Accela status.</div>`;
+  return h+`</div>`;
+}
+function accelaNote(){
+  const A=ACCELA;
+  if(A.state==='loading')return `🏛 <b>Checking Accela</b> for ${A.n} City record${A.n>1?'s':''}…`;
+  if(A.state==='error')return `⚠ <b>Accela check failed</b> (${esc(A.error)}) — showing the last saved Accela status.`;
+  if(A.state!=='ok')return '';
+  const recs=Object.values(A.records),okN=recs.filter(r=>r.ok).length;
+  const moved=A.items.filter(i=>i.owns&&i.accela&&i.from!==i.to);
+  const at=new Date(A.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  const step=id=>(CATALOG.find(m=>m.id===id)||{t:id}).t.split(' — ')[0];
+  let s=`🏛 <b>Accela</b> checked ${esc(at)} — ${okN} of ${recs.length} City record${recs.length===1?'':'s'} read; Accela sets the status of those steps.`;
+  if(moved.length)s+=` <b>${moved.length} status update${moved.length>1?'s':''}:</b> `+moved.map(i=>`${esc(String(i.addr).split(' (')[0])} · ${esc(step(i.milestoneId))} → ${esc(i.accela.why)}`).join('; ')+'.';
+  if(A.deferred)s+=` ${A.deferred} more will save on the next check.`;
+  if(A.failed)s+=` ⚠ ${A.failed} couldn't be saved to the shared record — shown here from Accela.`;
+  else if(A.dry&&A.items.some(i=>i.change))s+=` (shown here only, not saved: ${esc(A.dryWhy||'save path not configured')})`;
+  return s;
+}
+/* one sync at a time: a ref saved while the on-load sync runs queues behind it instead of racing it */
+let accelaRun=Promise.resolve();
+function syncAccela(){accelaRun=accelaRun.then(runAccelaSync,runAccelaSync);return accelaRun;}
+async function runAccelaSync(){
+  const n=new Set(PROJECTS.flatMap(p=>Object.values(p.state).map(c=>cityRef(c&&c.ref)).filter(Boolean))).size;
+  if(!n){ACCELA={state:'idle'};return;}
+  ACCELA={state:'loading',n};renderProject();
+  try{
+    const r=await fetch('/api/accela',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({k:GATE_HASH,op:'sync'})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
+    (d.items||[]).forEach(it=>{
+      const p=PROJECTS.find(x=>x.id===it.projectId),c=p&&p.state[it.milestoneId];
+      if(!c)return;
+      if(it.cleared){delete c.accela;return;}
+      if(!it.accela)return;
+      c.accela=it.accela;
+      if(accelaOwned(p,c)){c.status=it.accela.board;if(!c.started&&it.accela.opened&&c.status!=='todo')c.started=it.accela.opened;}
+    });
+    ACCELA={state:'ok',at:d.checkedAt,records:d.records||{},items:d.items||[],failed:d.failed||0,deferred:d.deferred||0,dry:!!d.dry,dryWhy:d.dryWhy||''};
+  }catch(e){ACCELA={state:'error',error:(e&&e.message)||String(e)};}
+  render();
+}
 
 /* --- API token: GATE_HASH is the shared `?k=` value api/permits.js expects on GET and POST.
    The browser passcode gate that used to sit in front of this board was removed 2026-09-17
@@ -696,6 +807,7 @@ async function loadLive(){
     DATA_META={live:false,error:(e&&e.message)||String(e)};
   }
   render();
+  if(DATA_META.live)syncAccela();
 }
 seed();render();
 loadLive();

@@ -8,6 +8,12 @@
     },
     "api/street.js": {
       "maxDuration": 30
+    },
+    "api/accela.js": {
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    { "path": "/api/accela", "schedule": "0 10 * * *" }
+  ]
 }
