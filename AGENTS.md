@@ -70,6 +70,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
   Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, appraisal, insurance, custom plans.
   Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
+- **Lot factor stays one per deal, with a $30k floor when there's a house (v8.39, partner decisions 2026-10-09, 5b / 5c).**
+  Even on a deal of several sub-lots (Dellinger's three) the lot factor is charged once (5b: per deal, as today). With a
+  house to tear down (`demo-sqft` over 0) `calcLF()` lifts the total to at least `LF_HOUSE_MIN` ($30,000, Adam's minimum),
+  once per deal ("per lot" on the decision sheet, against "per unit"), and shows the top-up as its own line ("Minimum with a
+  House ($30k)") in the breakdown, `lfItems` and the PDF. The Excel model's LOT FACTOR row is `MAX(sum, IF(Demo Sq Ft>0,
+  30000, 0))`. Flag a floor applied per unit, or one that ignores demo.
 - **Survey is one front-end survey per project (v8.36, Brian 2026-10-12).** `applySurveyDefault()` writes
   `SURVEY_ONE_LOT` ($1,500: one house on one lot) or `SURVEY_SPLIT` ($3,000: a plan with more than one unit, a custom
   footprint with Units (opt) over 1, or Units over 1), from Phoenix Land Surveying's 9/2/2026 quote rounded (the team's
@@ -676,6 +682,18 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   them protected). So a County GIS lookup or a plan / Units change on a reopened deal still fills what nobody typed. Files
   from before v8.36 have no `autoManual`: those fields stay typed, as before. Flag any auto-fill that compares
   against a default value, or an input added without `markManual(this)` on its handler.
+- **The auto-fill lands each lot inside its SOP band (v8.39, partner decision 2026-10-09, 5a; audit N1.1).** The base SOP
+  and Addendum §5 put the lot factor at about $15k flat and clear, $25–30k with trees or slope, and $40k+ with heavy trees
+  on steep ground. `sopBand()` reads the county's canopy and slope classes: cleared/light canopy on flat ground is the
+  $15k band, heavy/extreme canopy on severe slope the $40k band, everything else the $25k band. `applyCountyDefaults()`
+  then fills an untouched `sop-band` ("Site Work to SOP Band") with the gap between the band's low end and the site-work
+  lines as they stand after clearing and grading (`siteWorkSubtotal()`: clearing through landscaping; demo, heritage and
+  ROW trees are on top of the band). All 15 canopy × slope classes now land in their band; before, 19 of 26 real lots
+  fell short (median $6,150). The gap is worked once, at the lookup, like the other fills: a later edit to clearing
+  doesn't move it. `sop-band` is in `LF_AUTO_FIELDS` (cleared with the site, reset and named when a lookup has no canopy
+  or no slope class, saved in `autoManual`; a file from before v8.39 has none, so its field counts as untouched). It
+  calls `markManual(this)`: a typed figure, 0 included, wins. Flag a band raise that rewrites the clearing or grading
+  tiers, or that re-applies on every recalculation over the analyst's own site-work figures.
 - **The three mappings are deliberate:** demo square footage from the assessor's heated area (falling
   back to the mapped footprint when there is no CAMA record, e.g. a newly created lot); clearing tier
   from canopy % (`CANOPY_CLEARING`); grading from the slope band (`SLOPE_GRADING`). These are
@@ -785,7 +803,9 @@ most deals take.
     - rear = among the back-facing edges that reach within 30 ft of the deepest point (**ROW edges included**: alley
       and through lots), the most length facing the street, weighted by depth, plus the rest of that line (pieces that
       face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
-      those 30 ft or at least 40% of the lot's width (an L-shaped lot's step; a notch stays a side);
+      those 30 ft or at least 40% of the lot's width (an L-shaped lot's step; a notch stays a side). **Decided
+      (2026-10-09, row 6): an L-lot's step counts as rear (keep; Pat checks odd lots in Plat Sketch). Alley and through
+      lots take the rear setback on the back street (keep; Pat confirms with the UDO).** Flag a change to either;
     - corner = ROW edges running on from the front that turn 45° or more away from it (a side street), and the pieces
       that follow it bending gently (a curving side street). A ROW piece the corner walk reaches that runs back within 45°
       of the street is front (street line past a longer jog). A reached ROW piece never ends up a side;
@@ -821,7 +841,8 @@ most deals take.
   - Flag any return to intersecting neighbouring offset lines. That left spikes into the setbacks and turned inside out
     when the setbacks met across the lot (audit G4, G12).
   - This half-plane reading is stricter on irregular lots with obtuse corners than "distance to the nearest point of
-    the lot line". Flag a change that switches between the two without saying so.
+    the lot line". **Decided (partner decision sheet 2026-10-09, row 6: keep, it errs safe).** Flag a change that
+    switches between the two.
 - **Fit check.**
   - **One verdict, `fitStatus()`** (fits / tight / no; `rotated` only on a rect "fits"). The fit grid, the sub-lot card,
     the plan comparison (`getReportData().planComp` → PDF), the compare table and the plan-fit message
@@ -830,6 +851,18 @@ most deals take.
     orientation). The message words it per mode, and on a rect lot says when a tight plan fits only rotated 90°, which it
     reads off `rectEnvelopeFt()` because `fitStatus()` keeps `rotated` for "fits" (its result goes into `planComp`). Before v8.28 the message worked out its own rect fit with no tight tier, so a plan could read
     "✓ fits" there and "⚠ Tight" in the PDF. Flag a reader that computes its own fit.
+  - **Front-load garage plans sit back at the garage setback (v8.39, partner decision 2026-10-09, row 6; audit G15).**
+    `fitStatus(w, d, garage)`: with `garage` true and the zone's `sb-garage` deeper than `sb-front` (`garageApplies()`;
+    Mecklenburg N1-C to N1-F, N2 and UR: 20 ft against a 17 or 10 ft front), the plan is tested with the front setback at
+    the garage setback: `rectEnvelopeFt(w, d, true)` in rect mode, `planOverlay.garagePolysFt` in poly mode (a second
+    envelope `redrawEditor()` builds through `insetPolygonPerEdge(pts, des, garageFrontFt())` only when it applies;
+    `clearEnvelope()` drops it). Only the fit verdict reads it: the drawn envelope, `buildableArea`, BUA and the canvas
+    overlay's drag check stay on the front setback. Which plans: `frontGarageFor(p)`. The deal's own plan follows the
+    Plan & build box `#front-garage`, which takes the plan's `fg` tag when the plan changes (`_garageFor`, like
+    `_unitsFor`) and saves with the deal; every other plan (fit grid, comparison, compare table) uses its `fg` tag. `fg` =
+    Slate's plan stats list a garage (they don't say which way it faces; on our infill lots it's the front); Athens 3.0
+    and Canton aren't in the stats and carry none. The plan-fit message and the fit cards say when the garage setback
+    was used. Flag a fit reader that drops the garage argument.
   - **The deal's Units, not one unit (v8.31, audit M2/G10, G8).** `unitsLayout()` / `planLayout(p, units)` /
     `dealLayout()` give the ground a unit count takes; the fit grid, the plan-fit message, the sub-lot card and
     `calcBUA()` all read it. A townhome (`t:'th'`) or a **custom footprint** is one unit of an attached row: Units × its
@@ -837,6 +870,13 @@ most deals take.
     holding `plan.u` units (house 1, duet 2, triplex 3); more Units means `ceil(Units / plan.u)` buildings side by side,
     `2 × sb-sides` apart, as if the lot were split (Brian, 2026-10-08). The fit grid tests every plan at the deal's Units.
     BUA counts the buildings' footprints, not the gaps. `onUnitsChange()` redraws the grid, the message and BUA.
+    **The BUA limit is 24% of the lot only (v8.39, partner decision 2026-10-09, row 6; audit G19).** It was min(24%,
+    5,000 sf), which tripped on most bigger lots. 5,000 sf of built-upon area is where the county's post-construction
+    stormwater rules start (the proxy's `BUA_RULE` text), so `calcBUA()` shows it as a separate warning
+    (`BUA_STORMWATER_SF`), never as part of the limit. Flag a change that puts the 5,000 sf back into the limit.
+    The PDF memo shows one unit's footprint and the whole building's (`memoFootprints()`: `footprintUnit` /
+    `footprintBldg` in `getReportData()`, from `dealLayout()`; one unit of a duet or the triplex is the building's width
+    ÷ `plan.u`), decided 2026-10-09 (row 6). `footprint` stays the plan's listed footprint.
     `unitsWarnings()` says when Units is more than one building holds, when a row passes the county's
     `maxBuildingLen`, and how many units (or whole buildings) fit when the deal doesn't. The fit test may turn the
     whole layout 90° (separate buildings then stand one behind the other; the message says so). Still open: the plan
@@ -972,7 +1012,11 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     profit $117,618, CoC 47.2% per the report. v8.30–v8.35: $263,493 (93% LTC, 10 / 8 / 6, survey $2,000; base interest
     $38,425, profit $117,845); $262,309 at 10% through v8.29. v8.36 step by step: 85% loan alone $269,249; + 12 / 9 / 8
     $263,975; + survey $3,000 $262,975.
-  - **Reference hash (v8.36, 2026-10-13): `89e653639f61`**, Max land $262,975, with the county's main assessor layer
+  - **Reference hash (v8.39, 2026-10-13): `07209e9d2995`**, Max land $262,975 (unchanged): the new `footprintUnit` /
+    `footprintBldg` fields and the plans' `fg` tag inside `planComp` move it; with those taken out it is v8.36's
+    `89e653639f61`. 2723's canopy is extreme and its slope moderate (the $25k band), and its site work is already
+    $25,850, so the SOP band adds $0. With a 100 sf house the $30k floor adds $3,250 (Max land $258,825).
+  - v8.36 (2026-10-13): `89e653639f61`, Max land $262,975, with the county's main assessor layer
     back (`gis.cama.source` "Mecklenburg County CAMA"). The same day main v8.35 gives `beff46071a6e` ($263,493). On 10/12,
     with the backup tables, v8.36 gave `3855c6d7ca29`. Earlier: **v8.35 `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
     county's backup tables (`gis.cama.source` "… (backup tables)"). History, no figure moving at any step:
@@ -986,6 +1030,9 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     before any rect case (a rect run first changes `lotW`/`lotD`).
   - Rect mode, N1-B: 40×180 → 3,540 sf, 80×180 → 8,260 sf. With Corner lot ticked and Corner Side 13.5: 2,537 /
     7,257 sf; with Corner Side blank it falls back to the side setback (v8.27): 3,540 / 8,260.
+    BUA limits (v8.39, 24% only): 2723 Dellinger 1,715 sf, 40×180 1,728, 80×180 3,456 (all unchanged); a 150×200 lot
+    7,200 (was capped at 5,000). Garage check: N1-C, 50×100, Centerville (22.5×53, `fg`) is "tight" at the 17 ft front
+    and "doesn't fit" at the 20 ft garage setback; Westerville (no garage) stays "tight".
   Flag a math-touching PR that ships without one.
 
 ---
