@@ -8,12 +8,14 @@
 //                      and writes Accela's status back through the TTV Permit Feed (editor "Accela") for each
 //                      milestone where Accela and the board disagree. The board calls this on every load.
 // GET  (Vercel cron, daily 10:00 UTC — before the 7:30 ET listener) — the same sync, so the Drive file is
-//                      current even on days nobody opens the board.
+//                      current even on days nobody opens the board; then the due-date reminder email
+//                      (api/permit-reminders.js) from the synced state.
 //
 // What is read: Accela's public record page (no login — "Login is NOT required for searching any
 // project/application information"), plus the two calls that page itself makes to fill its Processing
-// Status and Related Records tabs. Staff names in the review history are dropped; nothing written back
-// is more than the City already publishes. County records (R-TH-… building permits) are not in the public
+// Status and Related Records tabs. The City reviewer assigned to an open step (task.current) rides only the
+// live response and the reminder email; the block written back to Drive carries no names and nothing more
+// than the City already publishes. County records (R-TH-… building permits) are not in the public
 // search (re-checked 2026-10-13 on aca-prod.accela.com/MECKLENBURG) — they stay email-driven.
 import { GATE_HASH, loadPermitState } from './permits.js';
 
@@ -57,7 +59,10 @@ export function parseRecordPage(page, ref){
 }
 
 // Processing Status: one header row per review step (icon title = complete | active | …, then the step
-// name), followed by a hidden row holding that step's history ("Marked as X on MM/DD/YYYY", oldest first).
+// name), followed by a hidden row holding that step's history ("Due on D, assigned to N · Marked as X on
+// D by N", oldest first). `current` is the step's last entry — for an open step, who has it and the City's
+// own due date. It carries a City reviewer's name, so it rides the live response and the reminder email
+// only, never the block saved to Drive (summary() leaves it out).
 export function parseProcessing(html){
   const tasks = [];
   const head = /<tr[^>]*>\s*<td[^>]*width:38px[^>]*>(.*?)<\/td>\s*<td class='ACA_ALeft' width='770px'\s*>(.*?)<\/td>\s*<\/tr>/gs;
@@ -70,11 +75,15 @@ export function parseProcessing(html){
   marks.forEach((t, i) => {
     const body = html.slice(t.end, i + 1 < marks.length ? marks[i + 1].at : html.length);
     const history = [];
-    const h = /Marked as\s*<span[^>]*>(.*?)<\/span>\s*on\s*<span[^>]*>(.*?)<\/span>/gs;
-    let x;
-    while((x = h.exec(body))){ const st = text(x[1]); if(st && st !== 'TBD') history.push({ status: st, date: isoDate(text(x[2])) }); }
+    const h = /(?:Due on\s*<span[^>]*>(.*?)<\/span>\s*,\s*assigned to\s*<span[^>]*>(.*?)<\/span>\s*(?:<br\s*\/?>)?\s*)?Marked as\s*<span[^>]*>(.*?)<\/span>\s*on\s*<span[^>]*>(.*?)<\/span>/gs;
+    let x, current = null;
+    while((x = h.exec(body))){
+      const st = text(x[3]), who = x[2] ? text(x[2]) : '';
+      if(st && st !== 'TBD') history.push({ status: st, date: isoDate(text(x[4])) });
+      current = { status: st && st !== 'TBD' ? st : null, assignedTo: who && who !== 'TBD' ? who : null, cityDue: x[1] ? isoDate(text(x[1])) : null };
+    }
     const c = /Comment:\s*(?:<\/[^>]+>\s*)*(.*?)(?:Additional Information:|<\/table>)/s.exec(body);
-    const task = { name: t.name, state: t.state, history, comment: c ? text(c[1]).slice(0, 280) || null : null };
+    const task = { name: t.name, state: t.state, history, current, comment: c ? text(c[1]).slice(0, 280) || null : null };
     task.latest = last(task);
     tasks.push(task);
   });
@@ -190,7 +199,7 @@ async function lookup(ref){
   return out;
 }
 
-async function lookupAll(refs){
+export async function lookupAll(refs){
   const uniq = [...new Set(refs)].slice(0, MAX_REFS), out = {};
   for(let i = 0; i < uniq.length; i += 4){              // four at a time — gentle on a public portal
     const batch = await Promise.all(uniq.slice(i, i + 4).map(lookup));
@@ -278,7 +287,11 @@ async function writeFeed(state, item){
   if(!out || !out.ok) throw new Error((out && out.error) || 'feed refused the patch');
 }
 
-async function sync({ dry }){
+async function sync(opts){ return (await syncWithState(opts)).result; }
+
+// The sync, plus the state it read with every planned change applied in memory — Accela is the truth even
+// when a save fails, and re-reading Drive right after the writes can return the old file.
+async function syncWithState({ dry }){
   const t0 = Date.now();
   const state = await loadPermitState();
   const tg = targets(state);
@@ -297,9 +310,13 @@ async function sync({ dry }){
     try{ await writeFeed(state, it); it.wrote = true; wrote++; }
     catch(e){ it.wrote = false; it.note = String(e && e.message || e); failed++; }
   }
-  items.forEach(it => { delete it.upd; });
-  return { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed, deferred,
-           changes: items.filter(i => i.change).length, items, records };
+  items.forEach(it => {
+    const c = it.upd && state.projects.find(p => p.id === it.projectId)?.state[it.milestoneId];
+    if(c) Object.assign(c, it.upd);
+    delete it.upd;
+  });
+  return { state, records, result: { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed, deferred,
+           changes: items.filter(i => i.change).length, items, records } };
 }
 
 export default async function handler(req, res){
@@ -327,7 +344,18 @@ export default async function handler(req, res){
         records: Object.fromEntries(Object.entries(records).map(([r, x]) => [r, { ...x, derived: x.ok ? deriveStatus(x) : null }])) });
       return;
     }
-    if(isCron || (req.method === 'POST' && body && body.op === 'sync') || (req.method === 'GET' && q.sync)){
+    if(isCron){
+      // The daily morning run: Accela sync, then the due-date reminder email built from the synced state.
+      res.setHeader('Cache-Control', 'no-store');
+      const { state, records, result } = await syncWithState({ dry: false });
+      try{
+        const { runReminders } = await import('./permit-reminders.js');
+        result.reminders = await runReminders({ state, records, send: true });
+      }catch(e){ result.reminders = { ok: false, error: String(e && e.message || e) }; }
+      res.status(200).json(result);
+      return;
+    }
+    if((req.method === 'POST' && body && body.op === 'sync') || (req.method === 'GET' && q.sync)){
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json(await sync({ dry: !!((body && body.dry) || q.dry) }));
       return;

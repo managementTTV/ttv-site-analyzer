@@ -401,8 +401,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **No review steps, no status:** a lookup whose Processing Status call fails or comes back empty
     is not `ok` and writes nothing (record status alone would turn an approved LDIRL back into
     "submitted"). Failed lookups are retried after 2 minutes, not on every load.
-  - **No staff names, no comments in Drive:** reviewer names are dropped at parse; review comments
-    ride only the live response (hover text), never the stored block.
+  - **No staff names, no comments in Drive:** the City reviewer assigned to an open step
+    (`task.current.assignedTo`, with the City's own due date `cityDue`) and review comments ride only the
+    live response (the board's "Now with" line, hover text) and the reminder email — never the stored
+    `accela` block (`summary()` leaves them out). Flag a change that writes a name into Drive.
   - **Only production saves.** A branch preview shares the live Drive file and feed, so the sync is
     report-only unless `VERCEL_ENV` is `production` (the banner says why it didn't save). Flag a
     change that lets a preview write.
@@ -415,6 +417,17 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
     when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
     write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.
+  - **Due-date reminder email (v4.7, `api/permit-reminders.js`, Brian 2026-10-13).** The daily cron run in
+    `api/accela.js` syncs, then calls `runReminders({state, records, send:true})` with the synced state (a
+    Drive re-read right after the writes can be stale). One email from management@ to management@
+    (`REMINDER_TO` overrides) listing every board step whose status is not `done` and whose `due` is
+    tomorrow, today or past, in Charlotte's date (`etDate`, America/New_York) — the day before, the day of,
+    and every day after until done. Nothing in that window → no email. `TITLES` mirrors `permits.html`
+    CATALOG ids → titles; ids not in it (legacy payload ids) never trigger. Sent through the Gmail API with
+    the send-only token in the Vercel env var `GMAIL_SEND_TOKEN` (JSON `{client_id, client_secret,
+    refresh_token}` for management@ — minted by `~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py`,
+    never committed). Only production sends. The route itself is preview-only (`?k=…[&format=html][&date=…]`):
+    flag any change that lets the public gate hash trigger a send.
   - County building permits (`R-TH-…`) are not in Accela's public search (re-checked 2026-10-13 on
     the `MECKLENBURG` agency); they stay email-driven. Don't add County lookups without a working
     public path.
