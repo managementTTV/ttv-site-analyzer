@@ -1137,6 +1137,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="field"><label for="arv-b">Base ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-b" placeholder="your comp $/sf" oninput="calcScenarios()"></div></div>
         <div class="field"><label for="arv-best">Best ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" id="arv-best" placeholder="auto +10%" oninput="calcScenarios()"></div></div>
       </div>
+      <label id="inner-cut-row" class="note" style="display:none;align-items:center;gap:8px;margin-top:8px;cursor:pointer"><input type="checkbox" id="inner-cut" checked onchange="calcAll();calcScenarios()"> <span>Inner units of a townhome row or the triplex sell 2% less per sq ft than the end units (partner pick). A deal saved before v8.42 reopens with this off, so its Max land doesn&rsquo;t move.</span></label>
       <div id="arv-check" class="arv-check" style="display:none">
         <div id="arv-check-vet" role="status"></div>
         <div id="arv-check-wide" style="display:none;margin-top:6px;color:var(--text-mid)"></div>
@@ -2113,7 +2114,7 @@ async function pullCountyComps(){
     say(h);
     if(d.arv)_countyPull={sig:countyPullSig(Q,pid),psf:d.arv.retail_psf,capped:!!d.arv.capped};
     // v8.42 (research/14 Q1, Brian 2026-10-13): on an infill lot, the same search at 1.5 mi, shown next to the ARV
-    if(d.infill&&d.infill.infill&&sf&&_arvTool===tool)checkWideArea(Q,pid,gen,tool);
+    if(tool&&d.infill&&d.infill.infill&&sf&&_arvTool===tool)checkWideArea(Q,pid,gen,tool);
   }catch(e){ if(gen===_dealGen)say('Comps lookup failed: '+e.message,'var(--red)'); }
   finally{ if(btn){btn.disabled=false;btn.innerHTML='\ud83d\udce1 Pull new-build comps (Meck)';} }
 }
@@ -4670,8 +4671,13 @@ function innerUnitCount(plan,n){
   return 0;
 }
 function innerUnitFactor(plan,n){n=Math.max(1,Math.round(n)||1);return 1-INNER_UNIT_CUT*innerUnitCount(plan,n)/n;}
+// #inner-cut: ticked on a fresh page; restoreDeal() unticks it for a file saved before v8.42 (no such field), so reopening an
+// older deal doesn't move its Max land. Off = every unit at $/sf × sf, as before.
+const innerCutOn=()=>!!($('inner-cut')&&$('inner-cut').checked);
+function arvFactorFor(plan,n){return innerCutOn()?innerUnitFactor(plan,n):1;}
+function innerCount(plan,n){return innerCutOn()?innerUnitCount(plan,n):0;}
 // the deal's own: its plan at its Units
-function dealArvFactor(){return innerUnitFactor(currentPlanObj(),Math.max(1,pv('units')));}
+function dealArvFactor(){return arvFactorFor(currentPlanObj(),Math.max(1,pv('units')));}
 // v8.31 (audit M2/G10, G8): the ground the deal's Units take with a plan. fitStatus() tests w × d; calcBUA() counts sf (the
 // buildings, not the gaps between them). A townhome (t:'th') or a custom footprint is ONE unit of an attached row: the row
 // is Units × its width, every unit at the listed width (Brian, 2026-10-08). Any other plan's footprint is the whole
@@ -5363,7 +5369,8 @@ function calcScenarios(){
   const allInPerUnit=(allInExLand+landCost)/units;
   const T=getTerms();
   const rule=getProfitRule(), ruleL=profitRuleLabels(rule);
-  const arvF=dealArvFactor(), inner=innerUnitCount(currentPlanObj(),units);   // v8.42: inner units
+  const arvF=dealArvFactor(), inner=innerCount(currentPlanObj(),units);   // v8.42: inner units
+  {const r=$('inner-cut-row');if(r)r.style.display=innerUnitCount(currentPlanObj(),units)>0?'flex':'none';}
 
   ['w','b','best'].forEach(k=>{
     const arvId=k==='w'?'arv-w':k==='b'?'arv-b':'arv-best';
@@ -5714,7 +5721,7 @@ function getReportData(){
 
   // Scenario economics computed directly (not read from DOM text)
   const allInPerUnit=(cost.allInExLand+landCost)/u;
-  const arvFactor=dealArvFactor(), innerUnits=innerUnitCount(currentPlanObj(),u);   // v8.42
+  const arvFactor=dealArvFactor(), innerUnits=innerCount(currentPlanObj(),u);   // v8.42
   const scenarios=['w','b','best'].map(k=>{
     const arvPSF=psf[k]||0;
     const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit*arvFactor:0;
@@ -6683,7 +6690,7 @@ function dealForPlan(plan,psf,U){
   ['w','b','best'].forEach(k=>{
     const term=T[k];
     const arvPSF=psf[k]||0;
-    const arv=plan.sf>0&&arvPSF>0?arvPSF*plan.sf*innerUnitFactor(plan,u):0;   // v8.42: inner units, at this plan's u
+    const arv=plan.sf>0&&arvPSF>0?arvPSF*plan.sf*arvFactorFor(plan,u):0;   // v8.42: inner units, at this plan's u
     const h=holdingCost(loan,term);
     const holdPerUnit=(h.total+purchaseClosing)/u;
     const saleCost=arv*salePct;
@@ -7079,6 +7086,7 @@ function restoreDeal(d){
     ['floor','pct'].forEach(k=>{const e=$('profit-'+k);if(e&&!vals['profit-'+k])e.value=PRE_V82_PROFIT_RULE[k];});
     // 1) jurisdiction first (rebuilds zones, autofills taps)
     {const hm=$('lf-house-min');if(hm&&!vals['lf-house-min'])hm.checked=false;}   // v8.39: an older deal keeps its lot factor
+    {const ic=$('inner-cut');if(ic&&!vals['inner-cut'])ic.checked=false;}   // v8.42: an older deal keeps its ARV / unit
     setV('addr-city');setV('county-sel');
     onCountyChange();
     // then the zone: onZoneChange() writes the zone table's setbacks, so it must run before the blanket restore, or
@@ -7245,7 +7253,7 @@ checkResumeBanner();
 const APP_VERSION='8.42', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
  {v:'8.42',date:'Oct 2026',name:'Inner units and a wide-area check',items:[
-   'Townhome rows and the triplex: the inner units now sell for 2% less per sq ft than the end units (partner pick, from 196 real rows where inner units sold a median 4% under the ends). ARV / Unit is the average over the units, so a row of 3 is 0.7% under $/sf \u00d7 sf, a row of 4 is 1% under. Max land, the scenarios, the PDF, Excel and Compare builds all use it. Duets and houses don\u2019t change, and neither does the comps $/sf.',
+   'Townhome rows and the triplex: the inner units now sell for 2% less per sq ft than the end units (partner pick, from 196 real rows where inner units sold a median 4% under the ends). ARV / Unit is the average over the units, so a row of 3 is 0.7% under $/sf \u00d7 sf, a row of 4 is 1% under. Max land, the scenarios, the PDF, Excel and Compare builds all use it. Duets and houses don\u2019t change, and neither does the comps $/sf. A box under the ARV fields turns it off; a deal saved before 8.42 reopens with it off, so its Max land doesn\u2019t move.',
    'On an infill lot (fewer than 3 new builds within 300 ft), a county comps pull now also runs the same search out to 1.5 mi and shows it as a wide-area check, in the comps box and under the ARV fields. It doesn\u2019t change the suggested ARV or Base ARV: it\u2019s there for Pat to weigh (research/14).',
    'The deal sheet gets a note explaining the inner-unit difference, since the sheet prices every unit at $/sf \u00d7 sf. The wide-area check goes to the sheet as a note too.',
    'County comps pulls are a bit faster, and a big search area no longer stops at the county\u2019s 2,000-sale page.']},

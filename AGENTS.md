@@ -76,8 +76,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   deal's column in Compare builds still equals `getReportData().scenarios`) and Excel (Inputs "ARV factor for inner units",
   read by Scenarios row 15 and the Sensitivity grid). The comps' $/sf, Apply and the comps box don't change: a sale's
   $/sf is one unit's, ends and inner units mixed. The locked deal sheet prices every unit at $/sf × sf, so the hand-off
-  adds a note (`innerUnitNotes()`) saying how much higher the sheet's ARV is. Flag a new $/sf × sf reader that skips the
-  factor, or a factor applied to the comps' $/sf.
+  adds a note (`innerUnitNotes()`) saying how much higher the sheet's ARV is. The `#inner-cut` box (`arvFactorFor()`,
+  `innerCount()`) is ticked on a fresh page and unticked by `restoreDeal()` for a file saved before v8.42, so reopening an
+  older deal doesn't move its Max land (the v8.39 `#lf-house-min` pattern). Flag a new $/sf × sf reader that skips
+  `arvFactorFor()`, calls `innerUnitFactor()` directly (it ignores the box), or a factor applied to the comps' $/sf.
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
   Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, appraisal, insurance, custom plans.
   Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
