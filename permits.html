@@ -757,7 +757,7 @@ function accelaNote(){
   let s=`🏛 <b>Accela</b> checked ${esc(at)} — ${okN} of ${recs.length} City record${recs.length===1?'':'s'} read; Accela sets the status of those steps.`;
   if(moved.length)s+=` <b>${moved.length} status update${moved.length>1?'s':''}:</b> `+moved.map(i=>`${esc(String(i.addr).split(' (')[0])} · ${esc(step(i.milestoneId))} → ${esc(i.accela.why)}`).join('; ')+'.';
   if(A.failed)s+=` ⚠ ${A.failed} couldn't be saved to the shared record — shown here from Accela.`;
-  else if(A.dry&&A.items.some(i=>i.change))s+=' (shown here only — the save path isn\'t configured)';
+  else if(A.dry&&A.items.some(i=>i.change))s+=` (shown here only, not saved: ${esc(A.dryWhy||'save path not configured')})`;
   return s;
 }
 async function syncAccela(){
@@ -774,7 +774,7 @@ async function syncAccela(){
       c.accela=it.accela;
       if(accelaOwned(c)){c.status=it.accela.board;if(!c.started&&it.accela.opened&&c.status!=='todo')c.started=it.accela.opened;}
     });
-    ACCELA={state:'ok',at:d.checkedAt,records:d.records||{},items:d.items||[],failed:d.failed||0,dry:!!d.dry};
+    ACCELA={state:'ok',at:d.checkedAt,records:d.records||{},items:d.items||[],failed:d.failed||0,dry:!!d.dry,dryWhy:d.dryWhy||''};
   }catch(e){ACCELA={state:'error',error:(e&&e.message)||String(e)};}
   render();
 }

@@ -272,16 +272,20 @@ async function sync({ dry }){
   const tg = targets(state);
   const records = await lookupAll(tg.map(t => t.ref));
   const items = plan(state, records);
-  const canWrite = !!(process.env.PERMITS_FEED_URL && process.env.PERMITS_FEED_TOKEN);
+  // Only production saves: a branch preview shares the live Drive file and feed, so opening one before
+  // merge must not write. Previews (and local runs without the feed vars) report what they would change.
+  const env = process.env.VERCEL_ENV;
+  const dryWhy = dry ? 'dry run' : !(process.env.PERMITS_FEED_URL && process.env.PERMITS_FEED_TOKEN) ? 'write path not configured'
+    : env && env !== 'production' ? `${env} deployment — only production saves` : null;
   let wrote = 0, failed = 0;
   for(const it of items){                                   // one at a time: every patch rewrites the same Drive file
     if(!it.change){ it.wrote = null; continue; }
-    if(dry || !canWrite){ it.wrote = false; it.note = dry ? 'dry run' : 'write path not configured'; continue; }
+    if(dryWhy){ it.wrote = false; it.note = dryWhy; continue; }
     try{ await writeFeed(state, it); it.wrote = true; wrote++; }
     catch(e){ it.wrote = false; it.note = String(e && e.message || e); failed++; }
   }
   items.forEach(it => { delete it.upd; });
-  return { ok: true, checkedAt: new Date().toISOString(), dry: !!dry || !canWrite, wrote, failed,
+  return { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed,
            changes: items.filter(i => i.change).length, items, records };
 }
 

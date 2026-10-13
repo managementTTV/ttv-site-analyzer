@@ -397,6 +397,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     owner / due / vendor / ref stay editable. Accela's status is shown even when the save fails.
   - **No staff names, no comments in Drive:** reviewer names are dropped at parse; review comments
     ride only the live response (hover text), never the stored block.
+  - **Only production saves.** A branch preview shares the live Drive file and feed, so the sync is
+    report-only unless `VERCEL_ENV` is `production` (the banner says why it didn't save). Flag a
+    change that lets a preview write.
   - **Writes are sequential and only on change** (one feed call per changed milestone); the
     in-memory 10-minute memo is per function instance. `MAX_REFS` caps a sync at 25 records.
   - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
