@@ -6337,7 +6337,7 @@ function dealForPlan(plan,psf,U){
 // sale). Worst and Best keep the deal's spread around Base. When there are no comps of that type (or no County GIS
 // parcel, or a county outside Mecklenburg) the plan falls back to the deal's $/sf, and the column says so. A $/sf typed
 // in the comparison beats both, for that plan and case, and the PDF uses it too.
-const PLAN_COMPS=new Map();   // search signature -> {state:'loading'|'ok'|'none'|'err', psf, capped, n, conf, p}
+const PLAN_COMPS=new Map();   // search signature -> {state:'loading'|'ok'|'none'|'wide'|'err', psf, capped, n, conf, p}
 const PLAN_TYPE_NOUN={sfh:'house',duet:'duet',th:'townhome',mf:'triplex'};
 function planCompsQuery(plan){
   const g=(typeof window!=='undefined'&&window._lastGis)||null, county=($('county-sel')||{}).value||'';
@@ -6356,7 +6356,10 @@ function fetchPlanComps(plan){
   const e={state:'loading'};PLAN_COMPS.set(q.sig,e);
   e.p=fetch('/api/comps?pid='+encodeURIComponent(q.pid)+'&radius=0.5&months=12&product='+q.product+'&finish='+q.finish+'&sf='+q.sf)
     .then(r=>r.json()).then(d=>{
-      if(d&&d.arv&&d.arv.retail_psf>0)Object.assign(e,{state:'ok',psf:d.arv.retail_psf,capped:!!d.arv.capped,
+      // a search the API had to widen to any product (api/comps.js STEPS) isn't this plan's type: fall back, and say so
+      const anyProduct=!!(d&&d.rule&&(d.rule.relaxed||[]).includes('product'));
+      if(d&&d.arv&&d.arv.retail_psf>0&&anyProduct)e.state='wide';
+      else if(d&&d.arv&&d.arv.retail_psf>0)Object.assign(e,{state:'ok',psf:d.arv.retail_psf,capped:!!d.arv.capped,
         n:(d.comps||[]).filter(c=>c.used).length,conf:d.confidence&&d.confidence.level});
       else{
         // as pullCountyComps(): only the parcel or assessor look-ups failing make an empty answer meaningless
@@ -6383,7 +6386,8 @@ function planPsf(plan){
       note=`County comps: ${e.n} ${noun} sale${e.n===1?'':'s'}, $${Math.round(e.psf)}/sf at ${plan.sf.toLocaleString()} sf${e.capped?' (capped at the highest sale)':''}${e.conf?', '+e.conf+' confidence':''}`;
     }else{
       P=D;src='fallback';
-      const why=q.why||(!e||e.state==='loading'?'comps not pulled yet':e.state==='none'?`no ${noun} comps near this lot`:'county records didn’t answer');
+      const why=q.why||(!e?'comps not pulled yet':e.state==='loading'?'comps still loading':e.state==='none'?`no ${noun} comps near this lot`
+        :e.state==='wide'?`too few ${noun} comps near this lot (the county search had to take any product)`:'county records didn’t answer');
       note=`${why[0].toUpperCase()+why.slice(1)}: the deal’s $/sf is used. Check it.`;
     }
   }
@@ -6407,7 +6411,12 @@ function noBadgeWhy(deals){
   if(!priced.length)return'';
   if(priced.every(d=>d.scen.b.total<=0))return'No best pick: every plan loses money in the Base case.';
   const fit=priced.filter(d=>d.fit.status==='fits'||d.fit.status==='tight');
-  if(!fit.length)return'No best pick: none of these plans fits the lot at the deal’s Units.';
+  if(!fit.length){
+    // no verdict isn't "too large": blank setbacks (fitStatus 'nosb') or no lot drawn / no footprint ('na')
+    if(priced.some(d=>d.fit.status==='nosb'))return'No best pick: enter the setbacks first, so the plans can be fit-checked.';
+    if(priced.every(d=>d.fit.status==='na'))return'No best pick: draw the lot first, so the plans can be fit-checked.';
+    return'No best pick: none of these plans fits the lot at the deal’s Units.';
+  }
   return'No best pick: no plan that fits the lot meets the profit rule ('+profitRuleLabels(getProfitRule()).text+').';
 }
 const fitWord=f=>f.status==='fits'?(f.rotated?'Fits (rotated)':'✓ Fits'):f.status==='tight'?'Tight — verify':f.status==='no'?'✗ Too large':f.status==='nosb'?'Setbacks missing':'No footprint data';

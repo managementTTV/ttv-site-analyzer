@@ -850,7 +850,8 @@ most deals take.
     sheet 4 plans that fit at the deal's Units ('fits', then 'tight') to make 3. A plan too large never fills a slot.
     Each plan's $/sf (`planPsf()`): the deal's ARV for the deal's plan; for the others the `/api/comps` suggested ARV
     $/sf for the plan's own product (`t`) and sf (`fetchPlanComps()`, cached in `PLAN_COMPS` by pid|product|finish|sf),
-    Worst/Best at the deal's spread; the deal's $/sf when there are no comps, said in the column. A $/sf typed in the
+    Worst/Best at the deal's spread; the deal's $/sf when there are no comps, or when the API had to widen to any
+    product (`rule.relaxed` has 'product'), said in the column. A $/sf typed in the
     comparison is kept by plan name for the deal and the PDF uses it. The badge (`bestPlanIndex()`) goes to the most
     Base total profit among plans that fit and meet `getProfitRule()` per unit (`dealForPlan().rule`); none qualifies =
     no badge, and `noBadgeWhy()` says why. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
@@ -988,7 +989,9 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   - **Reference hash (v8.40, 2026-10-13): `6c4d7faa0bfe`**, Max land $262,975 unchanged. Only `planComp` (PDF sheet 4)
     moved: Compare builds builds every plan at the deal's Units and prices it per plan (planPsf()). With `planComp` deleted
     the hash is `cea24e628ec3` on both v8.36 and v8.40. Sheet 4 for Dellinger: Dayton ×3 (the deal, too large as a row of
-    3), Yarmouth ×3, Wheatley ×3; no county comps of any type within 0.5 mi, so the deal's $/sf throughout.
+    3), Yarmouth ×3, Wheatley ×3, all at the deal's $/sf. Record it **without opening Compare builds or the PDF first**:
+    sheet 4's notes then read "Comps not pulled yet" (after a pull they say "No townhome comps near this lot", since
+    Dellinger has no county comps of any type within 0.5 mi, and the hash differs).
   - Reference hash (v8.36, 2026-10-13): `89e653639f61`, Max land $262,975, with the county's main assessor layer
     back (`gis.cama.source` "Mecklenburg County CAMA"). The same day main v8.35 gives `beff46071a6e` ($263,493). On 10/12,
     with the backup tables, v8.36 gave `3855c6d7ca29`. Earlier: **v8.35 `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
