@@ -752,7 +752,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.38 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.39 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -858,7 +858,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="card" style="border-color:rgba(94,128,149,0.25);background:rgba(94,128,149,0.04)">
         <div class="card-title"><span class="dot"></span>Mecklenburg — Cost Inputs to Confirm</div>
         <div class="sb-stat" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">Charlotte Water tap fee (per unit)</span><span style="font-family:var(--f-num)">$17,340 <span style="color:var(--text-dim);font-size:10px">(4" sewer $6,132 + ¾" water $5,389 + fees)</span></span></div>
-        <div class="sb-stat" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">BUA watershed threshold</span><span style="font-family:var(--f-num)">24% of lot or 5,000 sf <span style="color:var(--text-dim);font-size:10px">(whichever is lower)</span></span></div>
+        <div class="sb-stat" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">BUA watershed threshold</span><span style="font-family:var(--f-num)">24% of lot <span style="color:var(--text-dim);font-size:10px">(over 5,000 sf: stormwater review)</span></span></div>
         <div class="sb-stat" style="padding:6px 0;font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--text-mid)">ROW tree city fee</span><span style="font-family:var(--f-num)">$200/inch diameter <span style="color:var(--text-dim);font-size:10px">+ removal labor separate</span></span></div>
       </div>
     </div>
@@ -1222,6 +1222,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div id="cust-fit-msg" style="margin-top:6px"></div>
           <p class="note" style="margin-top:4px">Enter a width &amp; depth to plot the footprint on the Site Intelligence diagram and run the fit check. Leave build cost blank to test the footprint only; the cost stack stays at $0 until you enter one.</p>
         </div>
+        <label class="note" id="front-garage-row" style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer"><input type="checkbox" id="front-garage" onchange="calcBuildable()"> <span>Front-load garage: the fit check sets the house back to the zone&rsquo;s garage setback where that&rsquo;s deeper than the front setback <span id="front-garage-ft"></span></span></label>
         <div class="fr2" style="margin-top:14px">
           <div class="field"><label>Units</label><input type="number" id="units" value="1" min="1" max="20" oninput="onUnitsChange()"></div>
           <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build and upgrades)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div><p class="note" id="gc-fee-note" style="display:none;margin-top:4px"></p></div>
@@ -1343,6 +1344,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="field"><label>Culverts</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="culverts" value="0" oninput="calcLF()"></div></div>
           <div class="field"><label>Landscaping</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="landscaping" value="500" oninput="calcLF()"></div></div>
         </div>
+        <div class="field"><label>Site Work to SOP Band</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="sop-band" value="0" min="0" oninput="markManual(this);calcLF()"></div><p class="note">The County GIS auto-fill tops the site work (clearing through landscaping) up to the SOP band&rsquo;s low end: $15,000 flat and clear, $25,000 trees or slope, $40,000 heavy trees and steep. Type your own figure, or 0, to replace it.</p></div>
+        <label class="note" style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer"><input type="checkbox" id="lf-house-min" checked onchange="calcLF()"> <span>$30,000 minimum lot factor with a house to tear down (Structure Size over 0; Adam&rsquo;s minimum, once per deal). A deal saved before v8.39 reopens with this off, so its Max land doesn&rsquo;t move.</span></label>
       </div>
     </div>
     <div class="sidebar">
@@ -1639,51 +1642,54 @@ const PLANS=[
   // Carryovers NOT on the FINALIZED sheet: Akron (documented 15-ft skinny plan — price est., verify) and
   // Arcadia Triplex (from the Jun-10 "Duplex/Triplex" sheet).  Plumwood was dropped from the FINALIZED sheet.
   // PENDING price on the sheet, omitted until priced: Antioch (1546 sf, 59x35.6), Dover (1219 sf, 50x30).
+  // fg = front-load garage (v8.39, G15): every plan whose Slate stats list a garage. The stats don't say which way it
+  // faces; on the narrow infill lots these plans go on, it's the front. Athens 3.0 and Canton aren't in the stats, so
+  // they carry no tag. The Plan & build "Front-load garage" box follows the tag and can be changed per deal.
   {n:'Akron',sf:1533,c:188962,base:165756,u:1,w:15,d:55,t:'sfh',g:'Standard Spec — Single Family'},
   {n:'Arlington (Standard)',sf:1315,c:143437,base:125822,u:1,w:31,d:50.4,t:'sfh',g:'Standard Spec — Single Family'},
   {n:'Arlington (Modern)',sf:1315,c:160033,base:140380,u:1,w:31,d:50.4,t:'sfh',g:'Standard Spec — Single Family'},
   {n:'Aurora',sf:1156,c:136335,base:119592,u:1,w:30,d:20,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Bellville',sf:1627,c:180128,base:158007,u:1,w:28,d:37,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Centerville',sf:1904,c:192915,base:169224,u:1,w:22.5,d:53,t:'sfh',g:'Standard Spec — Single Family'},
+  {n:'Bellville',sf:1627,c:180128,base:158007,u:1,w:28,d:37,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
+  {n:'Centerville',sf:1904,c:192915,base:169224,u:1,w:22.5,d:53,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
   {n:'Columbus',sf:1311,c:148560,base:130316,u:1,w:46,d:34.5,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Cuyahoga',sf:2005,c:202616,base:177733,u:1,w:37,d:38,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Cuyahoga w/Sunroom',sf:2263,c:225312,base:197642,u:1,w:37,d:48,t:'sfh',g:'Standard Spec — Single Family'},
+  {n:'Cuyahoga',sf:2005,c:202616,base:177733,u:1,w:37,d:38,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
+  {n:'Cuyahoga w/Sunroom',sf:2263,c:225312,base:197642,u:1,w:37,d:48,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
   {n:'Dublin (Standard)',sf:1435,c:155076,base:136032,u:1,w:22,d:42,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Dublin 1 Car',sf:1435,c:168172,base:147519,u:1,w:34,d:42,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Dublin 2 Car',sf:1435,c:179917,base:157822,u:1,w:46.5,d:42,t:'sfh',g:'Standard Spec — Single Family'},
+  {n:'Dublin 1 Car',sf:1435,c:168172,base:147519,u:1,w:34,d:42,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
+  {n:'Dublin 2 Car',sf:1435,c:179917,base:157822,u:1,w:46.5,d:42,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
   {n:'Grandview',sf:1528,c:160949,base:141183,u:1,w:30,d:27,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Granville',sf:1848,c:196335,base:172224,u:1,w:38,d:42,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Hampton',sf:2519,c:244740,base:214684,u:1,w:50.46,d:58.08,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'North Hampton',sf:2519,c:262187,base:229989,u:1,w:50.46,d:58.08,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Hilliard',sf:1573,c:170917,base:149927,u:1,w:25,d:41.7,t:'sfh',g:'Standard Spec — Single Family'},
+  {n:'Granville',sf:1848,c:196335,base:172224,u:1,w:38,d:42,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
+  {n:'Hampton',sf:2519,c:244740,base:214684,u:1,w:50.46,d:58.08,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
+  {n:'North Hampton',sf:2519,c:262187,base:229989,u:1,w:50.46,d:58.08,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
+  {n:'Hilliard',sf:1573,c:170917,base:149927,u:1,w:25,d:41.7,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
   {n:'Muirfield',sf:1199,c:143441,base:125825,u:1,w:30,d:42.25,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Seneca',sf:1985,c:201109,base:176411,u:1,w:30,d:43,t:'sfh',g:'Standard Spec — Single Family'},
+  {n:'Seneca',sf:1985,c:201109,base:176411,u:1,w:30,d:43,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
   {n:'Westerville',sf:1108,c:134462,base:117949,u:1,w:25,d:48.42,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Worthington',sf:1405,c:170423,base:149494,u:1,w:48,d:46,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Worthington 2.0',sf:1640,c:182125,base:159759,u:1,w:48,d:51,t:'sfh',g:'Standard Spec — Single Family'},
-  {n:'Albany',sf:2726,c:326058,base:286016,u:1,w:40,d:45,t:'sfh',g:'Upgrade Spec — Single Family'},
+  {n:'Worthington',sf:1405,c:170423,base:149494,u:1,w:48,d:46,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
+  {n:'Worthington 2.0',sf:1640,c:182125,base:159759,u:1,w:48,d:51,t:'sfh',fg:true,g:'Standard Spec — Single Family'},
+  {n:'Albany',sf:2726,c:326058,base:286016,u:1,w:40,d:45,t:'sfh',fg:true,g:'Upgrade Spec — Single Family'},
   {n:'Athens 3.0',sf:2520,c:373969,base:328043,u:1,w:50,d:79,t:'sfh',g:'Upgrade Spec — Single Family'},
   {n:'Canton',sf:2492,c:363641,base:318983,u:1,w:46,d:85,t:'sfh',g:'Upgrade Spec — Single Family'},
-  {n:'Galloway',sf:3203,c:374009,base:328078,u:1,w:36,d:60,t:'sfh',g:'Upgrade Spec — Single Family'},
-  {n:'Linden',sf:2986,c:369327,base:323971,u:1,w:36,d:60,t:'sfh',g:'Upgrade Spec — Single Family'},
+  {n:'Galloway',sf:3203,c:374009,base:328078,u:1,w:36,d:60,t:'sfh',fg:true,g:'Upgrade Spec — Single Family'},
+  {n:'Linden',sf:2986,c:369327,base:323971,u:1,w:36,d:60,t:'sfh',fg:true,g:'Upgrade Spec — Single Family'},
   {n:'Arcadia (Budget)',sf:1278,c:137934,base:120995,u:1,w:22,d:30.6,t:'sfh',g:'Budget Spec — Single Family'},
   {n:'Hudson (Budget)',sf:1108,c:130508,base:114481,u:1,w:25,d:48.42,t:'sfh',g:'Budget Spec — Single Family'},
   {n:'Laurel (Budget)',sf:1528,c:148442,base:130212,u:1,w:30,d:27,t:'sfh',g:'Budget Spec — Single Family'},
   {n:'Powell (Budget)',sf:1323,c:140023,base:122827,u:1,w:20,d:42,t:'sfh',g:'Budget Spec — Single Family'},
-  {n:'Powell One Car',sf:1323,c:151508,base:132902,u:1,w:32,d:42,t:'sfh',g:'Budget Spec — Single Family'},
+  {n:'Powell One Car',sf:1323,c:151508,base:132902,u:1,w:32,d:42,t:'sfh',fg:true,g:'Budget Spec — Single Family'},
   {n:'Wildwood (Budget)',sf:1315,c:138124,base:121161,u:1,w:31,d:50.42,t:'sfh',g:'Budget Spec — Single Family'},
   {n:'Arcadia Duet (per side)',sf:1228,c:141244,base:123898,u:2,w:40,d:34,t:'duet',g:'Duets — Per Side'},
-  {n:'Bexley Duet (per side)',sf:1664,c:174215,base:152820,u:2,w:40,d:53,t:'duet',g:'Duets — Per Side'},
-  {n:'Findlay Duet (per side)',sf:1409,c:164219,base:144052,u:2,w:38,d:45,t:'duet',g:'Duets — Per Side'},
+  {n:'Bexley Duet (per side)',sf:1664,c:174215,base:152820,u:2,w:40,d:53,t:'duet',fg:true,g:'Duets — Per Side'},
+  {n:'Findlay Duet (per side)',sf:1409,c:164219,base:144052,u:2,w:38,d:45,t:'duet',fg:true,g:'Duets — Per Side'},
   {n:'Logan Duet (per side)',sf:1186,c:134600,base:118070,u:2,w:39.5,d:62,t:'duet',g:'Duets — Per Side'},
   {n:'Powell Duet (per side)',sf:1468,c:146834,base:128802,u:2,w:39.25,d:38,t:'duet',g:'Duets — Per Side'},
-  {n:'Oxford Duet (per side)',sf:1690,c:178980,base:157000,u:2,w:34,d:60,t:'duet',g:'Duets — Per Side'},
-  {n:'Whitehall Duet (per side)',sf:1854,c:184518,base:161858,u:2,w:45,d:53,t:'duet',g:'Duets — Per Side'},
+  {n:'Oxford Duet (per side)',sf:1690,c:178980,base:157000,u:2,w:34,d:60,t:'duet',fg:true,g:'Duets — Per Side'},
+  {n:'Whitehall Duet (per side)',sf:1854,c:184518,base:161858,u:2,w:45,d:53,t:'duet',fg:true,g:'Duets — Per Side'},
   {n:'Winchester Duet (per side)',sf:1480,c:154902,base:135879,u:2,w:40,d:42.25,t:'duet',g:'Duets — Per Side'},
-  {n:'Ashland Duet (Modern, per side)',sf:1747,c:293674,base:257609,u:2,w:40,d:56,t:'duet',g:'Duets — Per Side'},
-  {n:'Polaris Duet (Modern, per side)',sf:2227,c:330797,base:290173,u:2,w:40,d:68,t:'duet',g:'Duets — Per Side'},
+  {n:'Ashland Duet (Modern, per side)',sf:1747,c:293674,base:257609,u:2,w:40,d:56,t:'duet',fg:true,g:'Duets — Per Side'},
+  {n:'Polaris Duet (Modern, per side)',sf:2227,c:330797,base:290173,u:2,w:40,d:68,t:'duet',fg:true,g:'Duets — Per Side'},
   {n:'Arcadia Triplex (per unit · 3-plex)',sf:1278,c:138869,base:121815,u:3,w:66,d:33.7,t:'mf',g:'Triplex — All 3 Units'}, // priced PER UNIT (all-3 $416,608 ÷ 3) so Units×3 scales build/taps correctly; sf/unit=3834÷3; footprint=whole 3-unit building
-  {n:'Dayton Townhomes (1 unit)',sf:1384,c:157579,base:138227,u:1,w:21.67,d:40,t:'th',g:'Multifamily & Mini'},
+  {n:'Dayton Townhomes (1 unit)',sf:1384,c:157579,base:138227,u:1,w:21.67,d:40,t:'th',fg:true,g:'Multifamily & Mini'},
   {n:'Franklin Townhomes (1 unit)',sf:1549,c:161530,base:141693,u:1,w:20,d:42.5,t:'th',g:'Multifamily & Mini'},
   {n:'Troy Townhomes (1 unit)',sf:1892,c:190896,base:167453,u:1,w:22.75,d:55,t:'th',g:'Multifamily & Mini'},
   {n:'Wheatley Townhomes (1 unit)',sf:1637,c:197138,base:172928,u:1,w:17.75,d:35,t:'th',g:'Multifamily & Mini'},
@@ -2187,6 +2193,20 @@ const planNameFromVal=v=>v==='__CUSTOM__'?'Custom footprint':((v||'').split('|')
 // v8.11: footprint text from a dropdown value (custom: cust-w × cust-d), for the plan card and the PDF. The
 // report used to read #plan-info-fp, which only a Slate plan writes, so custom and no-plan deals printed the
 // last Slate plan's footprint. An attached townhome gives the per-unit footprint; the Units row has the count.
+// v8.39 (partner decision 2026-10-09, row 6): the memo shows one unit's footprint and the whole building's (all of them
+// for more than one building), from dealLayout() at the deal's Units. A townhome or custom footprint is one unit of a row;
+// any other plan's footprint is the whole building, so one unit of a duet or the triplex is its width ÷ plan.u.
+function memoFootprints(v){
+  if(!v)return{footprintUnit:'\u2014',footprintBldg:'\u2014'};
+  const L=dealLayout(),n=x=>+(+x).toFixed(2),sf=x=>Math.round(x).toLocaleString()+' sf';
+  if(!(L.w>0&&L.d>0)){const t=planFootprintFromVal(v);return{footprintUnit:t,footprintBldg:t};}
+  const unitW=L.attached?L.unitW:n((L.bldgs>1?(L.w-(L.bldgs-1)*L.gap)/L.bldgs:L.w)/L.per),bldgW=L.attached?L.w:n(L.bldgs>1?(L.w-(L.bldgs-1)*L.gap)/L.bldgs:L.w);
+  const unit=`${unitW}'W\u00d7${L.d}'D (${sf(unitW*L.d)})`+(!L.attached&&L.per>1?`, 1 of ${L.per} in the building`:'');
+  const one=`${bldgW}'W\u00d7${L.d}'D (${sf(bldgW*L.d)})`;
+  const bldg=L.attached?one+(L.units>1?`, ${L.units} units in one row`:'')
+    :L.bldgs>1?`${L.bldgs} buildings, each ${one}${L.gap?`, ${L.gap} ft apart`:''}: ${L.w}'W\u00d7${L.d}'D overall, ${sf(L.sf)} built`:one;
+  return{footprintUnit:unit,footprintBldg:bldg};
+}
 function planFootprintFromVal(v){
   const custom=v==='__CUSTOM__',p=(v||'').split('|');
   const w=custom?pv('cust-w'):(parseFloat(p[4])||0),d=custom?pv('cust-d'):(parseFloat(p[5])||0);
@@ -2294,7 +2314,7 @@ function gisMatchFits(street,matched){
 let _gisLot=null;        // {label, streets[], zips[], cities[]}: the address(es) the site data on screen belongs to
 let _clearedSite=null;   // what clearGisSite() took off, for putBackGisSite()
 let _gisMismatch=null;   // {matched}: a reopened deal whose saved County GIS parcel isn't its address (saved with the deal)
-const LF_AUTO_FIELDS=['demo-sqft','clearing','grading','fin-tax'];   // v8.33: the fields applyCountyDefaults() fills (v8.36: + tax)
+const LF_AUTO_FIELDS=['demo-sqft','clearing','grading','fin-tax','sop-band'];   // v8.33: the fields applyCountyDefaults() fills (v8.36: + tax; v8.39: + SOP band)
 const AUTO_FILL_FIELDS=LF_AUTO_FIELDS.concat('survey');   // v8.36: saved with their typed-or-default state (serializeDeal autoManual)
 const SITE_FIELDS=['sb-front','sb-rear','sb-sides','sb-corner','sb-minw','sb-garage','lot-w','lot-d','lot-sf','buildable-override','lot-sf-poly'];
 // pt: the county's own spelling of the address (the proxy's match.point), so a correction toward it isn't a move. A ZIP or
@@ -2502,9 +2522,11 @@ function onZoneChange(){
   if(_zoneRestoreNote&&_zoneRestoreNote.key!==key)_zoneRestoreNote=null;
   const ab=$('n2-abuts-row'),sbk=SETBACKS[key];if(ab)ab.style.display=(sbk&&sbk.rearNotAbuttingN1!=null)?'flex':'none';
   renderZoneNote();
-  if(!key){showLooseSetbacks();$('zone-udo-link').style.display='none';return;}
+  // v8.39: the garage setback is a read-only table lookup the fit check now reads (garageApplies()), so with no zone row
+  // it goes blank instead of keeping the last zone's
+  if(!key){$('sb-garage').value='';showLooseSetbacks();$('zone-udo-link').style.display='none';calcBuildable();return;}
   const sb=SETBACKS[key];
-  if(!sb){$('zone-info').style.display='';$('zone-udo-link').style.display='none';calcBuildable();return;}   // v8.15: a stub shows its (blank or leftover) setbacks and the note
+  if(!sb){$('sb-garage').value='';$('zone-info').style.display='';$('zone-udo-link').style.display='none';calcBuildable();return;}   // v8.15: a stub shows its (blank or leftover) setbacks and the note
   if(sb){
     $('sb-front').value=sb.front;$('sb-rear').value=zoneRear(sb);
     $('sb-sides').value=sb.sides;$('sb-corner').value=sb.corner;
@@ -2581,8 +2603,8 @@ function missingSetbacksText(){
   return `Fit not checked: the ${list} setback${m.length>1?'s are':' is'} blank, and a blank would count the whole lot as buildable. Enter ${m.length>1?'them':'it'} from the zoning code (type 0 if it really is zero).`;
 }
 // The setback for one edge designation. A blank Corner Side field falls back to the side setback.
-function edgeSetbackFt(des){
-  if(des==='front')return pv('sb-front');
+function edgeSetbackFt(des,frontFt){
+  if(des==='front')return frontFt!=null?frontFt:pv('sb-front');
   if(des==='rear')return pv('sb-rear');
   if(des==='corner'){const e=$('sb-corner');return e&&String(e.value).trim()!==''?pv('sb-corner'):pv('sb-sides');}
   return pv('sb-sides');
@@ -2590,11 +2612,31 @@ function edgeSetbackFt(des){
 // v8.28: the Rectangle-mode envelope in feet, the one place its width rule lives (calcBuildable, drawDiagram, fitStatus).
 // sSide / sCorner are the two side setbacks by role, not by side of the page; on a corner lot sCorner is
 // edgeSetbackFt('corner'), otherwise both are the side setback. bW / bD can go negative; callers clamp.
-function rectEnvelopeFt(w=pv('lot-w'),d=pv('lot-d')){
+function rectEnvelopeFt(w=pv('lot-w'),d=pv('lot-d'),garage=false){
   const sSide=pv('sb-sides'),isCorner=!!($('corner-lot')&&$('corner-lot').checked);
   const sCorner=isCorner?edgeSetbackFt('corner'):sSide;
-  return{bW:w-(sSide+sCorner),bD:d-pv('sb-front')-pv('sb-rear'),sSide,sCorner,isCorner};
+  return{bW:w-(sSide+sCorner),bD:d-(garage?garageFrontFt():pv('sb-front'))-pv('sb-rear'),sSide,sCorner,isCorner};
 }
+// v8.39 (partner decision 2026-10-09, row 6; audit G15): a front-load garage plan sits back at the zone's garage setback
+// (`sb-garage`, e.g. Mecklenburg N1-C to N1-F: front 17 ft, garage 20 ft) when that's deeper than the front setback. Only
+// the fit check reads it (fitStatus(w, d, garage)); the drawn envelope, buildable area and BUA stay on the front setback.
+// The garage setback is the zone table's, so a typed front setback deeper than it simply wins.
+function garageSetbackFt(){const v=parseFloat((($('sb-garage')||{}).value||'').replace(/[^0-9.]/g,''));return v>0?v:0;}
+function garageFrontFt(){return Math.max(pv('sb-front'),garageSetbackFt());}
+const garageApplies=()=>garageSetbackFt()>pv('sb-front');
+// Whether a plan is tested as front-load garage: the deal's own plan (p omitted, or p is the plan picked) follows the
+// Plan & build box; any other plan (fit grid, comparison) its `fg` tag
+function frontGarageFor(p){
+  const val=($('plan-sel')||{}).value||'',own=!p||(val!=='__CUSTOM__'&&planNameFromVal(val)===p.n);
+  return own?!!($('front-garage')&&$('front-garage').checked):!!p.fg;
+}
+// The garage / front figures beside the box (display only)
+function renderGarageFt(){
+  const el=$('front-garage-ft');if(!el)return;
+  const g=garageSetbackFt(),f=pv('sb-front');
+  el.textContent=!g?'(no garage setback for this zone)':g>f?`(garage ${g} ft vs front ${f} ft)`:`(garage ${g} ft, no deeper than the ${f} ft front: no change here)`;
+}
+let _garageFor=null;   // the plan the box last took its default from (as _unitsFor), so a pick of the same plan keeps a ticked change
 // County GIS rings split one lot line into pieces wherever a neighbour's corner meets it (2731 Dellinger: a 3 + 26 ft front
 // and a 26 + 3 ft rear). Drop every vertex that sits within 0.5 ft of the line its neighbours make (1 ft beside a piece under
 // 2 ft), smallest first, checking the points already dropped too, as long as the merged line stays within 1 sf of the
@@ -2801,6 +2843,28 @@ function applyGisData(d,sig){
 // written while it still holds its shipped default, so anything the user typed survives a re-lookup.
 const CANOPY_CLEARING={cleared:'0',light:'3000',medium:'6500',heavy:'10000',extreme:'15000'};
 const SLOPE_GRADING={flat:2500,moderate:7500,severe:15000};
+// v8.39 (partner decision 2026-10-09, 5a; audit N1.1): the SOP lot-factor bands, by the county's canopy and slope classes:
+// about $15k flat and clear, $25-30k trees or slope, $40k+ heavy trees and steep (base SOP; Addendum §5). The tiers above
+// left 19 of 26 real lots under their band's low end, so the auto-fill adds the gap as its own line, `sop-band`. The band
+// covers the site work (clearing through landscaping); demo, heritage and ROW trees sit on top. Still one lot factor per
+// deal (5b). null = the county gave no canopy or no slope class, so no band.
+const SOP_BANDS={clear:{low:15000,label:'flat and clear'},mid:{low:25000,label:'trees or slope'},heavy:{low:40000,label:'heavy trees and steep'}};
+function sopBand(canopy,slope){
+  if(!Object.prototype.hasOwnProperty.call(CANOPY_CLEARING,canopy||'')||!Object.prototype.hasOwnProperty.call(SLOPE_GRADING,slope||''))return null;
+  const light=canopy==='cleared'||canopy==='light',heavy=canopy==='heavy'||canopy==='extreme';
+  return heavy&&slope==='severe'?SOP_BANDS.heavy:light&&slope==='flat'?SOP_BANDS.clear:SOP_BANDS.mid;
+}
+// The site-work lines the band covers, as calcLF() reads them (sop-band itself left out)
+function siteWorkSubtotal(){
+  return (parseFloat(($('clearing')||{value:'0'}).value)||0)+pv('dirt-loads')*pv('dirt-rate')+pv('grading')+pv('site-prep')
+    +pv('utilities')+pv('framing')+pv('culverts')+pv('landscaping');
+}
+// v8.39 (partner decision 2026-10-09, 5c; Adam): with a house to tear down the lot factor is at least $30k, per lot (once
+// per deal, like the rest of the lot factor), not per unit
+const LF_HOUSE_MIN=30000;
+// The #lf-house-min box (ticked on a fresh page; restoreDeal() unticks it for a file saved before v8.39, which has no such
+// field, so reopening an old teardown deal doesn't move its Max land)
+const houseMinOn=()=>!!($('lf-house-min')&&$('lf-house-min').checked);
 function applyCountyDefaults(d){
   const filled=[];
   // An analyst's own figure can coincide with a default, so never infer intent from the value —
@@ -2825,13 +2889,19 @@ function applyCountyDefaults(d){
     const v=SLOPE_GRADING[site.slope_class];
     if(v!=null){$('grading').value=v;filled.push('grading '+site.slope_class+' ('+site.slope_pct+'% slope)');}
   }
+  // v8.39 (5a): after clearing and grading, so the gap is worked from the lines as they now stand (typed ones included)
+  if(untouched('sop-band')){
+    const b=sopBand(site&&site.canopy_class,site&&site.slope_class);
+    if(b){const gap=Math.max(0,Math.round(b.low-siteWorkSubtotal()));$('sop-band').value=gap;
+      filled.push('SOP band '+fmt(gap)+' (site work up to '+fmt(b.low)+', '+b.label+')');}
+  }
   // v8.36 (audit M6): the property tax starts from the county bill, not $0
   const tax=countyTaxEstimate(cama,d.match&&d.match.point&&d.match.point.city);
   if(tax&&untouched('fin-tax')){$('fin-tax').value=tax.annual;filled.tax='property tax '+fmt(tax.annual)+'/yr (county bill)';}
   // v8.33 (audit N1.6): a field this lookup has no figure for, and that nobody typed, goes back to its default instead of
   // keeping the last parcel's auto-filled value; the status line names it so it gets entered by hand
   const missed=[];
-  [['demo-sqft','demo'],['clearing','clearing'],['grading','grading'],['fin-tax','property tax']].forEach(([id,lbl])=>{   // LF_AUTO_FIELDS
+  [['demo-sqft','demo'],['clearing','clearing'],['grading','grading'],['fin-tax','property tax'],['sop-band','SOP band']].forEach(([id,lbl])=>{   // LF_AUTO_FIELDS
     if(!untouched(id)||filled.some(f=>f.indexOf(lbl+' ')===0)||(id==='fin-tax'&&filled.tax))return;
     const e=$(id),dv=fieldDefault(e);if(e.value!==dv)e.value=dv;
     missed.push(lbl);
@@ -3203,6 +3273,8 @@ function redrawEditor(){
 
   // Draw setback inset using per-edge setbacks (v8.19: the envelope can come in more than one piece)
   const env=insetPolygonPerEdge(pts,edgeDesignations),insetPts=env.rings[0]||null;
+  // v8.39 (G15): the envelope a front-load garage plan is fitted in (fitStatus with garage), when the garage setback is deeper
+  planOverlay.garagePolysFt=insetPts&&garageApplies()?insetPolygonPerEdge(pts,edgeDesignations,garageFrontFt()).ringsFt:null;
   if(insetPts){
     env.rings.forEach(r=>{
       ctx.beginPath();ctx.moveTo(r[0].x,r[0].y);
@@ -3279,6 +3351,7 @@ function redrawEditor(){
 function clearEnvelope(){
   if(lotMode==='poly')buildableArea=0;
   planOverlay.buildPolyFt=null;planOverlay.buildPolysFt=null;planOverlay.buildPoly=null;planOverlay.buildPolys=null;
+  planOverlay.garagePolysFt=null;
   planOverlay.buildCentroidFt=null;planOverlay.buildBBoxFt=null;
   if(lotMode==='poly'){planOverlay.buildRect=null;const fe=$('ov-fits');if(fe&&planOverlay.active){fe.textContent='\u2717 No buildable area';fe.className='overlay-fit-warn';}}
 }
@@ -3493,9 +3566,9 @@ function buildEnvelopeFt(lot,sbs){
 // neighbouring offset lines, which left spikes into the setbacks and turned inside out when setbacks met across the lot.
 // pts: lot corners in editor px. Returns {rings: outlines in px, largest first; ringsFt: the same in ft; area: sf}, with
 // no rings when the setbacks leave nothing.
-function insetPolygonPerEdge(pts,designations){
+function insetPolygonPerEdge(pts,designations,frontFt){
   if(!pts||pts.length<3)return{rings:[],ringsFt:[],area:0};
-  const env=buildEnvelopeFt(pts.map(p=>({x:pxToFt(p.x),y:pxToFt(p.y)})),pts.map((_,i)=>edgeSetbackFt(designations[i]||'side')));
+  const env=buildEnvelopeFt(pts.map(p=>({x:pxToFt(p.x),y:pxToFt(p.y)})),pts.map((_,i)=>edgeSetbackFt(designations[i]||'side',frontFt)));
   return{rings:env.rings.map(r=>r.map(p=>({x:ftToPx(p.x),y:ftToPx(p.y)}))),ringsFt:env.rings,area:env.area};
 }
 
@@ -3887,7 +3960,7 @@ function calcBuildable(){
   }
   // v8.33: with a setback blank the envelope above is the whole lot (or most of it); say so where the area is shown
   if(br&&buildableArea>0&&missingSetbacks().length)br.insertAdjacentHTML('beforeend',`<div class="err" style="margin-top:8px">${missingSetbacksText()}</div>`);
-  calcBUA();renderFitCheck();renderPlanFitMsg();updateSummaryBar();renderSublot();updateSketchBtn();
+  renderGarageFt();calcBUA();renderFitCheck();renderPlanFitMsg();updateSummaryBar();renderSublot();updateSketchBtn();
   if(lotMode==='rect')drawDiagram();   // the poly branch drew the editor above (buildableArea comes from it)
 }
 
@@ -3976,6 +4049,7 @@ function pointInPolygon([px,py],poly){
   return inside;
 }
 
+const BUA_STORMWATER_SF=5000;   // v8.39 (G19): a warning line, not part of the limit
 function calcBUA(){
   const county=$('county-sel').value;
   const buaSec=$('bua-section');if(!buaSec)return;
@@ -3988,7 +4062,9 @@ function calcBUA(){
     ? (getParentLot().area || 0)
     : (pv('lot-sf') || (w*d));
   const lotSF=lotSFManual;if(!lotSF)return;
-  const buaLimit=Math.min(lotSF*0.24,5000);
+  // v8.39 (partner decision 2026-10-09, row 6; audit G19): the limit is 24% of the lot only. 5,000 sf is where the county's
+  // post-construction stormwater rules start (the proxy's BUA rule text), so it's a warning, not a cap (it was min(24%, 5,000))
+  const buaLimit=lotSF*0.24;
   const val=($('plan-sel')||{}).value||'';
   // v8.31 (audit G8): every unit's footprint, not one unit's: a townhome or custom row is Units × the unit, other plans
   // each whole building (dealLayout()); the gaps between separate buildings aren't built on
@@ -4010,6 +4086,7 @@ function calcBUA(){
     else if(estBUA>buaLimit)msg.innerHTML=`<div class="err">⚠ BUA Exceeded — ${fmtN(estBUA)} sf used vs ${fmtN(buaLimit)} sf limit. Consider a smaller footprint or confirm adjacent parcel pooling.</div>`;
     else if(pct>0.9)msg.innerHTML=`<div class="warn">BUA is within 10% of the limit. Verify hardscape carefully.</div>`;
     else msg.innerHTML=`<div class="ok">✓ BUA within limit (${Math.round(pct*100)}% used).</div>`;
+    if(footprint&&estBUA>BUA_STORMWATER_SF)msg.innerHTML+=`<div class="warn" style="margin-top:6px">⚠ Stormwater: ${fmtN(estBUA)} sf is over ${fmtN(BUA_STORMWATER_SF)} sf of built-upon area, where the county\u2019s post-construction stormwater rules apply. Expect a stormwater review and maybe a control measure (BMP); price it before you count on this layout.</div>`;
   }
 }
 
@@ -4211,11 +4288,11 @@ function renderFitCheck(){
   const evaluated=PLANS.filter(p=>p.w>0&&p.d>0).map(p=>{
     const fpW=p.w,fpD=p.d,L=planLayout(p,U);
     let cls,badge,selectable=true;
-    const fs=fitStatus(L.w,L.d);
+    const garage=frontGarageFor(p),fs=fitStatus(L.w,L.d,garage);
     if(fs.status==='fits'){cls='fit-ok';badge=fs.rotated?'Fits (rotated)':'Fits';}
     else if(fs.status==='tight'){cls='fit-warn';badge='Tight — verify';}
     else{cls='fit-no';badge='Too Large';selectable=false;}
-    return {p,name:p.n,sf:p.sf,cost:p.c,fpW,fpD,cls,badge,selectable,area:fpW*fpD,L};
+    return {p,name:p.n,sf:p.sf,cost:p.c,fpW,fpD,cls,badge,selectable,area:fpW*fpD,L,garage:garage&&garageApplies()};
   });
   // Sort (#1)
   const [skey,sdir]=(FIT_SORT||'sf-desc').split('-');
@@ -4233,6 +4310,7 @@ function renderFitCheck(){
       +`<div class="fit-name">${o.name}${isSel?' ✓':''}</div>`
       +`<div class="fit-detail">Footprint ${o.fpW}'W × ${o.fpD}'D · ${o.area.toLocaleString()} sf`
       +((o.L.attached?U>1:o.L.bldgs>1)?`<br>${U} units: ${o.L.attached?'row':o.L.bldgs+' buildings'} ${o.L.w}'W × ${o.L.d}'D`:'')
+      +(o.garage?`<br>Front garage: set back ${garageSetbackFt()} ft`:'')
       +`<br>Finished ${o.sf>0?o.sf.toLocaleString()+' sf':'—'} · ${fmt(o.cost)}</div>`
       +`<span class="fit-badge">${o.badge}</span></div>`;
   };
@@ -4333,11 +4411,13 @@ function rectFitsPolyFt(poly,W,H){
   }
   return false;
 }
-function planFitsInPolyFt(fpW,fpD){
-  const main=planOverlay.buildPolyFt;
+function planFitsInPolyFt(fpW,fpD,garage){
+  // v8.39 (G15): a front-load garage plan is fitted in the envelope with the garage setback at the front (when deeper)
+  const G=garage&&planOverlay.garagePolysFt;
+  const main=G?G[0]:planOverlay.buildPolyFt;
   if(!main||main.length<3)return'no';
   // an envelope can come in more than one piece (a pinched lot); a plan has to fit inside one of them
-  const rings=(planOverlay.buildPolysFt&&planOverlay.buildPolysFt[0]===main)?planOverlay.buildPolysFt:[main];
+  const all=G||planOverlay.buildPolysFt,rings=(all&&all[0]===main)?all:[main];
   // v8.19: the fit grid, the plan card, the comparison and the subplot card all ask about the same envelope, which is
   // built afresh whenever the lot or a setback changes, so each answer is kept on its ring
   if(!main._fit)Object.defineProperty(main,'_fit',{value:new Map(),enumerable:false});
@@ -4466,7 +4546,7 @@ function dealLayout(n){
 // binary search.
 function maxUnitsFit(below,per=1){
   let lo=0,hi=Math.ceil(below)-1;
-  while(lo<hi){const m=Math.floor((lo+hi+1)/2),L=dealLayout(m*per);if(fitStatus(L.w,L.d).status!=='no')lo=m;else hi=m-1;}
+  while(lo<hi){const m=Math.floor((lo+hi+1)/2),L=dealLayout(m*per);if(fitStatus(L.w,L.d,frontGarageFor()).status!=='no')lo=m;else hi=m-1;}
   return lo;
 }
 function syncUnitsUI(){
@@ -4527,7 +4607,7 @@ function renderSubplot(p){
   const row=planLayout(p,u),unitW=p.w,unitD=p.d,bldgLen=row.w,maxLen=rules.maxBuildingLen;   // v8.31: the one row rule
   const over=maxLen?bldgLen>maxLen:false;
   const maxByLen=maxLen?Math.floor(maxLen/unitW):null;
-  const fit=buildableArea>0?fitStatus(row.w,row.d):null;   // v8.31: the row the message and grid test
+  const fit=buildableArea>0?fitStatus(row.w,row.d,frontGarageFor(p)):null;   // v8.31: the row the message and grid test
   const {frontage,area}=getParentLot();
   const zoneKey=($('zone-sel')||{}).value||'';
   const sb=SETBACKS[zoneKey]||null;const minW=pv('sb-minw')||(sb?sb.minWidth:0)||0;const minSF=sb?(sb.minSF||0):0;
@@ -4622,14 +4702,18 @@ function calcLF(){
   const clearing=parseFloat(($('clearing')||{value:'0'}).value)||0;
   const dirt=pv('dirt-loads')*pv('dirt-rate');
   const grading=pv('grading'),sitePrep=pv('site-prep'),util=pv('utilities'),framing=pv('framing'),culverts=pv('culverts'),land=pv('landscaping');
-  const raw=demo+heritage+rowCity+rowLaborTotal+clearing+dirt+grading+sitePrep+util+framing+culverts+land;
-  lotFactor=raw; // GC fee now lives on Plan & Build (applied to the home build only)
+  const band=pv('sop-band');   // v8.39 (5a): the auto-fill's top-up to the SOP band
+  const raw=demo+heritage+rowCity+rowLaborTotal+clearing+dirt+grading+sitePrep+util+framing+culverts+land+band;
+  // v8.39 (5c): a house to tear down means at least LF_HOUSE_MIN, once per deal; the top-up shows as its own line
+  const houseTop=houseMinOn()&&pv('demo-sqft')>0&&raw<LF_HOUSE_MIN?LF_HOUSE_MIN-raw:0;
+  lotFactor=raw+houseTop; // GC fee now lives on Plan & Build (applied to the home build only)
   const items=[
     {l:'Demo / Teardown',v:demo},{l:`Heritage Trees (${pv('her-trees')} × $${herRate.toLocaleString()})`,v:heritage},
     {l:`ROW City Fee (${rowCount}×${rowDiam}"×$200/in)`,v:rowCity},{l:'ROW Removal Labor',v:rowLaborTotal},
     {l:'Clearing',v:clearing},{l:`Dirt (${pv('dirt-loads')} loads)`,v:dirt},
     {l:'Grading',v:grading},{l:'Site Prep / Driveway',v:sitePrep},
     {l:'Utilities',v:util},{l:'Framing Labor',v:framing},{l:'Culverts',v:culverts},{l:'Landscaping',v:land},
+    {l:'Site Work to SOP Band',v:band},{l:'Minimum with a House ($30k)',v:houseTop},
   ].filter(i=>i.v>0);
   try{window._lfItems=items.map(i=>({l:i.l,v:i.v}));}catch(_){ }
   const bd=$('lf-breakdown');
@@ -4707,6 +4791,10 @@ function onPlanChange(){
     {const pii=$('plan-info-img');if(pii)pii.innerHTML=planImg(name)?`<button class="plan-img-btn" onclick="openPlanImg('${name}')">${IMG_ICON} View plan drawing</button>`:'';}
     if(du>0&&name!==_unitsFor){$('units').value=du;_unitsFor=name;$('units').style.borderColor='var(--teal)';setTimeout(()=>$('units').style.borderColor='',1200);}
   }
+  // v8.39 (G15): the Front-load garage box takes the new plan's tag; a custom footprint starts unticked
+  {const gk=isCustom?'__CUSTOM__':name,fg=$('front-garage');
+   if(fg&&gk!==_garageFor){const po=isCustom?null:PLANS.find(x=>x.n===name);fg.checked=!!(po&&po.fg);_garageFor=gk;}}
+  renderGarageFt();
   renderPlanFitMsg();
   const isDuet=(!isCustom)&&(val.includes('Duet')||val.includes('Triplex'));
   const county=$('county-sel').value;
@@ -4743,7 +4831,7 @@ function renderPlanFitMsg(){
   // v8.31 (audit M2/G10): test the deal's Units, not one unit: a townhome or custom row is Units × its width, and Units
   // past what one building holds are more buildings side by side (dealLayout()). One unit reads as before.
   const L=val?dealLayout():{w:0,d:0,units:1,bldgs:0},fpW=L.w,fpD=L.d;
-  const fs=buildableArea>0?fitStatus(fpW,fpD):{status:'na'};
+  const garage=frontGarageFor(),fs=buildableArea>0?fitStatus(fpW,fpD,garage):{status:'na'};
   const noun=isCustom?'footprint':'plan';
   const multi=L.attached?L.units>1:L.bldgs>1;
   const what=!multi?'':L.attached?`the row of ${L.units} (${fpW}'W×${fpD}'D)`
@@ -4758,13 +4846,16 @@ function renderPlanFitMsg(){
     // fitStatus() marks 'rotated' on fits only (its result goes into planComp and the report), so the rect path's
     // turned-only case is read off the same envelope here; poly "tight" is the 5 ft clearance rule
     const polyFit=lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3;
-    const e=polyFit?null:rectEnvelopeFt(),turned=!!e&&!(e.bW>=fpW&&e.bD>=fpD);
+    const e=polyFit?null:rectEnvelopeFt(undefined,undefined,garage&&garageApplies()),turned=!!e&&!(e.bW>=fpW&&e.bD>=fpD);
     html=polyFit?`<div class="warn">⚠ Tight: ${multi?what:'it'} fits, but it can't sit 5 ft clear of the envelope on every side. Verify.</div>`
       :`<div class="warn">⚠ ${turned?(multi?What+' fits only':'Fits only')+` if ${rot}, and tight`:'Tight: '+(multi?what:'it')+' fits, but'} with under 10 ft to spare in width or depth (5 ft clear on each side). Verify.</div>`;
   }
   else if(fs.status==='no')html=multi?`<div class="err">✗ ${What} doesn't fit the buildable envelope.</div>`
     :`<div class="err">✗ Footprint (${fpW}'W×${fpD}'D) exceeds buildable envelope.</div>`;
-  pfm.innerHTML=html+unitsWarnings(L,fs,isCustom?'This footprint':planNameFromVal(val));
+  // v8.39 (G15): say when the garage setback, not the front, decided it
+  const gNote=garage&&garageApplies()&&['fits','tight','no'].includes(fs.status)
+    ?`<p class="note" style="margin-top:4px">Front-load garage: tested ${garageSetbackFt()} ft back from the front lot line (the garage setback), not ${pv('sb-front')} ft.</p>`:'';
+  pfm.innerHTML=html+gNote+unitsWarnings(L,fs,isCustom?'This footprint':planNameFromVal(val));
 }
 // v8.31: say when Units is more than the plan or the lot holds. A plan that is a whole building (a house, a duet, the
 // triplex) takes more buildings; an attached row can't pass the county's max building length; and when the deal's layout
@@ -5374,11 +5465,11 @@ function buildPlanComparison(psf){
     if(p){slots.push({rank:null,source:'selected',plan:p});used.add(p.n);}
   }
   const rankFit=s=>s==='fits'?0:s==='tight'?1:s==='na'||s==='nosb'?2:3;
-  const pool=PLANS.filter(p=>!used.has(p.n)&&p.w>0&&p.d>0).map(p=>({p,f:fitStatus(p.w,p.d)}))
+  const pool=PLANS.filter(p=>!used.has(p.n)&&p.w>0&&p.d>0).map(p=>({p,f:fitStatus(p.w,p.d,frontGarageFor(p))}))
     .sort((a,b)=>{const r=rankFit(a.f.status)-rankFit(b.f.status);if(r)return r;return (b.p.sf||0)-(a.p.sf||0);});
   let pi=0;
   while(slots.length<3&&pi<pool.length){slots.push({rank:null,source:'fit',plan:pool[pi].p});used.add(pool[pi].p.n);pi++;}
-  return slots.slice(0,3).map(s=>({...s,deal:dealForPlan(s.plan,psf),fit:fitStatus(s.plan.w,s.plan.d)}));
+  return slots.slice(0,3).map(s=>({...s,deal:dealForPlan(s.plan,psf),fit:fitStatus(s.plan.w,s.plan.d,frontGarageFor(s.plan))}));
 }
 
 function getReportData(){
@@ -5449,7 +5540,7 @@ function getReportData(){
   const planName=planNameFromVal(planVal)||'—';
 
   return {address,county,zone:zoneName||'—',units:u,plan:planName,sf:sfPerUnit||0,
-    footprint:planFootprintFromVal(planVal),buildable_sf:buildableArea||0,
+    footprint:planFootprintFromVal(planVal),...memoFootprints(planVal),buildable_sf:buildableArea||0,
     lotMode,lotW:pv('lot-w'),lotD:pv('lot-d'),
     date:new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),
     fin,cost,scenarios,psf,terms,
@@ -5529,7 +5620,8 @@ function buildReportHTML(canvasDataUrl){
           +'<tr><td>Units</td><td>'+d.units+'</td></tr>'
           +'<tr><td>Plan Selected</td><td>'+esc(d.plan)+'</td></tr>'
           +'<tr><td>Finished SF / Unit</td><td>'+(d.sf?d.sf.toLocaleString()+' sf':'—')+'</td></tr>'
-          +'<tr><td>Footprint</td><td>'+esc(d.footprint)+'</td></tr>'
+          +'<tr><td>Footprint, One Unit</td><td>'+esc(d.footprintUnit||d.footprint)+'</td></tr>'
+          +'<tr><td>Footprint, Whole Building</td><td>'+esc(d.footprintBldg||d.footprint)+'</td></tr>'
         +'</table>'
         +secHdr('FINANCING SNAPSHOT')
         +'<table class="kv avoid">'
@@ -5893,6 +5985,8 @@ function collectModelInputs(d){
         dirtLoads:pv('dirt-loads'),dirtRate:pv('dirt-rate'),
         grading:pv('grading'),sitePrep:pv('site-prep'),utilities:pv('utilities'),
         framing:pv('framing'),culverts:pv('culverts'),landscaping:pv('landscaping')},
+    // v8.39: outside `lf`, which the deal-sheet hand-off sends as is (payload v1 unchanged; the sheet side is Chat 11's)
+    lfSopBand:pv('sop-band'),lfHouseMin:houseMinOn()?LF_HOUSE_MIN:0,
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
     // same raw values the screen uses; `||6` etc. would turn a deliberate 0 into a default and move Max Land
@@ -5958,7 +6052,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   inp('grad','Grading',M.lf.grading,MONEY); inp('sprep','Site Prep / Driveway',M.lf.sitePrep,MONEY);
   inp('utilc','Utilities (site)',M.lf.utilities,MONEY); inp('fram','Framing Labor',M.lf.framing,MONEY);
   inp('culv','Culverts',M.lf.culverts,MONEY); inp('lscape','Landscaping',M.lf.landscaping,MONEY);
-  der('lot','LOT FACTOR (sum)',`${dDemo}+${dHer}+${dRow}+${cClear}+${dDirt}+${IN['grad']}+${IN['sprep']}+${IN['utilc']}+${IN['fram']}+${IN['culv']}+${IN['lscape']}`,MONEY);
+  inp('sopb','Site Work to SOP Band',M.lfSopBand,MONEY);
+  inp('hmin','Minimum Lot Factor with a House (0 = off)',M.lfHouseMin,MONEY);
+  // v8.39 (5c): at least that minimum when there's a house to tear down (Demo Sq Ft over 0), as calcLF()
+  der('lot','LOT FACTOR (sum; at least the minimum with a house)',`MAX(${dDemo}+${dHer}+${dRow}+${cClear}+${dDirt}+${IN['grad']}+${IN['sprep']}+${IN['utilc']}+${IN['fram']}+${IN['culv']}+${IN['lscape']}+${IN['sopb']},IF(${IN['demoS']}>0,${IN['hmin']},0))`,MONEY);
   sec('UTILITY TAPS');
   inp('tapw','Water Tap / Unit (0 if existing)',M.tapWaterU,MONEY);
   inp('taps','Sewer Tap / Unit (0 if septic)',M.tapSewerU,MONEY);
@@ -6328,18 +6425,20 @@ function buildOfferHTML(address,amount,date){
 
 
 /* ═══════════════════ PLAN COMPARISON (#3) ═══════════════════ */
-function fitStatus(fpW,fpD){
+// garage: test it as a front-load garage plan (frontGarageFor()); only changes the verdict where garageApplies()
+function fitStatus(fpW,fpD,garage){
   if(!(fpW>0&&fpD>0))return{status:'na'};
+  garage=!!garage&&garageApplies();
   const polyFt=(lotMode==='poly'&&planOverlay.buildPolyFt&&planOverlay.buildPolyFt.length>=3)?planOverlay.buildPolyFt:null;
   // v8.33 (corrections log 18, leftover a): blank setbacks read as 0 ft, so the whole lot was "buildable". No verdict
   // until they're entered (Brian, 2026-10-12: block, don't just warn)
   if((polyFt||buildableArea>0)&&missingSetbacks().length)return{status:'nosb'};
   if(lotMode==='poly'&&polyFt){
-    const r=planFitsInPolyFt(fpW,fpD);
+    const r=planFitsInPolyFt(fpW,fpD,garage);
     return{status:r==='fits'?'fits':(r==='tight'?'tight':'no')};
   }
   if(!(buildableArea>0))return{status:'na'};
-  const {bW,bD}=rectEnvelopeFt();
+  const {bW,bD}=rectEnvelopeFt(undefined,undefined,garage);
   const fits=bW>=fpW&&bD>=fpD,fitFlipped=bW>=fpD&&bD>=fpW;
   if(!(fits||fitFlipped))return{status:'no'};
   const clear=(bW-fpW>=10&&bD-fpD>=10)||(bW-fpD>=10&&bD-fpW>=10);
@@ -6438,7 +6537,7 @@ function renderCompare(){
   cols.forEach(c=>{if(c.deal.scen.b.arv>0&&c.deal.scen.b.total>winV){winV=c.deal.scen.b.total;winI=c.i;}});
   const wc=i=>i===winI?' class="cmp-win-col"':'';
   const money=(v)=>'<span'+(v<0?' class="cmp-neg"':'')+'>'+fmt(v)+'</span>';
-  const fitTxt=p=>{const f=fitStatus(p.w,p.d);return f.status==='fits'?(f.rotated?'Fits (rotated)':'\u2713 Fits'):f.status==='tight'?'Tight \u2014 verify':f.status==='no'?'\u2717 Too large':f.status==='nosb'?'Setbacks missing':'No footprint data';};
+  const fitTxt=p=>{const f=fitStatus(p.w,p.d,frontGarageFor(p));return f.status==='fits'?(f.rotated?'Fits (rotated)':'\u2713 Fits'):f.status==='tight'?'Tight \u2014 verify':f.status==='no'?'\u2717 Too large':f.status==='nosb'?'Setbacks missing':'No footprint data';};
   const th=cols.map(c=>'<th'+wc(c.i)+'>'+c.plan.n+(c.i===winI?'<span class="cmp-winbadge">BEST BASE PROFIT</span>':'')+'</th>').join('');
   const row=(lbl,fn)=>'<tr><td>'+lbl+'</td>'+cols.map(c=>'<td'+wc(c.i)+'>'+fn(c)+'</td>').join('')+'</tr>';
   const sect=t=>'<tr class="cmp-sect"><td colspan="'+(cols.length+1)+'">'+t+'</td></tr>';
@@ -6618,6 +6717,7 @@ function restoreDeal(d){
   try{
     _dealGen++;   // drop any county lookup still in flight: its answer belongs to the page being replaced
     _clearedSite=null;_gisLot=null;_gisMismatch=null;   // v8.16: the last deal's site tie and cleared site go with it
+    _garageFor=null;   // v8.39: the plan restored below sets the Front-load garage box, then the saved tick lands
     {const h=d.sheetHandoff;   // v8.21: whether this deal was sent to its deal sheet
      _sheetHandoff=h&&typeof h==='object'&&typeof h.street==='string'&&Number.isFinite(+h.ts)&&+h.ts>0
        ?{ts:+h.ts,street:h.street,city:typeof h.city==='string'?h.city:''}:null;}
@@ -6640,6 +6740,7 @@ function restoreDeal(d){
     // today's default, which may have moved since. Reopening an old deal must not move its Max land.
     ['floor','pct'].forEach(k=>{const e=$('profit-'+k);if(e&&!vals['profit-'+k])e.value=PRE_V82_PROFIT_RULE[k];});
     // 1) jurisdiction first (rebuilds zones, autofills taps)
+    {const hm=$('lf-house-min');if(hm&&!vals['lf-house-min'])hm.checked=false;}   // v8.39: an older deal keeps its lot factor
     setV('addr-city');setV('county-sel');
     onCountyChange();
     // then the zone: onZoneChange() writes the zone table's setbacks, so it must run before the blanket restore, or
@@ -6725,6 +6826,7 @@ function restoreDeal(d){
     // onPlanChange() resets the overlay rotation to 0, and sets units to the plan default when the plan differs
     // from the one Units last followed (v8.14): re-apply the saved values
     setV('units');updateAttachedBuild();syncUnitsUI();
+    setV('front-garage');   // v8.39: a deal saved before it has none and keeps its plan's tag
     {const r=vals['rot-slider'];if(r&&r.v!=null)setRotation(parseFloat(r.v)||0);}
     if($('skip-sewer'))onSewerSkip();
     calcLF();calcBuildable();calcAll();calcFinancing();
@@ -6734,7 +6836,8 @@ function restoreDeal(d){
     // fills the ones nobody typed. Put back last, so every step above ran with them protected and the saved values stand. A
     // file from before v8.36 has no record of it: they stay typed, as they always did.
     {const am=(d.autoManual&&typeof d.autoManual==='object')?d.autoManual:null;
-     if(am)AUTO_FILL_FIELDS.forEach(id=>{const e=$(id);if(e&&am[id]===false)delete e.dataset.manual;});
+     // v8.39: a field added after the deal was saved (sop-band) wasn't typed either, so a lookup may fill it
+     if(am)AUTO_FILL_FIELDS.forEach(id=>{const e=$(id);if(e&&(am[id]===false||!(id in am)))delete e.dataset.manual;});
      // v8.38: so does the land cost (a file from before v8.38 keeps it typed)
      if(d.landManual===false){const e=$('land-cost');if(e)delete e.dataset.manual;}
      renderTaxHint();}
@@ -6801,8 +6904,14 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.38', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.39', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.39',date:'Oct 2026',name:'The partners\u2019 lot rules',items:[
+   'Lot factor: the County GIS auto-fill now tops each lot up to its SOP band: $15,000 flat and clear, $25,000 trees or slope, $40,000 heavy trees and steep. The extra shows as its own line, Site Work to SOP Band, under Clearing, Grading and Site Work. Type your own figure (or 0) to replace it. Most lots used to come in under their band, which made Max land too high.',
+   'With a house to tear down (Structure Size over 0), the lot factor is now at least $30,000, once per deal (Adam\u2019s minimum). The top-up shows as its own line in the breakdown, on the PDF and in Excel. A deal saved before 8.39 reopens with the minimum off (a box under Clearing, Grading and Site Work), so its Max land doesn\u2019t move; tick it to apply it.',
+   'Front-load garages: the fit check now sets a front-garage plan back to the zone\u2019s garage setback when it\u2019s deeper than the front setback (Mecklenburg N1-C to N1-F and N2: 20 ft against a 17 or 10 ft front). Plans whose Slate stats list a garage are ticked by themselves; the Front-load garage box under the plan changes it per deal.',
+   'Built-upon area: the limit is now 24% of the lot. Over 5,000 sf is a stormwater warning, not part of the limit (it was the smaller of the two).',
+   'PDF memo: the footprint now shows one unit and the whole building (or all the buildings), not just the plan\u2019s listed footprint.']},
  {v:'8.38',date:'Oct 2026',name:'Opening offer, asking check and the stress test',items:[
    'Under Max land there\u2019s now an Opening offer: about 20% under Max land, rounded down to the nearest $1,000. Max land stays the walk-away ceiling: the profit rule, the greater of $50k per unit or 15% of all-in by default (the SOP).',
    'Under the asking price, a line says whether asking clears the same profit rule, or how far over Max land it is.',
