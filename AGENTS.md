@@ -884,10 +884,24 @@ most deals take.
     ÷ `plan.u`), decided 2026-10-09 (row 6). `footprint` stays the plan's listed footprint.
     `unitsWarnings()` says when Units is more than one building holds, when a row passes the county's
     `maxBuildingLen`, and how many units (or whole buildings) fit when the deal doesn't. The fit test may turn the
-    whole layout 90° (separate buildings then stand one behind the other; the message says so). Still open: the plan
-    comparison (`buildPlanComparison()`, the compare table, `dealForPlan()`) tests and prices each plan at its catalogue
-    `plan.u` (X-F2), and the hardscape stays one flat figure per deal. Flag a new fit or BUA reader that uses one
-    unit's footprint for a multi-unit deal.
+    whole layout 90° (separate buildings then stand one behind the other; the message says so). Since v8.40 the plan
+    comparison (`buildPlanComparison()`, the compare table, `dealForPlan()`) builds each plan at the deal's Units too:
+    `unitsForPlan(p, Units)` keeps Units for a house or a townhome row and rounds a duet or the triplex up to whole
+    buildings, and the fit is `planLayout(p, thatUnits)`. The deal's own plan keeps the deal's Units exactly, so its
+    column matches the page. Still open: the hardscape stays one flat figure per deal. Flag a new fit or BUA reader that
+    uses one unit's footprint for a multi-unit deal.
+  - **Plan comparison (v8.40, audit N4.x; Brian 2026-10-13: "comps by plan type").** Columns: the deal's plan, then the
+    Compare shortlist picks (the deal's plan is never dropped; nothing picked = no column, never Akron), then on PDF
+    sheet 4 plans that fit at the deal's Units ('fits', then 'tight') to make 3. A plan too large never fills a slot.
+    Each plan's $/sf (`planPsf()`): the deal's ARV for the deal's plan; for the others the `/api/comps` suggested ARV
+    $/sf for the plan's own product (`t`) and sf (`fetchPlanComps()`, cached in `PLAN_COMPS` by pid|product|finish|sf),
+    Worst/Best at the deal's spread; the deal's $/sf when there are no comps, or when the API had to widen to any
+    product (`rule.relaxed` has 'product'), said in the column. A $/sf typed in the
+    comparison is kept by plan name for the deal and the PDF uses it. The badge (`bestPlanIndex()`) goes to the most
+    Base total profit among plans that fit and meet `getProfitRule()` per unit (`dealForPlan().rule`); none qualifies =
+    no badge, and `noBadgeWhy()` says why. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
+    its window first so the wait can't trip the pop-up blocker). Flag a badge that ignores the fit or the rule, or a
+    compared plan priced at a catalogue unit count.
   - The plan-fit message is drawn by `onPlanChange()` and by `calcBuildable()`, so a lot, setback or corner edit
     redraws it with the grid (before v8.28 only a plan change did, and it kept the old verdict). Lot edits go through
     `calcBuildable()`, not `redrawEditor()` alone: the canvas scale input and `addSide()` called only `redrawEditor()`
@@ -1017,7 +1031,13 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     profit $117,618, CoC 47.2% per the report. v8.30–v8.35: $263,493 (93% LTC, 10 / 8 / 6, survey $2,000; base interest
     $38,425, profit $117,845); $262,309 at 10% through v8.29. v8.36 step by step: 85% loan alone $269,249; + 12 / 9 / 8
     $263,975; + survey $3,000 $262,975.
-  - **Reference hash (v8.39 on v8.38, 2026-10-13): `0708b9ad0413`**, Max land $262,975 (unchanged): the new
+  - **Reference hash (v8.40 on v8.39, 2026-10-13): `fea47778bc02`**, Max land $262,975 unchanged. v8.40 moves only `planComp`
+    (PDF sheet 4): Compare builds builds every plan at the deal's Units and prices it per plan (planPsf()). With
+    `planComp` deleted the hash is `078c1d24648a`, the same as v8.39's. Sheet 4 for Dellinger: Dayton ×3 (the deal, too
+    large as a row of 3), Yarmouth ×3, Wheatley ×3, all at the deal's $/sf. Record it **without opening Compare builds or
+    the PDF first**: sheet 4's notes then read "Comps not pulled yet" (after a pull they say "No townhome comps near this
+    lot", since Dellinger has no county comps of any type within 0.5 mi, and the hash differs).
+  - v8.39 hash (on v8.38), 2026-10-13: `0708b9ad0413`, Max land $262,975 (unchanged): the new
     `footprintUnit` / `footprintBldg` fields and the plans' `fg` tag inside `planComp` move it; with those taken out it is
     v8.38's `640a28b8cc7d` (`07209e9d2995` on v8.36 before v8.38 merged). 2723's canopy is extreme and its slope moderate (the $25k band), and its site work is already
     $25,850, so the SOP band adds $0. With a 100 sf house the $30k floor adds $3,250 (Max land $258,825).
