@@ -670,7 +670,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   value-based check silently overwrote it — a Codex P1 on PR #17. Auto-fill gates on the explicit
   `data-manual` flag instead: `markManual()` sets it on any human edit, `restoreDeal()` sets it on
   every field of a saved deal, and `isManual()` is what `applySurveyDefault()`,
-  `applyCountyDefaults()` (v8.36: property tax too) and (v8.14) `applyTapDefaults()` check. Flag any auto-fill that compares
+  `applyCountyDefaults()` (v8.36: property tax too) and (v8.14) `applyTapDefaults()` check. Two exceptions keep the
+  typed-or-default state they were saved with instead: the taps (`tapManual`, v8.14) and, since v8.36, `AUTO_FILL_FIELDS`
+  (`LF_AUTO_FIELDS` + `survey`, saved as `autoManual`, put back at the very end of `restoreDeal()` so every step ran with
+  them protected). So a County GIS lookup or a plan / Units change on a reopened deal still fills what nobody typed. Files
+  from before v8.36 have no `autoManual`: those fields stay typed, as before. Flag any auto-fill that compares
   against a default value, or an input added without `markManual(this)` on its handler.
 - **The three mappings are deliberate:** demo square footage from the assessor's heated area (falling
   back to the mapped footprint when there is no CAMA record, e.g. a newly created lot); clearing tier

@@ -1126,17 +1126,17 @@ body[data-screen="2"] .page{padding-bottom:108px}
   <!-- SCENARIOS -->
   <div class="sc-grid">
     <div class="sc-card worst">
-      <div class="sc-tag">Worst — <span id="term-w-label">10</span>mo</div>
+      <div class="sc-tag">Worst — <span id="term-w-label">12</span>mo</div>
       <div id="sc-lines-w" style="margin-top:4px"></div>
       <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-w">—</div><div class="profit-sub" id="coc-w"></div></div>
     </div>
     <div class="sc-card base">
-      <div class="sc-tag">Base — <span id="term-b-label">8</span>mo</div>
+      <div class="sc-tag">Base — <span id="term-b-label">9</span>mo</div>
       <div id="sc-lines-b" style="margin-top:4px"></div>
       <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-b">—</div><div class="profit-sub" id="coc-b"></div></div>
     </div>
     <div class="sc-card best">
-      <div class="sc-tag">Best — <span id="term-best-label">6</span>mo</div>
+      <div class="sc-tag">Best — <span id="term-best-label">8</span>mo</div>
       <div id="sc-lines-best" style="margin-top:4px"></div>
       <div class="sc-profit"><div class="profit-lbl">Profit / Unit</div><div class="profit-val" id="profit-best">—</div><div class="profit-sub" id="coc-best"></div></div>
     </div>
@@ -1216,7 +1216,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         </div>
         <div class="fr2" style="margin-top:14px">
           <div class="field"><label>Units</label><input type="number" id="units" value="1" min="1" max="20" oninput="onUnitsChange()"></div>
-          <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div><p class="note" id="gc-fee-note" style="display:none;margin-top:4px"></p></div>
+          <div class="field"><label>Slate GC Fee <span style="color:var(--text-dim);font-weight:normal">(on build and upgrades)</span></label><div class="input-wrap"><input type="number" id="gc-build-fee" value="14" min="0" step="0.5" class="sfx-pad" oninput="applyGcBuildFee()"><span class="sfx">%</span></div><p class="note" id="gc-fee-note" style="display:none;margin-top:4px"></p></div>
         </div>
       </div>
       <div class="card">
@@ -1246,7 +1246,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="field"><label>Insurance (build period)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="insurance" value="1400" oninput="calcAll()"></div></div>
         </div>
         <p class="note" style="margin-top:4px">Survey is the front-end survey, once per project: $1,500 for one house on one lot, $3,000 when the project is split into lots (townhomes, a duet, the triplex, or more than one unit). Phoenix Land Surveying&rsquo;s 9/2/26 quote, rounded. The per-house stakeout is in Slate&rsquo;s build.</p>
-        <div class="field" style="margin-top:10px"><label for="custom-plans">Custom plans (architect / engineer)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="custom-plans" value="0" min="0" oninput="calcAll()"></div><p class="note">Only when an architect or engineer has to draw new plans. Once per deal, financed with the other costs.</p></div>
+        <div class="field" style="margin-top:10px"><label for="custom-plans">Custom plans (architect / engineer)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="custom-plans" value="0" min="0" oninput="markManual(this);calcAll()"></div><p class="note">Only when an architect or engineer has to draw new plans. Once per deal, financed with the other costs.</p></div>
       </div>
       <div class="card">
         <div class="card-title"><span class="dot"></span>Upgrades (per unit)</div>
@@ -1943,7 +1943,7 @@ async function pullCountyComps(){
   if(!pid){ say('Run <b>\ud83d\udef0 Auto-fill from County GIS</b> on Site Intelligence first \u2014 the comp search keys off the county parcel id.','var(--amber)'); return; }
   // Guard against a stale cache even if onAddrChange never fired (paste, autofill, restored deal).
   if(gis.addrSig && gis.addrSig!==gisAddressSignature()){
-    window._lastGis=null;hideStreetCheck();
+    window._lastGis=null;hideStreetCheck();renderTaxHint();
     say('The address changed since the last GIS lookup, so the cached parcel id belongs to a different property. Run <b>\ud83d\udef0 Auto-fill from County GIS</b> again first.','var(--amber)');
     return;
   }
@@ -2244,7 +2244,7 @@ function invalidateGisIfAddressMoved(){
     const g=window._lastGis;
     if(!g||!g.addrSig) return;
     if(gisAddressSignature()===g.addrSig) return;
-    window._lastGis=null;renderZoneNote();
+    window._lastGis=null;renderZoneNote();renderTaxHint();
     const box=$('gis-result'); if(box){box.style.display='none';}
     hideStreetCheck();
     setGisStatus('Address changed \u2014 run the County GIS auto-fill again before pulling comps.');
@@ -2287,6 +2287,7 @@ let _gisLot=null;        // {label, streets[], zips[], cities[]}: the address(es
 let _clearedSite=null;   // what clearGisSite() took off, for putBackGisSite()
 let _gisMismatch=null;   // {matched}: a reopened deal whose saved County GIS parcel isn't its address (saved with the deal)
 const LF_AUTO_FIELDS=['demo-sqft','clearing','grading','fin-tax'];   // v8.33: the fields applyCountyDefaults() fills (v8.36: + tax)
+const AUTO_FILL_FIELDS=LF_AUTO_FIELDS.concat('survey');   // v8.36: saved with their typed-or-default state (serializeDeal autoManual)
 const SITE_FIELDS=['sb-front','sb-rear','sb-sides','sb-corner','sb-minw','sb-garage','lot-w','lot-d','lot-sf','buildable-override','lot-sf-poly'];
 // pt: the county's own spelling of the address (the proxy's match.point), so a correction toward it isn't a move. A ZIP or
 // city left blank at tie time is unknown, so typing it in isn't a move either.
@@ -2318,7 +2319,7 @@ function clearGisSite(){
   try{calcLF();}catch(_){ }
   onZoneChange();   // no zone: hides the setback panel and its notes
   redrawEditor();calcBuildable();
-  setGisStatus(`The address moved off ${t&&t.label||'the last parcel'}, so that parcel’s lot, zone and setbacks (and the lot factor the county filled for it) were cleared. Run the County GIS auto-fill for this address, or enter the lot by hand.`,'warn');
+  setGisStatus(`The address moved off ${t&&t.label||'the last parcel'}, so that parcel’s lot, zone and setbacks (and the lot factor and property tax the county filled for it) were cleared. Run the County GIS auto-fill for this address, or enter the lot by hand.`,'warn');
 }
 function putBackGisSite(){
   const c=_clearedSite;if(!c)return;_clearedSite=null;
@@ -2732,7 +2733,7 @@ function applyGisData(d,sig){
   // does a lot tied to it (a deal saved before v8.16 can hold the wrong parcel's), with the Put back button.
   if(m&&(m.status==='none'||m.status==='ambiguous'||m.status==='locality')){
     const cleared=!!_gisLot;if(cleared)clearGisSite();
-    window._lastGis=null;renderZoneNote();
+    window._lastGis=null;renderZoneNote();renderTaxHint();
     const box=$('gis-result');if(box)box.style.display='none';
     hideStreetCheck();
     setGisStatus((m.message||'No county address point matches that address.')
@@ -2758,6 +2759,7 @@ function applyGisData(d,sig){
   if(d.parcel&&d.parcel.geometry&&d.parcel.geometry.rings&&loadParcelPolygon(d.parcel.geometry.rings,d.parcel.edges))filled.push('lot polygon + area'+(d.parcel.edges&&d.parcel.edges.front_index!=null?' + front edge':''));
   const lf=applyCountyDefaults(d);
   if(lf.length)filled.push('lot factor \u2014 '+lf.join(', '));
+  if(lf.tax)filled.push(lf.tax);   // v8.36
   const lfMissed=lf.missed&&lf.missed.length?` No county figure for ${lf.missed.join(', ')}: left at the default, so enter ${lf.missed.length>1?'them':'it'} by hand.`:'';
   // v8.16: a close match (a part left out, or a different ZIP / city) is loaded, with what differs said up front
   const warn=m&&m.status==='close'?(m.message||'County GIS matched a slightly different address.')+' Check it’s the right parcel. ':'';
@@ -2784,6 +2786,7 @@ function applyGisData(d,sig){
     _gisParcel=d.parcel&&d.parcel.geometry?{gis:window._lastGis,pr:editorParcelRing(d.parcel.geometry.rings,d.parcel.edges)}:null;}catch(_){ }
   renderZoneNote();   // v8.15: now that the cache holds this parcel's zoning string (and any suffix)
   renderGisResult(d);
+  renderTaxHint();   // v8.36: the tax note reads _lastGis, which only now holds this parcel (calcLF() ran before it)
   if(d.parcel&&d.parcel.pid)checkStreet();else hideStreetCheck();   // v8.18: not awaited, the lookup is done
 }
 // v7.13: turn the county's own site facts into lot-factor starting points. Each field is only
@@ -2816,12 +2819,12 @@ function applyCountyDefaults(d){
   }
   // v8.36 (audit M6): the property tax starts from the county bill, not $0
   const tax=countyTaxEstimate(cama,d.match&&d.match.point&&d.match.point.city);
-  if(tax&&untouched('fin-tax')){$('fin-tax').value=tax.annual;filled.push('property tax '+fmt(tax.annual)+'/yr');}
+  if(tax&&untouched('fin-tax')){$('fin-tax').value=tax.annual;filled.tax='property tax '+fmt(tax.annual)+'/yr (county bill)';}
   // v8.33 (audit N1.6): a field this lookup has no figure for, and that nobody typed, goes back to its default instead of
   // keeping the last parcel's auto-filled value; the status line names it so it gets entered by hand
   const missed=[];
   [['demo-sqft','demo'],['clearing','clearing'],['grading','grading'],['fin-tax','property tax']].forEach(([id,lbl])=>{   // LF_AUTO_FIELDS
-    if(!untouched(id)||filled.some(f=>f.indexOf(lbl+' ')===0))return;
+    if(!untouched(id)||filled.some(f=>f.indexOf(lbl+' ')===0)||(id==='fin-tax'&&filled.tax))return;
     const e=$(id),dv=fieldDefault(e);if(e.value!==dv)e.value=dv;
     missed.push(lbl);
   });
@@ -2850,11 +2853,14 @@ function renderTaxHint(){
   const g=window._lastGis, t=g&&countyTaxEstimate(g.cama,g.mpt&&g.mpt.city);
   if(!t){h.style.display='none';h.textContent='';return;}
   const c=x=>x.toFixed(2).replace(/\.?0+$/,'')+'\u00a2';
-  const tn=t.town?t.town.charAt(0)+t.town.slice(1).toLowerCase():'';
+  const tn=t.town?t.town.toLowerCase().replace(/\b[a-z]/g,ch=>ch.toUpperCase()):'';
+  const unincorp=!t.town||/^(MECKLENBURG|OTHER|UNINCORPORATED)$/.test(t.town);
   const typed=isManual('fin-tax')&&pv('fin-tax')!==t.annual?` You typed ${fmt(pv('fin-tax'))}.`:'';
   h.textContent=`County bill: ${fmt(t.value)} assessed \u00d7 ${c(t.rate)} per $100 (county ${c(MECK_TAX.county)}`
     +(t.townRate!=null?` + ${tn} ${c(t.townRate)}`:'')+`, ${MECK_TAX.fy}) = ${fmt(t.annual)}/yr.`
-    +(t.townRate==null?` No town rate on file${tn?' for '+tn:''}: county only, so add the town or fire district from the bill.`:' Fire or special districts aren\u2019t included: check the bill.')+typed;
+    +(t.townRate!=null?' Fire or special districts aren\u2019t included: check the bill.'
+      :unincorp?' Outside the towns: county only, so add the fire district from the bill.'
+      :` No ${tn} rate on file: county only, so add the town\u2019s from the bill.`)+typed;
   h.style.display='';
 }
 // a field's shipped default: a select's default option, an input's value attribute
@@ -5845,7 +5851,10 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   inp('septic','Septic Install (per lot)',M.septicLot,MONEY);
   der('tap','Tap Fees (total)',`(${IN['tapw']}+${IN['taps']})*${IN['units']}+${IN['septic']}`,MONEY);
   // v8.36: upgrades get the GC fee (the app's GC fee box, also on a custom build), and custom plans are a per-deal cost
-  sec('OTHER COSTS'); inp('upg','Upgrades / Unit (menu price)',M.upgUnit,MONEY); inp('upgfee','GC Fee % on Upgrades',M.upgFeePct,PCT);
+  // On a Slate plan the upgrades' fee is the build's fee cell (one box sets both in the app); a custom build has no build fee
+  // (gcfee 0), so there it's the app's GC fee box as typed
+  sec('OTHER COSTS'); inp('upg','Upgrades / Unit (menu price)',M.upgUnit,MONEY);
+  inp('upgfee','GC Fee % on Upgrades'+(M.customBuild?'':' (= the build\u2019s)'),M.customBuild?M.upgFeePct:{formula:IN['gcfee']},PCT);
   der('upgU','\u2514 Upgrades / Unit (with GC fee)',`${IN['upg']}*(1+${IN['upgfee']})`,MONEY);
   inp('survey','Survey (once per project)',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
   inp('plans','Custom Plans (architect / engineer)',M.customPlans,MONEY);
@@ -5860,7 +5869,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   // note beside it, in the same style as the rule notes below; no note, no cell, so a clean deal's sheet is unchanged
   {const mn=M.moneyNotes||{};
    ['land','arvB','arvW','arvBest'].forEach(k=>{if(!mn[k])return;const c=wsI.getCell(IN[k].replace('B','C'));c.value=mn[k];c.font={name:'Arial',size:9,italic:true,color:{argb:'FFB26B00'}};});}
-  // v8.2: appended last so every existing Inputs cell keeps its address
+  // v8.2: appended last so every existing Inputs cell kept its address (v8.36 inserted rows above it; every reference
+  // goes through IN[], so nothing points at a fixed Inputs row)
   sec('PROFIT RULE (sets Max Land)'); inp('pfloor','Min Base Profit / Unit (blank = default)',M.profitFloor,MONEY2); inp('ppct','or % of All-In, the higher applies (blank = default)',M.profitPct,PCT2);
   // v8.7: the rule Max Land actually uses, after getProfitRule()'s defaults and limits (PROFIT_RULE_LIMITS):
   // a blank or non-numeric cell means the app's default (ISNUMBER, so text like "$70k" isn't skipped as 0 by
@@ -6468,6 +6478,7 @@ function serializeDeal(){
     choices:CHOICES.slice(),
     tapSig:_tapSig,rankSig:_rankSig,   // what the entry-time defaults last applied, so a reopen replays one still due
     tapManual:{w:isManual('tap-water'),s:isManual('tap-sewer')},   // v8.14: typed tap quotes stay typed on reopen
+    autoManual:Object.fromEntries(AUTO_FILL_FIELDS.map(id=>[id,isManual(id)])),   // v8.36: and so do the county / survey fills
     upgrades:Array.from(selectedUpgrades),
     structures:extraStructures.map(st=>({name:st.name,w:st.w,d:st.d,rot:st.rot||0,x:st.x,y:st.y,xFt:st.xFt,yFt:st.yFt})),   // v8.26
     comps:COMPS.map(c=>Object.assign({},c)),
@@ -6601,6 +6612,13 @@ function restoreDeal(d){
     if($('skip-sewer'))onSewerSkip();
     calcLF();calcBuildable();calcAll();calcFinancing();
     if(typeof renderFitCheck==='function')renderFitCheck();
+    // v8.36: the county fills (LF_AUTO_FIELDS: demo, clearing, grading, property tax) and the survey keep the typed-or-default
+    // state they were saved with, like the taps, so a County GIS lookup or a plan / Units change on a reopened deal still
+    // fills the ones nobody typed. Put back last, so every step above ran with them protected and the saved values stand. A
+    // file from before v8.36 has no record of it: they stay typed, as they always did.
+    {const am=(d.autoManual&&typeof d.autoManual==='object')?d.autoManual:null;
+     if(am)AUTO_FILL_FIELDS.forEach(id=>{const e=$(id);if(e&&am[id]===false)delete e.dataset.manual;});
+     renderTaxHint();}
     updateLinks();updateGISLink();   // step 1 built these before the street and ZIP were back
     updateDealPulse();
     // the resume bar's offer is stale now: the autosave is about to write this deal into its slot
