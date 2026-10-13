@@ -418,8 +418,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
     write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.
   - **Due-date reminder email (v4.7, `api/permit-reminders.js`, Brian 2026-10-13).** The daily cron run in
-    `api/accela.js` syncs, then calls `runReminders({state, records, send:true})` with the synced state (a
-    Drive re-read right after the writes can be stale). One email from management@ to management@
+    `api/accela.js` does `prepareSync()` (read, look up, plan, apply in memory), then
+    `runReminders({state, records, send:true})` from that state **before** `commitSync()` writes (budget 30 s)
+    — slow feed writes must never starve the email inside `maxDuration` 60. Flag a change that moves the
+    send after the writes. Subjects carry the date ("Permits Oct 14: …") so Gmail doesn't fold days into
+    one thread; a same-day identical email isn't re-sent from the same instance (re-delivered cron event). One email from management@ to management@
     (`REMINDER_TO` overrides) listing every board step whose status is not `done` and whose `due` is
     tomorrow, today or past, in Charlotte's date (`etDate`, America/New_York) — the day before, the day of,
     and every day after until done. Nothing in that window → no email. `TITLES` mirrors `permits.html`

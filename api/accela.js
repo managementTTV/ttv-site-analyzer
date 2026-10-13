@@ -75,13 +75,23 @@ export function parseProcessing(html){
   marks.forEach((t, i) => {
     const body = html.slice(t.end, i + 1 < marks.length ? marks[i + 1].at : html.length);
     const history = [];
-    const h = /(?:Due on\s*<span[^>]*>(.*?)<\/span>\s*,\s*assigned to\s*<span[^>]*>(.*?)<\/span>\s*(?:<br\s*\/?>)?\s*)?Marked as\s*<span[^>]*>(.*?)<\/span>\s*on\s*<span[^>]*>(.*?)<\/span>/gs;
-    let x, current = null;
+    // span contents never hold tags, so [^<]* keeps one entry's fields from bleeding into the next
+    const h = /(?:Due on\s*<span[^>]*>([^<]*)<\/span>\s*,\s*assigned to\s*<span[^>]*>([^<]*)<\/span>\s*(?:<br\s*\/?>)?\s*)?Marked as\s*<span[^>]*>([^<]*)<\/span>\s*on\s*<span[^>]*>([^<]*)<\/span>/g;
+    const entries = [];
+    let x;
     while((x = h.exec(body))){
       const st = text(x[3]), who = x[2] ? text(x[2]) : '';
-      if(st && st !== 'TBD') history.push({ status: st, date: isoDate(text(x[4])) });
-      current = { status: st && st !== 'TBD' ? st : null, assignedTo: who && who !== 'TBD' ? who : null, cityDue: x[1] ? isoDate(text(x[1])) : null };
+      const e = { status: st && st !== 'TBD' ? st : null, date: isoDate(text(x[4])),
+                  assignedTo: who && who !== 'TBD' ? who : null, cityDue: x[1] ? isoDate(text(x[1])) : null };
+      entries.push(e);
+      if(e.status) history.push({ status: e.status, date: e.date });
     }
+    // who has it now: the open (not yet marked, "TBD") entry; otherwise the newest-dated one — position is
+    // unreliable for same-day entries
+    const open = entries.filter(e => !e.status);
+    const dated = entries.filter(e => e.date).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    const pick = open.length ? open[open.length - 1] : dated.length ? dated[dated.length - 1] : entries[entries.length - 1];
+    const current = pick ? { status: pick.status, assignedTo: pick.assignedTo, cityDue: pick.cityDue } : null;
     const c = /Comment:\s*(?:<\/[^>]+>\s*)*(.*?)(?:Additional Information:|<\/table>)/s.exec(body);
     const task = { name: t.name, state: t.state, history, current, comment: c ? text(c[1]).slice(0, 280) || null : null };
     task.latest = last(task);
@@ -287,16 +297,24 @@ async function writeFeed(state, item){
   if(!out || !out.ok) throw new Error((out && out.error) || 'feed refused the patch');
 }
 
-async function sync(opts){ return (await syncWithState(opts)).result; }
+async function sync({ dry }){ return commitSync(await prepareSync(), { dry }); }
 
-// The sync, plus the state it read with every planned change applied in memory — Accela is the truth even
-// when a save fails, and re-reading Drive right after the writes can return the old file.
-async function syncWithState({ dry }){
+// Read Drive, look every City record up, plan the changes and apply them to the in-memory state — Accela is
+// the truth even before (or without) a successful save, so the reminder email can be built from this state
+// before any write starts (a Drive re-read right after the writes can return the old file anyway).
+async function prepareSync(){
   const t0 = Date.now();
   const state = await loadPermitState();
-  const tg = targets(state);
-  const records = await lookupAll(tg.map(t => t.ref));
+  const records = await lookupAll(targets(state).map(t => t.ref));
   const items = plan(state, records);
+  items.forEach(it => {
+    const c = it.upd && state.projects.find(p => p.id === it.projectId)?.state[it.milestoneId];
+    if(c) Object.assign(c, it.upd);
+  });
+  return { t0, state, records, items };
+}
+
+async function commitSync({ t0, state, records, items }, { dry, budgetMs = WRITE_BUDGET_MS }){
   // Only production saves: a branch preview shares the live Drive file and feed, so opening one before
   // merge must not write. Previews (and local runs without the feed vars) report what they would change.
   const env = process.env.VERCEL_ENV;
@@ -306,17 +324,13 @@ async function syncWithState({ dry }){
   for(const it of items){                                   // one at a time: every patch rewrites the same Drive file
     if(!it.change){ it.wrote = null; continue; }
     if(dryWhy){ it.wrote = false; it.note = dryWhy; continue; }
-    if(Date.now() - t0 > WRITE_BUDGET_MS){ it.wrote = false; it.note = 'deferred to the next sync (time budget)'; deferred++; continue; }
+    if(Date.now() - t0 > budgetMs){ it.wrote = false; it.note = 'deferred to the next sync (time budget)'; deferred++; continue; }
     try{ await writeFeed(state, it); it.wrote = true; wrote++; }
     catch(e){ it.wrote = false; it.note = String(e && e.message || e); failed++; }
   }
-  items.forEach(it => {
-    const c = it.upd && state.projects.find(p => p.id === it.projectId)?.state[it.milestoneId];
-    if(c) Object.assign(c, it.upd);
-    delete it.upd;
-  });
-  return { state, records, result: { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed, deferred,
-           changes: items.filter(i => i.change).length, items, records } };
+  items.forEach(it => { delete it.upd; });
+  return { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed, deferred,
+           changes: items.filter(i => i.change).length, items, records };
 }
 
 export default async function handler(req, res){
@@ -345,13 +359,18 @@ export default async function handler(req, res){
       return;
     }
     if(isCron){
-      // The daily morning run: Accela sync, then the due-date reminder email built from the synced state.
+      // The daily morning run: look Accela up, send the due-date email from that fresh state FIRST, then save —
+      // the email can't be starved by slow feed writes inside the 60 s limit. Writes stop starting at 30 s
+      // (each can take up to 25 s); anything left is saved by the next board load.
       res.setHeader('Cache-Control', 'no-store');
-      const { state, records, result } = await syncWithState({ dry: false });
+      const prep = await prepareSync();
+      let reminders;
       try{
         const { runReminders } = await import('./permit-reminders.js');
-        result.reminders = await runReminders({ state, records, send: true });
-      }catch(e){ result.reminders = { ok: false, error: String(e && e.message || e) }; }
+        reminders = await runReminders({ state: prep.state, records: prep.records, send: true });
+      }catch(e){ reminders = { ok: false, error: String(e && e.message || e) }; }
+      const result = await commitSync(prep, { dry: false, budgetMs: 30 * 1000 });
+      result.reminders = reminders;
       res.status(200).json(result);
       return;
     }

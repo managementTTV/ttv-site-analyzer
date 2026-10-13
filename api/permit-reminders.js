@@ -42,6 +42,9 @@ const TITLES = {
 const STATUS = { todo: 'Not started', active: 'In progress', submitted: 'Submitted / in review', blocked: 'Blocked', done: 'Approved / complete' };
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+// a real calendar day (2026-02-30 is not)
+const isDay = s => { if(!ISO.test(s || '')) return false; const [y, m, d] = s.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d; };
 // "Today" is Charlotte's date, not the server's (UTC).
 export const etDate = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 const dayNum = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
@@ -57,7 +60,7 @@ export function dueItems(state, today){
   const out = [];
   for(const p of (state && state.projects) || []){
     for(const [mid, c] of Object.entries(p.state || {})){
-      if(!TITLES[mid] || !c || c.status === 'done' || !ISO.test(c.due || '')) continue;
+      if(!Object.hasOwn(TITLES, mid) || !c || c.status === 'done' || !isDay(c.due)) continue;
       const days = dayNum(c.due) - dayNum(today);
       if(days > 1) continue;
       out.push({ projectId: p.id, addr: p.addr, milestoneId: mid, title: TITLES[mid], status: c.status, owner: c.owner || null,
@@ -85,7 +88,7 @@ export function render(items, today){
   if(groups[0][1].length) parts.push(`${groups[0][1].length} overdue`);
   if(groups[1][1].length) parts.push(`${groups[1][1].length} due today`);
   if(groups[2][1].length) parts.push(`${groups[2][1].length} due tomorrow`);
-  const subject = `Permits: ${parts.join(' · ')}`;
+  const subject = `Permits ${nice(today)}: ${parts.join(' · ')}`;   // dated, so each day is its own Gmail thread
   const color = n => n < 0 ? RED : n === 0 ? AMBER : SLATE;
   const head = { overdue: 'Overdue — not approved yet', today: 'Due today', tomorrow: 'Due tomorrow' };
 
@@ -152,6 +155,17 @@ ${acc}</td></tr>`;
   return { subject, text: text.join('\n'), html };
 }
 
+// RFC 2047 encoded words are capped at 75 chars: split on character boundaries into <= 45-byte chunks.
+function encodeWords(s){
+  const words = []; let cur = '';
+  for(const ch of s){
+    if(Buffer.byteLength(cur + ch, 'utf8') > 45){ words.push(cur); cur = ''; }
+    cur += ch;
+  }
+  if(cur) words.push(cur);
+  return words.map(w => `=?UTF-8?B?${Buffer.from(w, 'utf8').toString('base64')}?=`).join('\r\n ');
+}
+
 async function gmailSend({ to, subject, text, html }){
   let cfg;
   try{ cfg = JSON.parse(process.env.GMAIL_SEND_TOKEN || ''); }catch(_){ throw new Error('GMAIL_SEND_TOKEN is not set or not JSON'); }
@@ -165,7 +179,7 @@ async function gmailSend({ to, subject, text, html }){
   const b64 = s => Buffer.from(s, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n');
   const mime = [
     `From: "Tide & Timber Ventures" <${FROM}>`, `To: ${to}`,
-    `Subject: =?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`,
+    `Subject: ${encodeWords(subject)}`,
     'MIME-Version: 1.0', `Content-Type: multipart/alternative; boundary="${b}"`, '',
     `--${b}`, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64(text),
     `--${b}`, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64(html),
@@ -179,9 +193,13 @@ async function gmailSend({ to, subject, text, html }){
   return j.id;
 }
 
+// Same day + same content already sent from this instance → don't send it again (a re-delivered cron event
+// usually lands on the warm instance). A changed list the same day still goes out. Per instance only.
+let lastSent = null;
+
 // state/records: pass the cron's freshly synced copies; otherwise they're read here.
 export async function runReminders({ state, records, send = false, today } = {}){
-  today = today && ISO.test(today) ? today : etDate(new Date());
+  today = today && isDay(today) ? today : etDate(new Date());
   state = state || await loadPermitState();
   const items = dueItems(state, today);
   if(!items.length) return { ok: true, today, count: 0, sent: false, note: 'nothing due tomorrow, today or overdue' };
@@ -194,7 +212,9 @@ export async function runReminders({ state, records, send = false, today } = {})
   if(!send) return { ...out, text: mail.text, html: mail.html };
   const env = process.env.VERCEL_ENV;
   if(env && env !== 'production'){ out.note = `${env} deployment — only production sends`; return out; }
-  try{ out.id = await gmailSend({ to: TO, ...mail }); out.sent = true; }
+  const key = `${today}|${mail.text}`;
+  if(lastSent === key){ out.note = 'same email already sent today from this instance'; return out; }
+  try{ out.id = await gmailSend({ to: TO, ...mail }); out.sent = true; lastSent = key; }
   catch(e){ out.ok = false; out.error = String(e && e.message || e); }
   return out;
 }
