@@ -30,6 +30,13 @@
 //   TaxParcelBoundaries  -> the subject's centre when the CAMA record has no coordinates
 //   Accela 1             -> address points, to tell N Davidson St from S Davidson St (CAMA drops the direction)
 //   Accela 2 / 3         -> City / State maintained street centrelines (camera spot for Street View)
+//   v8.43, condition records (see conditionRecords()):
+//   Accela 25            -> Code Enforcement Service Areas: whether the lot is where the City's records reach
+//   HNS/CodeEnforcementCasesAll   -> confirmed code violations by the section they cite (counts only)
+//   ODP/ServiceRequests311        -> 311 condition complaints (counts only; complaints, not findings)
+//   HNS/CodeEnforcementOrderstoDemolish -> demolition orders
+//   NCDOT_AADT_Traffic_Segmentation  -> cars a day on the lot's own street (NCDOT, ArcGIS Online; 2021 counts)
+//   Accela 5             -> the City's thoroughfare classification (major / minor) of the lot's street
 // Mecklenburg-only by design, same as api/gis.js and api/comps.js. Hit /api/street?pid=04118535
 import { camaQuery, camaBackupNote } from './gis.js';
 const MECK = 'https://meckgis.mecklenburgcountync.gov/server/rest/services';
@@ -46,6 +53,7 @@ const CAMERA_MAX_FT = 400;       // a centreline further than this from the lot 
 const SALE_MONTHS = 60;          // one street has only a few sales a year; the same window applies to both sides
 const MIN_SALE = 50000;          // drops family transfers the validity code missed
 const NEW_SINCE = 2020;          // same "new build" line as api/comps.js minYear
+export const RECORD_MONTHS = 24; // v8.43 condition records: the same window as the connector's code cases (api/mcp.js CASE_MONTHS)
 const AREA_FT = 2640;            // the fallback comparison area: every parcel within half a mile
 const MIN_AREA_HOMES = 30;       // fewer homes than this in the assessor neighbourhood: too few to compare with
 // The assessor also codes parcels to commercial market areas ("APARTMENT - NORTHWEST SUBMARKET", "RETAIL - …",
@@ -76,7 +84,169 @@ const CHECKS = [
     enough:(s,n)=>s.parcels>=5 && n.parcels>=10, weaker:(g,s)=>s.nonres>=2 && g>=10},
   {key:'new_builds_pct', label:`Homes built ${NEW_SINCE}+`, gap:'pts', info:true,   // a good sign, never a weakness
     enough:(s,n)=>s.homes>=5 && n.homes>=10, stronger:(g,s)=>s.new_builds>=2 && g>=10},
+  // v8.43: City of Charlotte records, per 100 parcels on each side (records:true rows are left out when there are no
+  // records: outside the City, or the City's layers didn't answer). Weaker = 3+ on the street and at least twice the
+  // area's rate. 311 complaints are shown, not judged (info): who calls 311 varies street by street, and a street whose
+  // new neighbours call more would read worse for it.
+  {key:'cases_per100', label:`Code violations, last ${RECORD_MONTHS} months (per 100 parcels)`, gap:'rel', records:true,
+    enough:(s,n)=>s.cases!=null && n.cases!=null && s.record_parcels>=5 && n.record_parcels>=10,
+    weaker:(g,s)=>s.cases>=3 && g>=1},
+  {key:'complaints_per100', label:`311 condition complaints, last ${RECORD_MONTHS} months (per 100 parcels)`, gap:'rel', records:true, info:true,
+    enough:(s,n)=>s.complaints!=null && n.complaints!=null && s.record_parcels>=5 && n.record_parcels>=10,
+    more:(g,s)=>s.complaints>=3 && g>=1},
 ];
+
+// ── v8.43: condition records, traffic and demolition orders ───────────────────────────────────────────────────────────
+// The City's records of the things a street walk looks for (overgrown yards, junked cars, cars on the lawn, junk and
+// dumping, boarded houses), counted for the street's parcels and the comparison area's. Counts only: no record is
+// returned, and no complainant, inspector, address or description text is ever requested (TITLE and
+// DetailedDescription are matched in the `where` on the City's server). Only buildings and lots, never who lives there.
+// Charlotte only: the towns keep no open records like these, so outside the City's code-enforcement area the rows are
+// left out and a note says why (no records there isn't a clean street).
+const CE_LAYER = 'https://gis.charlottenc.gov/arcgis/rest/services/HNS/CodeEnforcementCasesAll/MapServer/0';
+const DEMOLISH_LAYER = 'https://gis.charlottenc.gov/arcgis/rest/services/HNS/CodeEnforcementOrderstoDemolish/MapServer/0';
+const SR311_LAYER = 'https://gis.charlottenc.gov/arcgis/rest/services/ODP/ServiceRequests311/MapServer/0';
+const CE_AREA_LAYER = 25;   // Accela "Code Enforcement Service Areas"
+const AADT = 'https://services.arcgis.com/NuWFvHYDMVmmxMeM/ArcGIS/rest/services/NCDOT_AADT_Traffic_Segmentation/FeatureServer';
+const AADT_LAYERS = [1, 2, 3];   // segments: secondary / non-system, primaries, interstates (layer 0 is count stations)
+const OID_CHUNK = 500, RECORD_POOL = 4;
+const RECORD_PAD_DEG = 0.002;   // ~700 ft around the parcels' points: a record's point can sit off its parcel's centre
+// The City's 311 server can stall for a minute; the records and the traffic count get this long between them, then
+// give up (an errors entry), so they never hold up the rest of the street check.
+const RECORDS_MS = 10000;
+export const BUSY_AADT = 10000;   // cars a day; judgement, like CHECKS (a local street runs a few hundred to ~2,000)
+const TRAFFIC_FT = 40;            // an NCDOT segment this close to the lot's own centreline point is that street
+// A violation found: the owner corrected it, the City cleaned it up or towed the car, or the owner repaired or
+// demolished (housing). Dismissed, "no violations" and still-open cases don't count. Conclusion is matched, never returned.
+const CONFIRMED = "(Conclusion LIKE '%Compliance%' OR Conclusion = 'Vehicle Towed')";
+// Nuisance cases by the section of the City code they cite: section number and title, the same rule as api/mcp.js
+// VIOLATIONS (a pattern without its section number would start matching the reporter's own words). Housing (minimum
+// housing code) cases count whole. The City's "Parking" case type isn't lawn parking (it doesn't cite 14-216), so lawn
+// parking comes only from the citation.
+export const CASE_KINDS = [
+  {key:'overgrowth', pats:['10-155%Overgrown vegetation']},
+  {key:'vehicles', pats:['10-167%Junked Motor Vehicle', '10-166%Hazardous vehicle', '10-165%Abandoned vehicle']},
+  {key:'lawn_parking', pats:['14-216%Parking on the Lawn']},
+  {key:'junk', pats:['10-136%Neglect of a Premise', '10-138%Illegal dumping']},
+];
+// 311 complaints by request type, and by keyword in TITLE for the City's catch-all "HNS HEALTH AND SANITATION" (the
+// biggest condition type: "High weeds & grass, junk in yard, etc."). Only these three; the catch-all's generic title,
+// HNS HOUSING (mostly indoor repairs) and the street-service types aren't counted. The words for each kind live in
+// index.html (streetRecordsHtml()).
+const COMPLAINT_TYPES = ['HNS HEALTH AND SANITATION', 'DUMPING IN STREET/ROW', 'BOARDED UP STRUCTURE', 'PARKING ON LAWN WORKDAYS', 'PARKING ON LAWN OFFHOURS'];
+const HS = "REQUEST_TYPE='HNS HEALTH AND SANITATION'", T = w => `UPPER(TITLE) LIKE '%${w}%'`;
+export const COMPLAINT_KINDS = [
+  {key:'yard', where:`((${HS} AND (${T('WEED')} OR ${T('GRASS')} OR ${T('TRASH')} OR ${T('DUMP')} OR ${T('DEBRIS')} OR (${T('JUNK')} AND NOT ${T('VEHICLE')}))) OR REQUEST_TYPE='DUMPING IN STREET/ROW')`},
+  {key:'vehicles', where:`((${HS} AND (${T('VEHICLE')} OR ${T('PARKING')} OR ${T('PARKED')})) OR REQUEST_TYPE LIKE 'PARKING ON LAWN%')`},
+  {key:'boarded', where:`(REQUEST_TYPE='BOARDED UP STRUCTURE' OR ${T('BOARDED')})`},
+];
+
+const isoDay = ms => new Date(ms).toISOString().slice(0,10);
+const chunked = (a, n) => { const out=[]; for(let i=0; i<a.length; i+=n) out.push(a.slice(i, i+n)); return out; };
+const pidKey = v => String(v||'').trim().toUpperCase();
+// fn over items, at most n at a time, results in input order
+async function pool(items, n, fn){
+  const out = new Array(items.length); let next = 0;
+  await Promise.all(Array.from({length:Math.min(n, items.length)}, async ()=>{ while(next < items.length){ const k = next++; out[k] = await fn(items[k]); } }));
+  return out;
+}
+async function idsOf(layer, where, fetchSignal){ return (await ajPost(`${layer}/query`, {where, returnIdsOnly:'true', f:'json'}, fetchSignal)).objectIds || []; }
+// The box around these parcels' points (CAMA: latitude in xcoord, longitude in ycoord) and the lot, padded, as an
+// ArcGIS spatial filter. The City's layers answer a box in well under 2 s; a list of parcel ids in the where can stall
+// the 311 layer for a minute, so the records are fetched by box and kept by parcel id here.
+function boxAround(rows, lat, lng){
+  let x0 = lng, x1 = lng, y0 = lat, y1 = lat;
+  rows.forEach(r=>{ const la = num(r.xcoord), lo = num(r.ycoord); if(la==null || lo==null) return;
+    x0 = Math.min(x0, lo); x1 = Math.max(x1, lo); y0 = Math.min(y0, la); y1 = Math.max(y1, la); });
+  return {geometry:JSON.stringify({xmin:x0-RECORD_PAD_DEG, ymin:y0-RECORD_PAD_DEG, xmax:x1+RECORD_PAD_DEG, ymax:y1+RECORD_PAD_DEG,
+    spatialReference:{wkid:4326}}), geometryType:'esriGeometryEnvelope', inSR:'4326', spatialRel:'esriSpatialRelIntersects'};
+}
+// Each record id's kinds, matched on the City's server on ids only (no text comes back): kinds[i].where(...) per chunk.
+async function kindsOf(layer, ids, kinds, whereFor, fetchSignal){
+  const map = new Map();
+  await pool(kinds, RECORD_POOL, async k=>{
+    for(const c of chunked(ids, OID_CHUNK)) (await idsOf(layer, `OBJECTID IN (${c.join(',')}) AND ${whereFor(k)}`, fetchSignal))
+      .forEach(id=>{ if(!map.has(id)) map.set(id, new Set()); map.get(id).add(k.key); });
+  });
+  return map;
+}
+// {total, by} for the records whose parcel is in `pids`. A record with two kinds counts once in total, once under each.
+function tally(rows, pidField, pids, kindMap, keys, wholeKind){
+  const by = {}; keys.forEach(k=>{ by[k] = 0; }); let total = 0;
+  rows.forEach(r=>{
+    if(!pids.has(pidKey(r[pidField]))) return;
+    if(wholeKind && wholeKind(r)){ by[wholeKind(r)]++; total++; return; }
+    const ks = kindMap.get(r.OBJECTID); if(!ks) return;
+    total++; ks.forEach(k=>{ by[k]++; });
+  });
+  return {total, by};
+}
+// The City's records for the street's parcels and the area's, last RECORD_MONTHS. {city:false} outside the City's
+// code-enforcement area (asked first, so a town lot sends nothing else to the City).
+async function conditionRecords(lat, lng, stRows, areaRows, fetchSignal, notes){
+  const at = {geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint', inSR:'4326', spatialRel:'esriSpatialRelIntersects'};
+  const city = await ajPost(`${CITY}/${CE_AREA_LAYER}/query`, Object.assign({where:'1=1', returnCountOnly:'true', f:'json'}, at), fetchSignal);
+  if(!(city.count > 0)) return {city:false};
+  const now = Date.now(), since = isoDay(now - RECORD_MONTHS*30.44*86400000), until = isoDay(now + 86400000);
+  const sP = new Set(stRows.map(r=>pidKey(r.pid))), aP = areaRows ? new Set(areaRows.map(r=>pidKey(r.pid))) : null;
+  const box = boxAround(stRows.concat(areaRows||[]), lat, lng);
+  const [ce, sr, demo] = await Promise.all([
+    allRows(CE_LAYER, Object.assign({where:`CaseType IN ('Nuisance','Housing') AND DateCreated >= DATE '${since}' AND ${CONFIRMED}`,
+      orderByFields:'OBJECTID'}, box), 'OBJECTID,ParcelId,CaseType', fetchSignal),
+    allRows(SR311_LAYER, Object.assign({where:`RECEIVED_DATE >= DATE '${since}' AND RECEIVED_DATE < DATE '${until}' AND REQUEST_TYPE IN (${COMPLAINT_TYPES.map(t=>`'${t}'`).join(',')})`,
+      orderByFields:'OBJECTID'}, box), 'OBJECTID,PID', fetchSignal),
+    allRows(DEMOLISH_LAYER, {where:'1=1', orderByFields:'OBJECTID'}, 'OBJECTID,ParcelId', fetchSignal)]);
+  if(ce.truncated || sr.truncated) notes.push('More City records in this area than one lookup returns, so the counts may run low.');
+  const ours = (rows, f) => rows.filter(r=>{ const k = pidKey(r[f]); return sP.has(k) || (aP && aP.has(k)); });
+  const ceRows = ours(ce.rows, 'ParcelId'), srRows = ours(sr.rows, 'PID');
+  const [caseKinds, complaintKinds] = await Promise.all([
+    kindsOf(CE_LAYER, ceRows.filter(r=>r.CaseType==='Nuisance').map(r=>r.OBJECTID), CASE_KINDS,
+      k=>'('+k.pats.map(p=>`DetailedDescription LIKE '%${sq(p)}%'`).join(' OR ')+')', fetchSignal),
+    kindsOf(SR311_LAYER, srRows.map(r=>r.OBJECTID), COMPLAINT_KINDS, k=>k.where, fetchSignal)]);
+  const housing = r => r.CaseType==='Housing' ? 'housing' : null;
+  const caseKeys = CASE_KINDS.map(k=>k.key).concat('housing'), compKeys = COMPLAINT_KINDS.map(k=>k.key);
+  const sc = tally(ceRows, 'ParcelId', sP, caseKinds, caseKeys, housing), scomp = tally(srRows, 'PID', sP, complaintKinds, compKeys);
+  const demolition = demo.rows.filter(r=>sP.has(pidKey(r.ParcelId))).length;
+  const out = {city:true, months:RECORD_MONTHS, since,
+    street:{parcels:sP.size, cases:sc.total, cases_by:sc.by, complaints:scomp.total, complaints_by:scomp.by, demolition_orders:demolition},
+    area:null};
+  if(aP) out.area = {parcels:aP.size, cases:tally(ceRows, 'ParcelId', aP, caseKinds, caseKeys, housing).total,
+    complaints:tally(srRows, 'PID', aP, complaintKinds, compKeys).total};
+  return out;
+}
+// How busy the lot's own street is, from the centreline point in front of the lot:
+//  - aadt: cars a day on the nearest NCDOT traffic segment within TRAFFIC_FT (NCDOT's HPMS file, calendar year 2021;
+//    it covers roads above Local, so most neighbourhood streets have none);
+//  - thoroughfare: the City's classification of that same street (Accela Thoroughfares, existing ones only, matched by
+//    the centreline's name), which reaches city streets the NCDOT file skips (N Davidson St is a minor thoroughfare).
+// busy = 10,000+ cars a day or a major thoroughfare / freeway. null = no centreline point to look from.
+const THOROUGHFARE_LAYER = 5, THOROUGHFARE = {EXMJTH:'major', 'EXMJTH-C3C':'major', EXFRY:'freeway', EXMINTH:'minor'};
+export const AADT_YEAR = 2021;
+// The thoroughfare layer spells the type out ("Central Ave") where the centreline abbreviates it ("CENTRAL AV"), so the
+// match is on the name before the type ("N DAVIDSON ST" -> 'N DAVIDSON %'); a one-word name matches whole.
+function thoroughfareWhere(name){
+  const w = name.trim().toUpperCase().split(/\s+/), base = w.length > 1 ? w.slice(0, -1).join(' ') : w[0];
+  return `UPPER(WholeStreet)='${sq(base)}' OR UPPER(WholeStreet) LIKE '${sq(base)} %'`;
+}
+async function trafficAt(lat, lng, cam, fetchSignal){
+  if(!cam || !cam.pt) return null;
+  const p = fromFt({lat, lng}, cam.pt), near = within(p.lat, p.lng, TRAFFIC_FT);
+  const [layers, tf] = await Promise.all([
+    Promise.all(AADT_LAYERS.map(l=>ajPost(`${AADT}/${l}/query`, Object.assign({where:'AADT > 0', outFields:'AADT',
+      returnGeometry:'true', outSR:'4326', f:'json'}, near), fetchSignal))),
+    cam.name ? ajPost(`${CITY}/${THOROUGHFARE_LAYER}/query`, Object.assign({where:thoroughfareWhere(cam.name),
+      outFields:'TfareType', returnGeometry:'false', f:'json'}, near), fetchSignal) : Promise.resolve({features:[]})]);
+  let best = null;
+  layers.forEach(j=>(j.features||[]).forEach(f=>{
+    const n = nearestOnLine(p, [{features:[{geometry:f.geometry, attributes:{}}]}]);
+    if(n && (!best || n.d < best.d)) best = {d:n.d, aadt:num(f.attributes && f.attributes.AADT)};
+  }));
+  const kinds = (tf.features||[]).map(f=>THOROUGHFARE[((f.attributes||{}).TfareType||'').trim()]).filter(Boolean);
+  const thoroughfare = ['freeway', 'major', 'minor'].find(k=>kinds.includes(k)) || null;
+  const aadt = best && best.aadt>0 ? Math.round(best.aadt) : null;
+  return {aadt, aadt_year: aadt ? AADT_YEAR : null, thoroughfare,
+    busy: (aadt||0) >= BUSY_AADT || thoroughfare==='major' || thoroughfare==='freeway'};
+}
 
 // fetchSignal (every helper below passes it on): optional, a function giving each request its own AbortSignal. api/mcp.js
 // passes one carrying a per-request timeout and its tool deadline, so a stalled layer fails on its own (and its catch
@@ -182,25 +352,47 @@ function profile(rows, since, lots){
 }
 
 // Street vs area, check by check. 'thin' = too little evidence on either side to say.
+// v8.43: the records rows (records:true) only when there are records (s.cases set); 'more' is the info-only 311 row's
+// "higher than the area" (shown, never counted as weaker). A records row whose area rate is 0 compares as "far above"
+// when the street has any (b=0 would otherwise read "too few").
 function compare(s, n){
-  return CHECKS.map(c=>{
+  return CHECKS.filter(c=>!c.records || s.cases!=null).map(c=>{
     const a = s[c.key], b = n[c.key];
-    const g = (a==null || b==null) ? null : c.gap==='rel' ? (b ? a/b-1 : null) : a-b;
+    const g = (a==null || b==null) ? null : c.gap==='rel' ? (b ? a/b-1 : c.records ? (a>0 ? Infinity : 0) : null) : a-b;
     const verdict = (g==null || !c.enough(s,n)) ? 'thin' : (c.weaker && c.weaker(g,s)) ? 'weaker'
-      : (c.stronger && c.stronger(g,s)) ? 'stronger' : 'similar';
-    return {key:c.key, label:c.label, verdict, street:a, nbh:b, gap:g==null?null:Math.round(c.gap==='rel'?g*100:g)};
+      : (c.stronger && c.stronger(g,s)) ? 'stronger' : (c.more && c.more(g,s)) ? 'more' : 'similar';
+    return {key:c.key, label:c.label, verdict, street:a, nbh:b, gap:g==null||!isFinite(g)?null:Math.round(c.gap==='rel'?g*100:g)};
   });
 }
-// area: 'its neighbourhood' or 'the half mile around it'
-function verdictFor(checks, s, area){
+// The record rows' names in the verdict sentence
+const SHORT = {cases_per100:'code violations'};
+// area: 'its neighbourhood' or 'the half mile around it'. flags (v8.43): {aadt, busy, demolition_orders}; a busy road
+// or a demolition order on the street turns "in line" into "watch" and is named in every verdict.
+function verdictFor(checks, s, area, flags){
   const weak = checks.filter(c=>c.verdict==='weaker'), strong = checks.filter(c=>c.verdict==='stronger');
   const info = new Set(CHECKS.filter(c=>c.info).map(c=>c.key));
   const judged = checks.filter(c=>c.verdict!=='thin' && !info.has(c.key)).length;
-  const names = a => a.map(c=>c.label.toLowerCase()).join(', ');
-  if(s.homes < 3 && !weak.length) return {level:'thin', text:`Only ${s.homes} home${s.homes===1?'':'s'} on this stretch of street, too few to compare. Walk it in Street View.`};
-  if(weak.length >= 2) return {level:'weaker', text:`This street looks weaker than ${area} on ${weak.length} of ${judged} checks (${names(weak)}). Walk it before you trust the area's numbers.`};
-  if(weak.length === 1) return {level:'watch', text:`One check is weaker than ${area} (${names(weak)}). Walk the street to see whether it shows.`};
-  return {level:'in-line', text:`In line with ${area} on the county data${strong.length?` (stronger on ${names(strong)})`:''}. Still walk it: the records can't see upkeep, traffic or what's across the street.`};
+  const names = a => a.map(c=>SHORT[c.key]||c.label.toLowerCase()).join(', ');
+  const f = flags || {}, extra = [];
+  if(f.busy){
+    const cars = f.aadt ? `about ${f.aadt.toLocaleString('en-US')} cars a day (NCDOT, ${AADT_YEAR})` : null;
+    const tf = f.thoroughfare==='major' || f.thoroughfare==='freeway' ? `a City ${f.thoroughfare} thoroughfare` : null;
+    // busy on the count leads with the count; busy on the class alone leads with the class (a 5,000-car major road)
+    const parts = (f.aadt >= BUSY_AADT ? [cars, tf] : [tf, cars]).filter(Boolean);
+    extra.push(`It's a busy road: ${parts.join(', ')}.`);
+  }
+  if(f.demolition_orders) extra.push(`${f.demolition_orders} parcel${f.demolition_orders===1?' is':'s are'} on the City's demolition-order list.`);
+  const add = t => extra.length ? t+' '+extra.join(' ') : t;
+  if(s.homes < 3 && !weak.length) return {level:'thin', text:add(`Only ${s.homes} home${s.homes===1?'':'s'} on this stretch of street, too few to compare. Walk it in Street View.`)};
+  if(weak.length >= 2) return {level:'weaker', text:add(`This street looks weaker than ${area} on ${weak.length} of ${judged} checks (${names(weak)}). Walk it before you trust the area's numbers.`)};
+  if(weak.length === 1) return {level:'watch', text:add(`One check is weaker than ${area} (${names(weak)}). Walk the street to see whether it shows.`)};
+  // With no City records and no traffic count (outside the City, or a layer down) the sentence is the v8.18 one.
+  const data = f.records ? 'the records' : 'the county data';
+  const lead = `In line with ${area} on ${data}${strong.length?` (stronger on ${names(strong)})`:''}.`;
+  if(extra.length) return {level:'watch', text:`${lead} ${extra.join(' ')} Walk it.`};
+  const miss = f.records ? "the records miss upkeep nobody reported and what's across the street"
+    : `the records can't see upkeep, ${f.traffic ? '' : 'traffic '}or what's across the street`.replace(', or', ' or');
+  return {level:'in-line', text:`${lead} Still walk it: ${miss}.`};
 }
 
 // The nearest point on the lot's street centreline, in the local plane around ref (the lot), and that line's name.
@@ -272,7 +464,10 @@ export default async function handler(req, res){
 export async function streetCheck(pid, ft, view, keep, fetchSignal){
   const out = {subject:null, params:{pid, ft, months:SALE_MONTHS, new_since:NEW_SINCE}, street:null, neighborhood:null,
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
+  // v8.43: the City's records and the traffic count, only in the full answer (not mode=view)
+  if(!view){ out.params.record_months = RECORD_MONTHS; out.params.busy_aadt = BUSY_AADT; out.records = null; out.traffic = null; }
   const ctx = {};   // camaQuery()'s state for this request
+  let recTimer = null;   // v8.43: the records' deadline, cleared in finally whichever way this ends
   try{
     // 1) the subject: street name, neighbourhood code and a point
     const a = (await camaQuery({pids:[pid]}, CAMA_FIELDS, {ctx, fetchSignal})).rows[0];
@@ -380,7 +575,16 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
       }catch(e){ out.errors.push('area: '+e.message); }
     }
 
-    // 5) profiles, after one sold-as-vacant check over every home sale either side counts
+    // 5) profiles, after one sold-as-vacant check over every home sale either side counts. v8.43: the City's condition
+    //    records and the NCDOT traffic count run alongside; either one down costs only itself (an errors entry).
+    const recAbort = new AbortController(); recTimer = setTimeout(()=>recAbort.abort(), RECORDS_MS);
+    // AbortSignal.any is Node 20.3+; without it the connector's per-request signal is dropped here and the deadline still holds
+    const recSignal = () => fetchSignal && AbortSignal.any ? AbortSignal.any([recAbort.signal, fetchSignal()]) : recAbort.signal;
+    const late = e => recAbort.signal.aborted ? `didn't answer within ${RECORDS_MS/1000} s` : e.message;
+    const recP = stRows ? conditionRecords(lat, lng, stRows, area ? area.rows : null, recSignal, out.notes)
+      .catch(e=>{ out.errors.push('records: '+late(e)+' (no City code violations or 311 complaints counted)'); return null; }) : Promise.resolve(null);
+    const trafficP = street ? trafficAt(lat, lng, cam, recSignal)
+      .catch(e=>{ out.errors.push('traffic: '+late(e)+' (busy road not checked)'); return null; }) : Promise.resolve(null);
     const since = Date.now() - SALE_MONTHS*30.44*86400000;
     let lots = new Set();
     const salePids = [...new Set([...(stRows||[]), ...(area?area.rows:[])].filter(r=>isHomeSale(r, since)).map(r=>r.pid))];
@@ -389,9 +593,23 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     if(stRows) out.street = Object.assign({label:`${label} within ${ft.toLocaleString()} ft`}, profile(stRows, since, lots));
     if(area) out.neighborhood = Object.assign({label:area.label, kind:area.kind}, profile(area.rows, since, lots));
     if(out.street && out.street.lot_sales_left_out) out.notes.push(`${out.street.lot_sales_left_out} lot purchase${out.street.lot_sales_left_out===1?'':'s'} (sold as vacant) left out of the street's sales.`);
+    const [rec, traffic] = await Promise.all([recP, trafficP]);
+    out.traffic = traffic;
+    if(rec && rec.city === false) out.notes.push('Outside the City of Charlotte’s code-enforcement area, so no City code violations or 311 complaints are counted (the towns keep no open records like these). No records here doesn’t mean a clean street.');
+    if(rec && rec.city){
+      out.records = rec;
+      const per = (k, p) => p.parcels ? Math.round(k/p.parcels*1000)/10 : null;
+      // record_parcels: distinct parcel ids, the rates' base (the assessor rows can repeat a parcel, one per building)
+      if(out.street) Object.assign(out.street, {record_parcels:rec.street.parcels, cases:rec.street.cases, cases_per100:per(rec.street.cases, rec.street),
+        complaints:rec.street.complaints, complaints_per100:per(rec.street.complaints, rec.street)});
+      if(out.neighborhood && rec.area) Object.assign(out.neighborhood, {record_parcels:rec.area.parcels, cases:rec.area.cases, cases_per100:per(rec.area.cases, rec.area),
+        complaints:rec.area.complaints, complaints_per100:per(rec.area.complaints, rec.area)});
+    }
     if(out.street && out.neighborhood){
       out.checks = compare(out.street, out.neighborhood);
-      out.verdict = verdictFor(out.checks, out.street, out.neighborhood.kind==='radius'?'the half mile around it':'its neighbourhood');
+      out.verdict = verdictFor(out.checks, out.street, out.neighborhood.kind==='radius'?'the half mile around it':'its neighbourhood',
+        {records:!!out.records, traffic:!!traffic, aadt:traffic&&traffic.aadt, thoroughfare:traffic&&traffic.thoroughfare, busy:!!(traffic&&traffic.busy),
+          demolition_orders:out.records ? out.records.street.demolition_orders : 0});
     }
 
     // 6) Street View camera: the nearest point on the lot's own street centreline, facing the lot (no key: see mode=view)
@@ -400,6 +618,7 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
   }catch(e){
     out.errors.push('fatal: '+e.message);
   }finally{
+    clearTimeout(recTimer);
     // v8.35: say so when any of it came from the county's backup assessor tables
     if(ctx.backup && out.subject && !view) out.notes.unshift(camaBackupNote(ctx));
   }
