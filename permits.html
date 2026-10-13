@@ -284,7 +284,7 @@ const CATALOG=[
   {id:'plat-prep',ph:'E',t:'Sublot plat prepared',agency:'Surveyor',portal:'Vendor',owner:'Adam',exp:14,show:f=>f.sublot,perLot:true,dep:f=>f.subdiv?'subplat-rec':'survey',note:'The prelim IS the final (mtg 8/13) — no separate preliminary submission. Per lot on subdivision+sublot deals.'},
   {id:'plat-app',ph:'E',t:'Sublot plat — City approval',agency:'CLT Planning',portal:'Accela',owner:'Adam',exp:30,gate:true,show:f=>f.sublot,perLot:true,dep:'plat-prep',note:'Planning approves compliant plats within 30 days. Addressing re-reviews here and ATTACHES the addresses to the sublots in GIS (second addressing pass). ⛓ RELEASE GATE: even once approved, the city HOLDS the plat until the LDIRL is also approved — they release together (Brian, 8/14; observed on Sarah Dr).'},
   {id:'plat-rec',ph:'E',t:'Sublot plat RECORDED — per-unit PIDs',agency:'Meck Co Register of Deeds',portal:'ROD',owner:'Adam',exp:7,gate:true,crit:true,show:f=>f.sublot,perLot:true,dep:'plat-app',note:'HARD gate. Recorded plat (+ address) must exist before the County will permit.'},
-  {id:'address',ph:'F',t:'Address Assignment Request',agency:'Meck Co GIS — Address Management',portal:'Addressing Service Request Form (Survey123)',owner:'Eunice',exp:7,crit:true,show:f=>f.subdiv||f.sublot,dep:f=>f.subdiv?'subplat-app':'dev-ldirl',note:'⛓ FILE ONLY AFTER AN APPROVED LDIRL OR LDPLAT — upload the approved one with the request; nothing approved = cannot file (Igor/Slate 10/12; Elkwood blocked on it). Dellinger filed 7/10 on LDIRL-2026-02688 approved 7/1. Supersedes the 8/13 “apply immediately / like buying phone numbers” rule and INTEL-013 (rejected 10/12). Form: “Address for parcels”; new parcels = 0 unless the County creates the parcel; new addresses = number of units; AutoCAD upload optional — leave it blank. Fee $35/new address (+$50/parcel only if the County creates it) + card processing fee. County quotes 5–7 business days — Dellinger took 6 days (7/10→7/16; the old “33d” was counted to plat recording, not issue). The County asks: sublotted and sold individually, or one parcel? — say it in the description. After issue: forward the County email + address placement map to Slate permitting; addresses hit Accela right away and Polaris overnight, but GIS mapping can lag ~30d after the plat records and tap fees can’t be paid until it’s mapped. The County can renumber an assigned address if an adjacent map records later (Sarah 9/9, INTEL-034). How-to: SOPs › “SOP - Mecklenburg Addressing Infographic”.'},
+  {id:'address',ph:'F',t:'Address Assignment Request',agency:'Meck Co GIS — Address Management',portal:'Addressing Service Request Form (Survey123)',owner:'Eunice',exp:7,crit:true,show:f=>f.subdiv||f.sublot,dep:f=>f.subdiv?'subplat-app':'dev-ldirl/plat-app',note:'⛓ FILE ONLY AFTER AN APPROVED LDIRL OR LDPLAT (whichever comes first) — upload the approved one with the request; nothing approved = cannot file (Igor/Slate 10/12; Elkwood blocked on it). Dellinger filed 7/10 on LDIRL-2026-02688 approved 7/1. Supersedes the 8/13 “apply immediately / like buying phone numbers” rule and INTEL-013 (rejected 10/12). Form: “Address for parcels”; new parcels = 0 unless the County creates the parcel; new addresses = number of units; AutoCAD upload optional — leave it blank. Fee $35/new address (+$50/parcel only if the County creates it) + card processing fee. County quotes 5–7 business days — Dellinger took 6 days (7/10→7/16; the old “33d” was counted to plat recording, not issue). The County asks: sublotted and sold individually, or one parcel? — say it in the description. After issue: forward the County email + address placement map to Slate permitting; addresses hit Accela right away and Polaris overnight, but GIS mapping can lag ~30d after the plat records and tap fees can’t be paid until it’s mapped. The County can renumber an assigned address if an adjacent map records later (Sarah 9/9, INTEL-034). Procedure: SOPs › “SOP-12 Mecklenburg Address Request”; form how-to: “SOP - Mecklenburg Addressing Infographic”.'},
   {id:'plans',ph:'G',t:'Stamped plans ready',agency:'Architect + PE — set vendor per project',portal:'Vendor',owner:'Adam',exp:21,show:()=>true,dep:null,note:'County rejects unstamped drawings. Can start anytime; the LDIRL submission needs them.'},
   {id:'bp-sub',ph:'G',t:'Building permits submitted — per unit',agency:'Meck Co Code Enforcement',portal:'Accela / RTAC-EPS',owner:'Adam',exp:12,show:()=>true,perUnit:true,dep:f=>f.sublot?'plat-rec':'dev-ldirl',note:'ONE PERMIT PER UNIT (mtg 8/13 — Dellinger = 3). Can be submitted WITH the recorded sublot plat while the LDIRL is still in review — the County holds it in queue, saves days. Fee: $1,662.37 base + $5.05 per $1,000 of construction value over $250K (~$5.5–6K per $1M). Concurrent: building·elec·mech·plumb·FIRE·health·land dev.'},
   {id:'bp-iss',ph:'G',t:'Building permits ISSUED',agency:'Meck Co Code Enforcement',portal:'Accela',owner:'Adam',exp:3,gate:true,show:()=>true,perUnit:true,dep:'bp-sub',note:'Required before vertical. Draw unlocks at break-ground.'},
@@ -342,10 +342,13 @@ const TRACKS=[
   {key:'bt', b:'var(--pine)', name:'Track B · LDIRL', d:'trees ride INSIDE it — tandem on sublot-only; after A1 when subdividing. Addresses file once the LDIRL (or LDPLAT) is approved', ids:['dev-ldirl','address','erosion']},
   {key:'c',  b:'var(--navy)', name:'Track C · Permits & build', d:'starts where the gate drops', ids:['plans','bp-sub','bp-iss','stake','trades','taps','insp','tree-prot','final-insp','co','closeout']}
 ];
-function stagingDeps(m,p,byId){
-  const d=resolveDep(m,p.flags); let ds=d?String(d).split('|').filter(id=>byId[id]):[];
-  if(m.id==='bp-sub' && p.flags.sublot && byId['plat-rec']) ds=[...new Set([...ds,'plat-rec'])];
-  return ds;
+/* Dep grammar: 'a|b' = waits on ALL of a and b; 'a/b' = waits on ANY ONE of a or b (whichever is done first).
+   Returns the required groups; each group is a list of alternatives. */
+function depGroups(m,p,byId){
+  const d=resolveDep(m,p.flags);
+  let gs=d?String(d).split('|').map(g=>g.split('/').filter(id=>byId[id])).filter(g=>g.length):[];
+  if(m.id==='bp-sub' && p.flags.sublot && byId['plat-rec'] && !gs.some(g=>g.length===1&&g[0]==='plat-rec')) gs.push(['plat-rec']);
+  return gs;
 }
 function trackCols(p){
   const cat=catalogFor(p.flags), byId=Object.fromEntries(cat.map(m=>[m.id,m]));
@@ -354,10 +357,11 @@ function trackCols(p){
     if(col[id]!=null)return;
     if(seen.has(id)){col[id]=1;start[id]=0;return;}
     seen.add(id);
-    const ds=stagingDeps(byId[id],p,byId);
-    ds.forEach(d=>calc(d,seen));
-    col[id]=ds.length?Math.max(...ds.map(d=>col[d]))+1:1;
-    start[id]=ds.length?Math.max(...ds.map(d=>start[d]+(byId[d].exp||7))):0;
+    const gs=depGroups(byId[id],p,byId);
+    gs.flat().forEach(d=>calc(d,seen));
+    /* an any-of group is staged after its EARLIEST alternative */
+    col[id]=gs.length?Math.max(...gs.map(g=>Math.min(...g.map(d=>col[d]))))+1:1;
+    start[id]=gs.length?Math.max(...gs.map(g=>Math.min(...g.map(d=>start[d]+(byId[d].exp||7))))):0;
   }
   cat.forEach(m=>calc(m.id,new Set()));
   /* compact: drop column indices no milestone uses, so the grid never carries empty columns */
@@ -385,7 +389,7 @@ function tracksHtml(p){
       cells=`<div class="tcell pack" style="grid-column:2/-1">${ms.map(m=>p.state[m.id]?nodeHtml(p,m):'').join('')}</div>`;
     }else ms.forEach(m=>{
       const c=p.state[m.id];if(!c)return;
-      const locked=c.status==='todo'&&stagingDeps(m,p,byId).some(d=>p.state[d]&&p.state[d].status!=='done');
+      const locked=c.status==='todo'&&depGroups(m,p,byId).some(g=>g.every(d=>p.state[d]&&p.state[d].status!=='done'));
       cells+=`<div class="tcell${locked?' locked':''}" style="grid-column:${col[m.id]+1}" data-ms="${m.id}">${nodeHtml(p,m)}</div>`;
     });
     lanes+=`<div class="tlane" style="grid-template-columns:${gridCols}"><div class="tlab" style="grid-column:1"><span class="b" style="background:${tr.b}">${esc(tr.name.split('·')[0].trim().toUpperCase())}</span><div class="l">${esc(tr.name.includes('·')?tr.name.split('·')[1].trim():tr.name)}</div><div class="d">${esc(tr.d)}</div></div>${cells}</div>`;
@@ -424,7 +428,7 @@ function seed(){
   const ds=blankState(df);
   ['route','survey','water-cap','driveway','uw','dev-ldirl','plat-prep','plans'].forEach(id=>{if(ds[id])ds[id].status='done';});
   ds['plat-app'].status='done';ds['plat-app'].started='2026-07-03'; /* LDPLAT-2026-00501 approved 8/11 (Igor, Slate) */
-  ds['address'].status='submitted';ds['address'].started='2026-07-10';
+  ds['address'].status='done';ds['address'].started='2026-07-10'; /* filed on LDIRL-2026-02688 (approved 7/1); issued 7/16 (Julyana Gaviria, Meck GIS) */
   ds['bp-sub'].status='submitted';ds['bp-sub'].started='2026-08-13';ds['bp-sub'].due='2026-08-27'; /* Igor applying, 3 permits (mtg 8/13) */
   ds['taps'].status='active';ds['taps'].started='2026-07-22'; /* Stegall/Slate taps thread, 8/12 */
   PROJECTS.push({id:'p-dell',addr:'2723 Dellinger Dr (3 units)',flags:df,units:3,state:ds});
@@ -451,7 +455,7 @@ function ageInfo(m,c){
   const s=pdate(c.started);
   const age=daysBetween(today,s),over=age-m.exp;
   let cls='ok';if(over>0)cls='stuck';else if(age>=m.exp*0.7)cls='warn';
-  return{age,over,cls,indeterminate:m.id==='address'};
+  return{age,over,cls};
 }
 function projStats(p){
   const cat=catalogFor(p.flags);
@@ -486,7 +490,7 @@ function nodeHtml(p,m){
   const c=p.state[m.id],a=ageInfo(m,c);
   let badge='';
   if(a){
-    if(a.cls==='stuck')badge=`<span class="agebadge stuck">${a.age}d ${a.indeterminate?'· no SLA':'· +'+a.over}</span>`;
+    if(a.cls==='stuck')badge=`<span class="agebadge stuck">${a.age}d · +${a.over}</span>`;
     else if(a.cls==='warn')badge=`<span class="agebadge warn">${a.age}d</span>`;
     else badge=`<span class="agebadge ok">${a.age}d</span>`;
   }
@@ -508,14 +512,14 @@ function nodeHtml(p,m){
 
 function detailHtml(p,m){
   const c=p.state[m.id];
-  const depId=resolveDep(m,p.flags);
-  const depM=depId?CATALOG.find(x=>x.id===depId):null;
+  const byId=Object.fromEntries(catalogFor(p.flags).map(x=>[x.id,x]));
+  const depTxt=depGroups(m,p,byId).map(g=>g.map(id=>byId[id].t).join(' or ')).join(' + ');
   const opts=STATUSES.map(st=>`<option value="${st.k}" ${c.status===st.k?'selected':''}>${st.label}</option>`).join('');
   return `<div class="detail">
     <div class="dt">${m.t} ${m.gate?'<span class="gatechip">Gate</span>':''} ${m.crit?'<span class="critchip">Watch</span>':''}
       <button class="xbtn" onclick="selectMs(null)">close ✕</button></div>
     <div class="dm"><span><b>Agency / vendor:</b> ${esc(c.vendor||m.agency)}</span><span><b>Portal:</b> ${m.portal}</span><span><b>Typical:</b> ${m.exp}d</span></div>
-    ${depM?`<div class="dn dep">${depM.t}</div>`:''}
+    ${depTxt?`<div class="dn dep">${depTxt}</div>`:''}
     ${m.note?`<div class="dn">${m.note}</div>`:''}
     <div class="ctl">
       <div class="cg"><label>Status</label><select onchange="setStatus('${p.id}','${m.id}',this.value)">${opts}</select></div>

@@ -299,6 +299,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   that compute layout from completion state instead of flags+catalog (layout must be
   identical for every project with the same flags), and flag removal of the legacy
   migration while old payloads can still exist in Drive.
+- **Dependency grammar (`depGroups()`):** a catalog `dep` of `'a|b'` waits on ALL of a and
+  b; `'a/b'` waits on ANY ONE of them (whichever is done first). An any-of group is staged
+  after its earliest alternative and unlocks when one alternative is done. `address` uses
+  it on sublot paths (`'dev-ldirl/plat-app'`): the County files addresses only after an
+  approved LDIRL or LDPLAT (Brian-approved 2026-10-12, INTEL-067). Flag a change that
+  collapses it back to a single gate, or that reads `dep` without going through `depGroups()`.
 - **Storage rule:** `permits.html` uses NO browser storage — its `ttv-permit-auth`
   `sessionStorage` key went away with the passcode gate on 2026-09-17. That key now lives
   only in `capital-raise.html` (still gated) and is the one allowed browser-storage key
