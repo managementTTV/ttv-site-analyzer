@@ -1017,11 +1017,14 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     profit $117,618, CoC 47.2% per the report. v8.30–v8.35: $263,493 (93% LTC, 10 / 8 / 6, survey $2,000; base interest
     $38,425, profit $117,845); $262,309 at 10% through v8.29. v8.36 step by step: 85% loan alone $269,249; + 12 / 9 / 8
     $263,975; + survey $3,000 $262,975.
-  - **Reference hash (v8.39, 2026-10-13): `07209e9d2995`**, Max land $262,975 (unchanged): the new `footprintUnit` /
-    `footprintBldg` fields and the plans' `fg` tag inside `planComp` move it; with those taken out it is v8.36's
-    `89e653639f61`. 2723's canopy is extreme and its slope moderate (the $25k band), and its site work is already
+  - **Reference hash (v8.39 on v8.38, 2026-10-13): `0708b9ad0413`**, Max land $262,975 (unchanged): the new
+    `footprintUnit` / `footprintBldg` fields and the plans' `fg` tag inside `planComp` move it; with those taken out it is
+    v8.38's `640a28b8cc7d` (`07209e9d2995` on v8.36 before v8.38 merged). 2723's canopy is extreme and its slope moderate (the $25k band), and its site work is already
     $25,850, so the SOP band adds $0. With a 100 sf house the $30k floor adds $3,250 (Max land $258,825).
-  - v8.36 (2026-10-13): `89e653639f61`, Max land $262,975, with the county's main assessor layer
+  - v8.38 hash, 2026-10-13: `640a28b8cc7d`, Max land $262,975 (unchanged). v8.38 adds `offer` to
+    `getReportData()` (opening offer $210,000, rule status, asking check, SOP-08 stress $52,789/unit at $75k land);
+    with `offer` deleted the hash is still `89e653639f61`. At land = Max land the stress gives −$16,127/unit (warns).
+  - v8.36 hash, 2026-10-13: `89e653639f61`, Max land $262,975, with the county's main assessor layer
     back (`gis.cama.source` "Mecklenburg County CAMA"). The same day main v8.35 gives `beff46071a6e` ($263,493). On 10/12,
     with the backup tables, v8.36 gave `3855c6d7ca29`. Earlier: **v8.35 `ae9025aadcaa`**, Max land $263,493, with the assessor block read from the
     county's backup tables (`gis.cama.source` "… (backup tables)"). History, no figure moving at any step:
