@@ -1031,9 +1031,9 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     profit $117,618, CoC 47.2% per the report. v8.30–v8.35: $263,493 (93% LTC, 10 / 8 / 6, survey $2,000; base interest
     $38,425, profit $117,845); $262,309 at 10% through v8.29. v8.36 step by step: 85% loan alone $269,249; + 12 / 9 / 8
     $263,975; + survey $3,000 $262,975.
-  - **Reference hash (v8.40, 2026-10-13): `HASH_V840`**, Max land $262,975 unchanged. v8.40 moves only `planComp`
+  - **Reference hash (v8.40 on v8.39, 2026-10-13): `fea47778bc02`**, Max land $262,975 unchanged. v8.40 moves only `planComp`
     (PDF sheet 4): Compare builds builds every plan at the deal's Units and prices it per plan (planPsf()). With
-    `planComp` deleted the hash is `NOPC_V840`, the same as v8.39's. Sheet 4 for Dellinger: Dayton ×3 (the deal, too
+    `planComp` deleted the hash is `078c1d24648a`, the same as v8.39's. Sheet 4 for Dellinger: Dayton ×3 (the deal, too
     large as a row of 3), Yarmouth ×3, Wheatley ×3, all at the deal's $/sf. Record it **without opening Compare builds or
     the PDF first**: sheet 4's notes then read "Comps not pulled yet" (after a pull they say "No townhome comps near this
     lot", since Dellinger has no county comps of any type within 0.5 mi, and the hash differs).
