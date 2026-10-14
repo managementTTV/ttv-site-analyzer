@@ -11,6 +11,9 @@
     },
     "api/accela.js": {
       "maxDuration": 60
+    },
+    "api/permit-reminders.js": {
+      "maxDuration": 30
     }
   },
   "crons": [
