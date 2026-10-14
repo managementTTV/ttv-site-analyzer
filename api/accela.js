@@ -26,7 +26,7 @@ const REF_RE = /\b(LD[A-Z]{2,6}|ZV|ZUP|CPB|RSVA)-(\d{4})-(\d{3,7})\b/i;
 const MAX_REFS = 25;            // one record page + two small calls each; a sync never fans out further
 const CACHE_MS = 10 * 60 * 1000; // per-instance memo so a burst of board loads costs Accela one lookup
 const MISS_MS = 2 * 60 * 1000;   // a failed / not-found lookup is retried after 2 min, not on every load
-const WRITE_BUDGET_MS = 40 * 1000; // stop starting feed writes here; the rest wait for the next sync (maxDuration 60)
+const WRITE_BUDGET_MS = 30 * 1000; // stop starting feed writes here (a write can take 25 s; maxDuration 60); the rest wait for the next sync
 const cache = new Map();
 
 // Which board milestones a record type may set. Accela knows City approval, never Register-of-Deeds
@@ -63,6 +63,19 @@ export function parseRecordPage(page, ref){
 // D by N", oldest first). `current` is the step's last entry — for an open step, who has it and the City's
 // own due date. It carries a City reviewer's name, so it rides the live response and the reminder email
 // only, never the block saved to Drive (summary() leaves it out).
+// Does the City hold this step right now? Open (active) with an assignment, not handed back to us
+// (revisions requested, fees or plans awaited — "Revisions Received" is the City's again) and not already
+// marked done (an active icon can lag an "Ok"). The reminder email and the board's late flag both read this.
+const STEP_OURS = /(revision|awaiting (revisions?|payment|plans|info|information|applicant|corrections?|resubmittal)|payment due|fees due|incomplete|on hold|pending applicant|returned|correction)/i;
+const STEP_BACK = /(revisions? received|resubmitted|plans received)/i;
+const STEP_DONE = /^(ok|approved|complete|completed|issued|passed|finaled|final)\b/i;
+export function cityHolds(t){
+  if(!t || t.state !== 'active' || !t.current) return false;
+  const st = t.current.status || '';
+  if(STEP_DONE.test(st)) return false;
+  return !(STEP_OURS.test(st) && !STEP_BACK.test(st));
+}
+
 export function parseProcessing(html){
   const tasks = [];
   const head = /<tr[^>]*>\s*<td[^>]*width:38px[^>]*>(.*?)<\/td>\s*<td class='ACA_ALeft' width='770px'\s*>(.*?)<\/td>\s*<\/tr>/gs;
@@ -95,6 +108,7 @@ export function parseProcessing(html){
     const c = /Comment:\s*(?:<\/[^>]+>\s*)*(.*?)(?:Additional Information:|<\/table>)/s.exec(body);
     const task = { name: t.name, state: t.state, history, current, comment: c ? text(c[1]).slice(0, 280) || null : null };
     task.latest = last(task);
+    task.cityHolds = cityHolds(task);
     tasks.push(task);
   });
   return tasks;
@@ -160,7 +174,19 @@ function keepCookies(jar, res){
   set.forEach(c => { const m = /^([^=;\s]+)=([^;]*)/.exec(c); if(m) jar.set(m[1], m[2]); });
 }
 
-async function lookup(ref){
+// Each request stops at 20 s, or sooner when the caller's deadline (`stop`) passes.
+function reqSignal(stop){
+  const t = AbortSignal.timeout(20000);
+  if(!stop) return t;
+  if(AbortSignal.any) return AbortSignal.any([t, stop]);
+  const c = new AbortController(), fire = () => c.abort();     // runtimes without AbortSignal.any
+  if(stop.aborted) c.abort();
+  t.addEventListener('abort', fire, { once: true });
+  stop.addEventListener('abort', fire, { once: true });
+  return c.signal;
+}
+
+async function lookup(ref, stop){
   const hit = cache.get(ref);
   if(hit && Date.now() - hit.at < CACHE_MS) return hit.data;
   const jar = new Map();
@@ -170,7 +196,7 @@ async function lookup(ref){
     // Follow redirects by hand: the record page's ASP.NET session is what the two tab calls read.
     let url = out.url, res, page = '';
     for(let hop = 0; hop < 6; hop++){
-      res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': UA, Cookie: cookieHeader(jar) }, signal: AbortSignal.timeout(20000) });
+      res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': UA, Cookie: cookieHeader(jar) }, signal: reqSignal(stop) });
       keepCookies(jar, res);
       const loc = res.headers.get('location');
       if(res.status >= 300 && res.status < 400 && loc){ url = new URL(loc, url).href; continue; }
@@ -183,7 +209,7 @@ async function lookup(ref){
     Object.assign(out, rec);
     const module = (/[?&]Module=(\w+)/.exec(url) || [])[1] || 'LandDevelopment';
     const call = async (method, body) => {
-      const r = await fetch(`${url.split('?')[0]}/${method}`, { method: 'POST', signal: AbortSignal.timeout(20000),
+      const r = await fetch(`${url.split('?')[0]}/${method}`, { method: 'POST', signal: reqSignal(stop),
         headers: { 'User-Agent': UA, Cookie: cookieHeader(jar), Referer: url, 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify(body) });
       if(!r.ok) throw new Error(`${method} HTTP ${r.status}`);
@@ -209,10 +235,19 @@ async function lookup(ref){
   return out;
 }
 
-export async function lookupAll(refs){
+// deadlineMs: one limit for the whole set. A slow Accela (each request can take 20 s) must not run the cron
+// past maxDuration 60 and take the morning email with it: past the deadline, requests in flight are aborted
+// and records not started are reported unread.
+export async function lookupAll(refs, { deadlineMs } = {}){
   const uniq = [...new Set(refs)].slice(0, MAX_REFS), out = {};
+  const stop = deadlineMs ? AbortSignal.timeout(deadlineMs) : null;
   for(let i = 0; i < uniq.length; i += 4){              // four at a time — gentle on a public portal
-    const batch = await Promise.all(uniq.slice(i, i + 4).map(lookup));
+    if(stop && stop.aborted){
+      uniq.slice(i).forEach(ref => { out[ref] = { ref, ok: false, url: recordUrl(ref), status: null, type: null, address: null,
+        project: null, opened: null, tasks: [], related: [], error: 'not read — Accela too slow this run' }; });
+      break;
+    }
+    const batch = await Promise.all(uniq.slice(i, i + 4).map(ref => lookup(ref, stop)));
     batch.forEach(r => { out[r.ref] = r; });
   }
   return out;
@@ -305,7 +340,7 @@ async function sync({ dry }){ return commitSync(await prepareSync(), { dry }); }
 async function prepareSync(){
   const t0 = Date.now();
   const state = await loadPermitState();
-  const records = await lookupAll(targets(state).map(t => t.ref));
+  const records = await lookupAll(targets(state).map(t => t.ref), { deadlineMs: 25 * 1000 });
   const items = plan(state, records);
   items.forEach(it => {
     const c = it.upd && state.projects.find(p => p.id === it.projectId)?.state[it.milestoneId];
@@ -369,7 +404,7 @@ export default async function handler(req, res){
         const { runReminders } = await import('./permit-reminders.js');
         reminders = await runReminders({ state: prep.state, records: prep.records, send: true });
       }catch(e){ reminders = { ok: false, error: String(e && e.message || e) }; }
-      const result = await commitSync(prep, { dry: false, budgetMs: 30 * 1000 });
+      const result = await commitSync(prep, { dry: false });
       result.reminders = reminders;
       res.status(200).json(result);
       return;
