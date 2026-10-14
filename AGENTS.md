@@ -409,7 +409,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     report-only unless `VERCEL_ENV` is `production` (the banner says why it didn't save). Flag a
     change that lets a preview write.
   - **Writes are sequential and only on change** (one feed call per changed milestone), and stop
-    being started after 40 s (`WRITE_BUDGET_MS`, under `maxDuration` 60); the rest are reported as
+    being started after 30 s (`WRITE_BUDGET_MS`: a write can take 25 s, under `maxDuration` 60); the rest are reported as
     deferred and land on the next sync. The in-memory 10-minute memo is per function instance.
     `MAX_REFS` caps a sync at 25 records. The board queues syncs (`syncAccela()` chains) so a ref
     saved during the on-load sync never races it. The Drive read is `loadPermitState()` from
@@ -424,14 +424,16 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     (the City's own per-step due date) that is tomorrow, today or past in Charlotte's date (`etDate`,
     America/New_York) — the day before, the day of, and every day after until the City completes the step.
     Left out: records whose plan review is approved (`deriveStatus().board === 'done'`: their open Urban
-    Forestry inspection is not a late review; Dellinger's reads "due Jul 1") and steps whose current status
-    hands it back to us (`OUR_TURN`: revisions requested, awaiting payment / plans; "Revisions Received" is
-    the City's again). Each line names the step (department), `current.assignedTo`, the City due date and how
+    Forestry inspection is not a late review; Dellinger's reads "due Jul 1") or blocked (denied / withdrawn),
+    and steps the City doesn't hold: `cityHolds(task)` in `api/accela.js` (active, not handed back to us —
+    revisions requested, awaiting payment / plans; "Revisions Received" is the City's again — and not already
+    marked Ok / Approved / Complete). It's the one rule: the parser sets `task.cityHolds`, and the board's red
+    "N days late" on the "Now with" line reads it too. Flag a second copy of that rule. Each line names the step (department), `current.assignedTo`, the City due date and how
     late. Records Accela didn't answer are named (`unread`). Nothing in the window → no email. Flag a change
     that brings the board's own due dates back into this email, or alerts on an approved record. The daily
     cron run in `api/accela.js` does `prepareSync()` (read, look up — one 25 s deadline for all lookups,
     `lookupAll(refs, {deadlineMs})`, so a slow Accela can't run past `maxDuration` 60 — plan, apply in
-    memory), then `runReminders({state, records, send:true})` **before** `commitSync()` writes (budget 30 s).
+    memory), then `runReminders({state, records, send:true})` **before** `commitSync()` writes (`WRITE_BUDGET_MS`).
     Flag a change that moves the send after the writes. Subjects carry the date ("Accela Oct 21: …") so
     Gmail doesn't fold days into one thread; a same-day identical email isn't re-sent from the same instance
     (re-delivered cron event). One email from management@ to management@ (`REMINDER_TO` overrides).

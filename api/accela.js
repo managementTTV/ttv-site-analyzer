@@ -26,7 +26,7 @@ const REF_RE = /\b(LD[A-Z]{2,6}|ZV|ZUP|CPB|RSVA)-(\d{4})-(\d{3,7})\b/i;
 const MAX_REFS = 25;            // one record page + two small calls each; a sync never fans out further
 const CACHE_MS = 10 * 60 * 1000; // per-instance memo so a burst of board loads costs Accela one lookup
 const MISS_MS = 2 * 60 * 1000;   // a failed / not-found lookup is retried after 2 min, not on every load
-const WRITE_BUDGET_MS = 40 * 1000; // stop starting feed writes here; the rest wait for the next sync (maxDuration 60)
+const WRITE_BUDGET_MS = 30 * 1000; // stop starting feed writes here (a write can take 25 s; maxDuration 60); the rest wait for the next sync
 const cache = new Map();
 
 // Which board milestones a record type may set. Accela knows City approval, never Register-of-Deeds
@@ -63,6 +63,19 @@ export function parseRecordPage(page, ref){
 // D by N", oldest first). `current` is the step's last entry — for an open step, who has it and the City's
 // own due date. It carries a City reviewer's name, so it rides the live response and the reminder email
 // only, never the block saved to Drive (summary() leaves it out).
+// Does the City hold this step right now? Open (active) with an assignment, not handed back to us
+// (revisions requested, fees or plans awaited — "Revisions Received" is the City's again) and not already
+// marked done (an active icon can lag an "Ok"). The reminder email and the board's late flag both read this.
+const STEP_OURS = /(revision|awaiting (revisions?|payment|plans|info|information|applicant|corrections?|resubmittal)|payment due|fees due|incomplete|on hold|pending applicant|returned|correction)/i;
+const STEP_BACK = /(revisions? received|resubmitted|plans received)/i;
+const STEP_DONE = /^(ok|approved|complete|completed|issued|passed|finaled|final)\b/i;
+export function cityHolds(t){
+  if(!t || t.state !== 'active' || !t.current) return false;
+  const st = t.current.status || '';
+  if(STEP_DONE.test(st)) return false;
+  return !(STEP_OURS.test(st) && !STEP_BACK.test(st));
+}
+
 export function parseProcessing(html){
   const tasks = [];
   const head = /<tr[^>]*>\s*<td[^>]*width:38px[^>]*>(.*?)<\/td>\s*<td class='ACA_ALeft' width='770px'\s*>(.*?)<\/td>\s*<\/tr>/gs;
@@ -95,6 +108,7 @@ export function parseProcessing(html){
     const c = /Comment:\s*(?:<\/[^>]+>\s*)*(.*?)(?:Additional Information:|<\/table>)/s.exec(body);
     const task = { name: t.name, state: t.state, history, current, comment: c ? text(c[1]).slice(0, 280) || null : null };
     task.latest = last(task);
+    task.cityHolds = cityHolds(task);
     tasks.push(task);
   });
   return tasks;
@@ -161,7 +175,16 @@ function keepCookies(jar, res){
 }
 
 // Each request stops at 20 s, or sooner when the caller's deadline (`stop`) passes.
-const reqSignal = stop => stop && AbortSignal.any ? AbortSignal.any([AbortSignal.timeout(20000), stop]) : AbortSignal.timeout(20000);
+function reqSignal(stop){
+  const t = AbortSignal.timeout(20000);
+  if(!stop) return t;
+  if(AbortSignal.any) return AbortSignal.any([t, stop]);
+  const c = new AbortController(), fire = () => c.abort();     // runtimes without AbortSignal.any
+  if(stop.aborted) c.abort();
+  t.addEventListener('abort', fire, { once: true });
+  stop.addEventListener('abort', fire, { once: true });
+  return c.signal;
+}
 
 async function lookup(ref, stop){
   const hit = cache.get(ref);
@@ -381,7 +404,7 @@ export default async function handler(req, res){
         const { runReminders } = await import('./permit-reminders.js');
         reminders = await runReminders({ state: prep.state, records: prep.records, send: true });
       }catch(e){ reminders = { ok: false, error: String(e && e.message || e) }; }
-      const result = await commitSync(prep, { dry: false, budgetMs: 30 * 1000 });
+      const result = await commitSync(prep, { dry: false });
       result.reminders = reminders;
       res.status(200).json(result);
       return;

@@ -739,11 +739,12 @@ function accelaBox(p,c){
   /* who has it now: each open review step, the City reviewer assigned and the City's own due date (live only —
      reviewer names never go into the saved block) */
   const open=rec&&rec.ok?(rec.tasks||[]).filter(t=>t.state==='active'&&t.current):[];
-  /* lateness only while the record is still in review — an approved record's open inspection isn't a late review */
-  const late=d=>{if(!d||a.board==='done')return'';const n=daysBetween(today,pdate(d));
+  /* lateness only where the City holds the step (task.cityHolds, the email's rule) and the record is still in review —
+     an approved record's open inspection isn't a late review */
+  const late=(d,t)=>{if(!d||!t.cityHolds||a.board==='done'||a.board==='blocked')return'';const n=daysBetween(today,pdate(d));
     return n>0?` <span style="color:var(--red);font-weight:700">${n} day${n>1?'s':''} late</span>`:n===0?' <b>due today</b>':'';};
   if(open.length)
-    h+=`<div class="acw"><b>Now with:</b> ${open.map(t=>`${esc(t.name)}${t.current.assignedTo?` — ${esc(t.current.assignedTo)}`:''}${t.current.cityDue?` · City due ${shortDate(t.current.cityDue)}${late(t.current.cityDue)}`:''}`).join('; ')}</div>`;
+    h+=`<div class="acw"><b>Now with:</b> ${open.map(t=>`${esc(t.name)}${t.current.assignedTo?` — ${esc(t.current.assignedTo)}`:''}${t.current.cityDue?` · City due ${shortDate(t.current.cityDue)}${late(t.current.cityDue,t)}`:''}`).join('; ')}</div>`;
   if(rec&&rec.ok&&rec.tasks&&rec.tasks.length)
     h+=`<div class="acsteps">`+rec.tasks.map(t=>{
       const l=t.latest,cls=t.state==='active'?'now':t.state==='complete'?'ok':'wait';

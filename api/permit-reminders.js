@@ -18,7 +18,7 @@
 // GET ?k=<gate hash>[&format=html][&date=YYYY-MM-DD] — preview only (never sends): what the email would say
 // today, or on another ET date.
 import { GATE_HASH, loadPermitState } from './permits.js';
-import { lookupAll, recordUrl, deriveStatus, targets } from './accela.js';
+import { lookupAll, recordUrl, deriveStatus, targets, cityHolds } from './accela.js';
 
 const FROM = 'management@tidetimberventures.com';
 const TO = process.env.REMINDER_TO || FROM;
@@ -35,10 +35,6 @@ const TITLES = {
   'plat-app': 'Sublot plat — City approval', 'plat-rec': 'Sublot plat RECORDED — per-unit PIDs',
   'hist': 'Historic review / COA (if applicable)'
 };
-
-// The City handed the step back to us — our move, not a late review. "Revisions received" is the City's again.
-const OUR_TURN = /(revision|awaiting|incomplete|on hold|payment|pending applicant|returned|correction)/i;
-const CITY_AGAIN = /(revisions? received|resubmitted|plans received)/i;
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 // a real calendar day (2026-02-30 is not)
@@ -64,11 +60,11 @@ export function lateSteps(state, records, today){
     seen.add(t.ref);
     const rec = records[t.ref];
     if(!rec || !rec.ok){ unread.push({ ref: t.ref, addr: t.addr, error: rec ? rec.error : 'not looked up' }); continue; }
-    if(deriveStatus(rec).board === 'done') continue;
+    const board = deriveStatus(rec).board;
+    if(board === 'done' || board === 'blocked') continue;     // approved, or denied / withdrawn: nothing to chase
     for(const k of rec.tasks || []){
       const c = k.current;
-      if(k.state !== 'active' || !c || !isDay(c.cityDue)) continue;
-      if(c.status && OUR_TURN.test(c.status) && !CITY_AGAIN.test(c.status)) continue;
+      if(!cityHolds(k) || !isDay(c.cityDue)) continue;
       const days = dayNum(c.cityDue) - dayNum(today);
       if(days > 1) continue;
       steps.push({ ref: rec.ref, url: recordUrl(rec.ref), type: rec.type, recordStatus: rec.status, addr: t.addr,
@@ -92,7 +88,12 @@ export function render(steps, unread, today){
   // within a group, one block per record
   const byRecord = list => { const m = new Map(); list.forEach(s => { if(!m.has(s.ref)) m.set(s.ref, []); m.get(s.ref).push(s); }); return [...m.values()]; };
   const stepLine = s => `${s.step} — ${s.assignedTo || 'no reviewer assigned'} · City due ${nice(s.cityDue)} (${when(s.days)})${s.stepStatus ? ` · ${s.stepStatus}${s.since ? ' ' + nice(s.since) : ''}` : ''}`;
-  const unreadLine = unread.length ? `Couldn't read ${unread.map(u => `${u.ref} (${String(u.addr).split(' (')[0]})`).join(', ')} in Accela this run — checked again tomorrow.` : '';
+  const where = u => `${u.ref} (${String(u.addr).split(' (')[0]})`;
+  const missing = unread.filter(u => /not found/i.test(u.error || '')), slow = unread.filter(u => !/not found/i.test(u.error || ''));
+  const unreadLine = [
+    slow.length ? `Couldn't read ${slow.map(where).join(', ')} in Accela this run — checked again tomorrow.` : '',
+    missing.length ? `${missing.map(where).join(', ')} isn't in Accela's public search — check the record number on the board.` : ''
+  ].filter(Boolean).join(' ');
 
   const text = [`Accela review steps to chase — ${longDay(today)}`, ''];
   groups.forEach(([head, list]) => {
@@ -197,7 +198,7 @@ export async function runReminders({ state, records, send = false, today } = {})
   if(!send) return { ...out, text: mail.text, html: mail.html };
   const env = process.env.VERCEL_ENV;
   if(env && env !== 'production'){ out.note = `${env} deployment — only production sends`; return out; }
-  const key = `${today}|${mail.text}`;
+  const key = `${today}|${steps.map(s => `${s.ref}/${s.step}/${s.assignedTo}/${s.cityDue}`).join('|')}`;
   if(lastSent === key){ out.note = 'same email already sent today from this instance'; return out; }
   try{ out.id = await gmailSend({ to: TO, ...mail }); out.sent = true; lastSent = key; }
   catch(e){ out.ok = false; out.error = String(e && e.message || e); }
