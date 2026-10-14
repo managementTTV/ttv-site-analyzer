@@ -160,7 +160,10 @@ function keepCookies(jar, res){
   set.forEach(c => { const m = /^([^=;\s]+)=([^;]*)/.exec(c); if(m) jar.set(m[1], m[2]); });
 }
 
-async function lookup(ref){
+// Each request stops at 20 s, or sooner when the caller's deadline (`stop`) passes.
+const reqSignal = stop => stop && AbortSignal.any ? AbortSignal.any([AbortSignal.timeout(20000), stop]) : AbortSignal.timeout(20000);
+
+async function lookup(ref, stop){
   const hit = cache.get(ref);
   if(hit && Date.now() - hit.at < CACHE_MS) return hit.data;
   const jar = new Map();
@@ -170,7 +173,7 @@ async function lookup(ref){
     // Follow redirects by hand: the record page's ASP.NET session is what the two tab calls read.
     let url = out.url, res, page = '';
     for(let hop = 0; hop < 6; hop++){
-      res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': UA, Cookie: cookieHeader(jar) }, signal: AbortSignal.timeout(20000) });
+      res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': UA, Cookie: cookieHeader(jar) }, signal: reqSignal(stop) });
       keepCookies(jar, res);
       const loc = res.headers.get('location');
       if(res.status >= 300 && res.status < 400 && loc){ url = new URL(loc, url).href; continue; }
@@ -183,7 +186,7 @@ async function lookup(ref){
     Object.assign(out, rec);
     const module = (/[?&]Module=(\w+)/.exec(url) || [])[1] || 'LandDevelopment';
     const call = async (method, body) => {
-      const r = await fetch(`${url.split('?')[0]}/${method}`, { method: 'POST', signal: AbortSignal.timeout(20000),
+      const r = await fetch(`${url.split('?')[0]}/${method}`, { method: 'POST', signal: reqSignal(stop),
         headers: { 'User-Agent': UA, Cookie: cookieHeader(jar), Referer: url, 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify(body) });
       if(!r.ok) throw new Error(`${method} HTTP ${r.status}`);
@@ -209,10 +212,19 @@ async function lookup(ref){
   return out;
 }
 
-export async function lookupAll(refs){
+// deadlineMs: one limit for the whole set. A slow Accela (each request can take 20 s) must not run the cron
+// past maxDuration 60 and take the morning email with it: past the deadline, requests in flight are aborted
+// and records not started are reported unread.
+export async function lookupAll(refs, { deadlineMs } = {}){
   const uniq = [...new Set(refs)].slice(0, MAX_REFS), out = {};
+  const stop = deadlineMs ? AbortSignal.timeout(deadlineMs) : null;
   for(let i = 0; i < uniq.length; i += 4){              // four at a time — gentle on a public portal
-    const batch = await Promise.all(uniq.slice(i, i + 4).map(lookup));
+    if(stop && stop.aborted){
+      uniq.slice(i).forEach(ref => { out[ref] = { ref, ok: false, url: recordUrl(ref), status: null, type: null, address: null,
+        project: null, opened: null, tasks: [], related: [], error: 'not read — Accela too slow this run' }; });
+      break;
+    }
+    const batch = await Promise.all(uniq.slice(i, i + 4).map(ref => lookup(ref, stop)));
     batch.forEach(r => { out[r.ref] = r; });
   }
   return out;
@@ -305,7 +317,7 @@ async function sync({ dry }){ return commitSync(await prepareSync(), { dry }); }
 async function prepareSync(){
   const t0 = Date.now();
   const state = await loadPermitState();
-  const records = await lookupAll(targets(state).map(t => t.ref));
+  const records = await lookupAll(targets(state).map(t => t.ref), { deadlineMs: 25 * 1000 });
   const items = plan(state, records);
   items.forEach(it => {
     const c = it.upd && state.projects.find(p => p.id === it.projectId)?.state[it.milestoneId];

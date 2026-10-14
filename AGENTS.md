@@ -417,16 +417,25 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
     when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
     write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.
-  - **Due-date reminder email (v4.7, `api/permit-reminders.js`, Brian 2026-10-13).** The daily cron run in
-    `api/accela.js` does `prepareSync()` (read, look up, plan, apply in memory), then
-    `runReminders({state, records, send:true})` from that state **before** `commitSync()` writes (budget 30 s)
-    — slow feed writes must never starve the email inside `maxDuration` 60. Flag a change that moves the
-    send after the writes. Subjects carry the date ("Permits Oct 14: …") so Gmail doesn't fold days into
-    one thread; a same-day identical email isn't re-sent from the same instance (re-delivered cron event). One email from management@ to management@
-    (`REMINDER_TO` overrides) listing every board step whose status is not `done` and whose `due` is
-    tomorrow, today or past, in Charlotte's date (`etDate`, America/New_York) — the day before, the day of,
-    and every day after until done. Nothing in that window → no email. `TITLES` mirrors `permits.html`
-    CATALOG ids → titles; ids not in it (legacy payload ids) never trigger. Sent through the Gmail API with
+  - **City review-step alert email (v4.8, `api/permit-reminders.js`; Brian 2026-10-14 replaced v4.7's board
+    due dates: "it's supposed to alert us when in Accela one of the steps in the review process is overdue by
+    a certain person or department").** Source is Accela only, never the board's `due`: for every City record
+    on the board (`targets()`), each Processing Status step with `state === 'active'` and a `current.cityDue`
+    (the City's own per-step due date) that is tomorrow, today or past in Charlotte's date (`etDate`,
+    America/New_York) — the day before, the day of, and every day after until the City completes the step.
+    Left out: records whose plan review is approved (`deriveStatus().board === 'done'`: their open Urban
+    Forestry inspection is not a late review; Dellinger's reads "due Jul 1") and steps whose current status
+    hands it back to us (`OUR_TURN`: revisions requested, awaiting payment / plans; "Revisions Received" is
+    the City's again). Each line names the step (department), `current.assignedTo`, the City due date and how
+    late. Records Accela didn't answer are named (`unread`). Nothing in the window → no email. Flag a change
+    that brings the board's own due dates back into this email, or alerts on an approved record. The daily
+    cron run in `api/accela.js` does `prepareSync()` (read, look up — one 25 s deadline for all lookups,
+    `lookupAll(refs, {deadlineMs})`, so a slow Accela can't run past `maxDuration` 60 — plan, apply in
+    memory), then `runReminders({state, records, send:true})` **before** `commitSync()` writes (budget 30 s).
+    Flag a change that moves the send after the writes. Subjects carry the date ("Accela Oct 21: …") so
+    Gmail doesn't fold days into one thread; a same-day identical email isn't re-sent from the same instance
+    (re-delivered cron event). One email from management@ to management@ (`REMINDER_TO` overrides).
+    `TITLES` mirrors the `permits.html` CATALOG titles of the steps a City record sits on (context only). Sent through the Gmail API with
     the send-only token in the Vercel env var `GMAIL_SEND_TOKEN` (JSON `{client_id, client_secret,
     refresh_token}` for management@ — minted by `~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py`,
     never committed). Only production sends. The route itself is preview-only (`?k=…[&format=html][&date=…]`):
