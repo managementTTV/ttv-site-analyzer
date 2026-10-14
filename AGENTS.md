@@ -701,6 +701,25 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     the worst case is about 13 s).
   - This changes `/api/street` on purpose (new `records`, `traffic`, `params.record_months` / `busy_aadt`, two check
     rows, the verdict text). `mode=view` is unchanged.
+- **Direction (v8.44, `trendFor()`).** Brian, 2026-10-12: streets gentrify and nice streets go downhill, so the card
+  says which way the street is heading, beside the verdict (never part of it; display only). Three signals, each the
+  street against its comparison area, so a market-wide rise doesn't read as the street rising:
+  - **price:** median home-sale $/sf, the last `TREND_MONTHS` (36) against the 36 before, from every market sale in
+    `TaxParcelSales` (one box query, same filters as the street's sales), the newest sale per house per window, the
+    area without the street's own houses. Street % change minus area % change; ±10 pts is up / down. It needs 3+
+    street and 10+ area sales in each window, and an untruncated lookup, else it's thin (a truncated violations
+    lookup makes that signal thin too).
+  - **builds:** homes built in the last `TREND_BUILD_YEARS` (5). Up when 2+ and at least 10 pts over the area's share,
+    or 3+ and a fifth of the street's homes; it never points down.
+  - **violations:** confirmed code violations in the last 24 months against the 24 before (the records' window goes
+    back 48 months). Down = 3+ now, ×1.5, and 0.5 more than the area's ratio; up = 3+ before, halved, and 0.3 under
+    the area's ratio. City only.
+  - **Rising** = 2+ up, none down. **Slipping** = 2+ down and none up, or one strong down (price 20+ pts behind, or
+    violations doubled to 5+) with nothing up and prices not ahead of the area. Mixed signals read **Steady**. **Too
+    little history** = no price and no violations signal. Code violations also rise on streets being rebuilt
+    (construction, new neighbours who call), which is why heavy building counts as up and a violations rise alone
+    can't call such a street Slipping. Judgement, not backtested; the label never feeds the verdict, the ARV or the
+    save file.
 - **Assessor rows come through `camaQuery()` (v8.35).** One `ctx` per request: once a query falls back to the backup
   tables, the rest of the request stays there, and the notes open with `camaBackupNote()`. camadata held one row per
   building, so a lot with two buildings counted twice; the backup holds one row per lot, which runs neighbourhood
@@ -809,7 +828,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   the badge, because no analyzer screen changes; a change to street.js or gis.js output still does. Bump
   `SERVER_INFO.version` when a tool's input or output shape changes, since the Street Walk artifact is built against it
   (1.1.0: `aerial_crops` `outline`; 1.2.0, v8.43: `find_street`'s `profile` adds the street check's `records` and
-  `traffic`).
+  `traffic`; 1.3.0, v8.44: and `trend`).
 - **Fair housing**, as in the street check: buildings, lots and land use only. Flag occupant, ownership-type or
   demographic data.
 

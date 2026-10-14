@@ -763,7 +763,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.43 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.44 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -3171,6 +3171,10 @@ function renderStreetCheck(d){
   if(d.verdict){
     const v=d.verdict.level,col=v==='weaker'?'var(--red)':v==='watch'?'var(--amber)':v==='in-line'?'var(--green)':dim;
     h+='<div style="border-left:3px solid '+col+';padding:6px 10px;margin:4px 0 6px;font-size:12.5px;background:rgba(94,128,149,0.06)">'+E(d.verdict.text)+'</div>';
+  }
+  if(d.trend){   // v8.44: which way the street is heading (beside the verdict, never part of it)
+    const t=d.trend,tc={rising:'var(--green)',slipping:'var(--red)'}[t.level]||dim,ar={rising:'↗',slipping:'↘',steady:'→'}[t.level]||'·';
+    h+='<div style="font-size:12px;color:var(--text-mid);margin:0 0 8px"><b style="color:'+tc+'">'+ar+' Direction</b> '+E(t.text)+'</div>';
   }
   if(s&&n){
     const PER={cases_per100:'cases',complaints_per100:'complaints'};   // v8.43 City records rows: a rate per 100 parcels
@@ -7286,8 +7290,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.43', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.44', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.44',date:'Oct 2026',name:'Which way the street is heading',items:[
+   'The Street Check now says whether a street is Rising, Steady or Slipping. It weighs three things against the neighbourhood: home sale prices per sq ft over the last 3 years against the 3 before, new homes built in the last 5 years, and the City\u2019s confirmed code violations in the last 2 years against the 2 before.',
+   'Rising needs at least two of them pointing up and none down. Slipping needs two pointing down, or one big drop (prices 20+ points behind the neighbourhood, or violations doubled). Most single streets have too few sales for the price signal, so the call often rests on new builds and violations; with neither prices nor City records (outside Charlotte) it reads \u201cToo little history\u201d.',
+   'It sits beside the street\u2019s verdict and doesn\u2019t change it, the ARV or any number on The Underwrite.',
+ ]},
  {v:'8.43',date:'Oct 2026',name:'Street Check: City records and busy roads',items:[
    'The Street Check now counts what the City of Charlotte found on the street in the last 24 months: confirmed code violations (overgrown yards, junked or abandoned cars, cars parked on the lawn, junk and dumping, housing-code repairs) and 311 complaints about the same things, each against the neighbourhood per 100 parcels. Twice the neighbourhood\u2019s rate of violations, with 3 or more, reads Weaker. 311 complaints are shown but never counted against a street: they\u2019re what someone reported, not what an inspector found.',
    'It also says how busy the lot\u2019s own street is, from NCDOT\u2019s traffic counts and the City\u2019s thoroughfare map, and whether any parcel on the street has a City demolition order. A busy road (10,000+ cars a day, or a major thoroughfare) or a demolition order turns an In line street into Watch.',
