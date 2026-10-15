@@ -30,7 +30,7 @@ key), so on a preview the Street View page shows Google's referrer error inside 
 
 The Underwrite's **Send to deal sheet** button hands the deal to the team's New Deal web app (Google Apps Script, run
 as management@), which makes the deal's locked Google Sheet in Underwritten with its inputs filled in. Set
-`NEW_DEAL_URL` in Vercel (Production + Preview) to that web app's `/exec` link (Apps Script › Deploy › Manage
+`NEW_DEAL_URL` in Vercel (Production only; a preview shows the "not set up" page) to that web app's `/exec` link (Apps Script › Deploy › Manage
 deployments). Without it the button opens a "not set up" page. Keep the link out of the repo: it's public. See
 AGENTS.md "Deal-sheet hand-off".
 
