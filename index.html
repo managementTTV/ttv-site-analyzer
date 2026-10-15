@@ -2281,6 +2281,10 @@ const $=id=>document.getElementById(id);
 const fmt=n=>(!n&&n!==0)||isNaN(n)?'—':'$'+Math.round(n).toLocaleString();
 const fmtN=n=>isNaN(n)?'—':Math.round(n).toLocaleString();
 // v8.45 (S-F5): money and area boxes are text, so Safari/Firefox keep "11,521"; commas, $ and spaces are dropped here
+// The boxes that were number boxes (v8.45) still refuse letters, as a number box does: "12k" or "abc" is dropped as it's typed
+// rather than read as 12 or 0 without a word. Capture phase, so it runs before the box's own oninput.
+const _NUM_TEXT=new Set(['cust-c','tap-water','tap-sewer','septic-cost','survey','appraisal','insurance','custom-plans','demo-rate','row-labor','dirt-rate','grading','site-prep','utilities','framing','culverts','landscaping','sop-band','fin-doc-fee','fin-tax','lot-sf','lot-sf-poly','demo-sqft','cust-sf','buildable-override','bua-hardscape']);
+document.addEventListener('input',e=>{const t=e.target;if(t&&_NUM_TEXT.has(t.id)){const v=t.value.replace(/[^0-9.,$\s-]/g,'');if(v!==t.value)t.value=v;}},true);
 const pv=id=>{const e=$(id);if(!e)return 0;const v=parseFloat((e.value||'').replace(/[$,\s]/g,''));return isNaN(v)?0:v;};
 // v8.8 MONEY TEXT FIELDS. Land cost, asking price and the three ARV $/sf fields are type="text", so "$185,000"
 // can be typed or pasted. pv() can't read that: it drops every comma and runs parseFloat, so "$185,000" was 0,
