@@ -763,7 +763,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.44 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.45 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -4714,6 +4714,9 @@ function arvFactorFor(plan,n){return innerCutOn()?innerUnitFactor(plan,n):1;}
 function innerCount(plan,n){return innerCutOn()?innerUnitCount(plan,n):0;}
 // the deal's own: its plan at its Units
 function dealArvFactor(){return arvFactorFor(currentPlanObj(),Math.max(1,pv('units')));}
+// v8.45 (#41 review): ARV / unit in one place, $/sf × sf × the inner-unit factor (f: 1 when left out); 0 without both.
+// Every reader below goes through it, so a later factor lands everywhere at once.
+function unitArv(psf,sf,f){return sf>0&&psf>0?psf*sf*(f==null?1:f):0;}
 // v8.31 (audit M2/G10, G8): the ground the deal's Units take with a plan. fitStatus() tests w × d; calcBUA() counts sf (the
 // buildings, not the gaps between them). A townhome (t:'th') or a custom footprint is ONE unit of an attached row: the row
 // is Units × its width, every unit at the listed width (Brian, 2026-10-08). Any other plan's footprint is the whole
@@ -5412,7 +5415,7 @@ function calcScenarios(){
     const arvId=k==='w'?'arv-w':k==='b'?'arv-b':'arv-best';
     let arvPSF=mv(arvId);
     if(!arvPSF&&basePSF){if(k==='w')arvPSF=basePSF*0.90;if(k==='best')arvPSF=basePSF*1.10;}
-    const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit*arvF:0;
+    const arv=unitArv(arvPSF,sfPerUnit,arvF);
     const term=T[k];
     const h=holdingCost(loan,term);
     const holdPerUnit=(h.total+purchaseClosing)/units;
@@ -5472,7 +5475,7 @@ function maxLandSolve(rule){
   const basePSF=mv('arv-b');
   if(!(basePSF>0&&sfPerUnit>0))return null;
   rule=rule||getProfitRule();
-  const bARV=basePSF*sfPerUnit*dealArvFactor();   // v8.42: inner units
+  const bARV=unitArv(basePSF,sfPerUnit,dealArvFactor());   // v8.42: inner units
   const term=getTerms().b;
   const salePctV=pv('sale-cost-pct')/100;
   const loanPct=pv('ltc-pct')/100;
@@ -5509,7 +5512,7 @@ function baseProfitAt(land,o){
   o=o||{};
   const basePSF=mv('arv-b');
   if(!(basePSF>0&&sfPerUnit>0))return null;
-  const arv=basePSF*sfPerUnit*dealArvFactor()*(o.arv||1);   // v8.42: inner units
+  const arv=unitArv(basePSF,sfPerUnit,dealArvFactor())*(o.arv||1);   // v8.42: inner units
   const buildPart=(currentPlanCost||0)*units+upgradesPerUnit()*units;
   const exLand=allInExLand+buildPart*((o.build||1)-1);
   const loan=pv('ltc-pct')/100*(land+exLand);
@@ -5760,7 +5763,7 @@ function getReportData(){
   const arvFactor=dealArvFactor(), innerUnits=innerCount(currentPlanObj(),u);   // v8.42
   const scenarios=['w','b','best'].map(k=>{
     const arvPSF=psf[k]||0;
-    const arv=sfPerUnit>0&&arvPSF>0?arvPSF*sfPerUnit*arvFactor:0;
+    const arv=unitArv(arvPSF,sfPerUnit,arvFactor);
     const h=holdingCost(fin.loan,terms[k]);
     const holdPerUnit=(h.total+fin.purchaseClosing)/u;
     const saleCost=arv*(fin.salePct/100);
@@ -5957,7 +5960,7 @@ function buildReportHTML(canvasDataUrl){
       const deltas=[-20,-10,0,10,20];
       const allIn=base.allInPerUnit, salePct=d.fin.salePct/100;
       const cell=(arvPSF,t)=>{
-        const arv=arvPSF*d.sf*(d.arvFactor||1); if(!(arv>0))return '—';   // v8.42: inner units
+        const arv=unitArv(arvPSF,d.sf,d.arvFactor); if(!(arv>0))return '—';   // v8.42: inner units
         const hh=holdingCost(d.fin.loan,t);
         const p=arv-(allIn+(hh.total+d.fin.purchaseClosing)/d.units+arv*salePct);
         return sign(p);
@@ -6180,8 +6183,9 @@ function sheetHandoffPayload(){
 // v8.42: the locked sheet prices every unit at $/sf × sf; the analyzer takes 2% off the inner ones, so its ARV / unit is lower
 function innerUnitNotes(d){
   if(!d.innerUnits||!(d.arvFactor<1))return [];
-  const b=(d.scenarios||[]).find(s=>s.key==='b'), full=b&&b.arvPSF>0?b.arvPSF*d.sf:0;
-  return [`Inner units: ${d.innerUnits} of the ${d.units} units ${d.innerUnits===1?'is an inner unit':'are inner units'}, priced 2% under the end units, so the analyzer's Base ARV / unit is ${((1-d.arvFactor)*100).toFixed(1)}% under $/sf \u00d7 sf`+(full?` (${fmt(full*d.arvFactor)} vs ${fmt(full)}). The sheet prices every unit at $/sf \u00d7 sf, so its ARV is ${fmt(full*(1-d.arvFactor))} higher per unit.`:'.')];
+  // the analyzer's figure is the scenario's own ARV; the sheet's is unitArv() without the factor (v8.45: no second formula)
+  const b=(d.scenarios||[]).find(s=>s.key==='b'), full=b?unitArv(b.arvPSF,d.sf):0;
+  return [`Inner units: ${d.innerUnits} of the ${d.units} units ${d.innerUnits===1?'is an inner unit':'are inner units'}, priced 2% under the end units, so the analyzer's Base ARV / unit is ${((1-d.arvFactor)*100).toFixed(1)}% under $/sf \u00d7 sf`+(full&&b.arv>0?` (${fmt(b.arv)} vs ${fmt(full)}). The sheet prices every unit at $/sf \u00d7 sf, so its ARV is ${fmt(full-b.arv)} higher per unit.`:'.')];
 }
 function b64url(str){
   const b=new TextEncoder().encode(str);let s='';
@@ -6730,7 +6734,7 @@ function dealForPlan(plan,psf,U){
   ['w','b','best'].forEach(k=>{
     const term=T[k];
     const arvPSF=psf[k]||0;
-    const arv=plan.sf>0&&arvPSF>0?arvPSF*plan.sf*arvFactorFor(plan,u):0;   // v8.42: inner units, at this plan's u
+    const arv=unitArv(arvPSF,plan.sf,arvFactorFor(plan,u));   // v8.42: inner units, at this plan's u
     const h=holdingCost(loan,term);
     const holdPerUnit=(h.total+purchaseClosing)/u;
     const saleCost=arv*salePct;
@@ -7290,8 +7294,11 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.44', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.45', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.45',date:'Oct 2026',name:'Comps housekeeping',items:[
+   'County comps pulls send at most 6 requests to the county at a time, so the 1.5 mi wide-area check on infill lots no longer bursts a dozen at once. Results are the same.',
+   'Behind the scenes: every ARV / unit (scenarios, Max land, the stress test, the PDF, Compare builds and the deal-sheet note) now comes from one formula. No number changes.']},
  {v:'8.44',date:'Oct 2026',name:'Which way the street is heading',items:[
    'The Street Check now says whether a street is Rising, Steady or Slipping. It weighs three things against the neighbourhood: home sale prices per sq ft over the last 3 years against the 3 before, new homes built in the last 5 years, and the City\u2019s confirmed code violations in the last 2 years against the 2 before.',
    'Rising needs at least two of them pointing up and none down. Slipping needs two pointing down, or one big drop (prices 20+ points behind the neighbourhood, or violations doubled). Most single streets have too few sales for the price signal, so the call often rests on new builds and violations; with neither prices nor City records (outside Charlotte) it reads \u201cToo little history\u201d.',

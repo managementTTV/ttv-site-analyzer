@@ -78,8 +78,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   $/sf is one unit's, ends and inner units mixed. The locked deal sheet prices every unit at $/sf × sf, so the hand-off
   adds a note (`innerUnitNotes()`) saying how much higher the sheet's ARV is. The `#inner-cut` box (`arvFactorFor()`,
   `innerCount()`) is ticked on a fresh page and unticked by `restoreDeal()` for a file saved before v8.42, so reopening an
-  older deal doesn't move its Max land (the v8.39 `#lf-house-min` pattern). Flag a new $/sf × sf reader that skips
-  `arvFactorFor()`, calls `innerUnitFactor()` directly (it ignores the box), or a factor applied to the comps' $/sf.
+  older deal doesn't move its Max land (the v8.39 `#lf-house-min` pattern). Since v8.45 every reader computes ARV / unit
+  through `unitArv(psf, sf, f)`. Flag a new $/sf × sf reader that skips `unitArv()` or `arvFactorFor()`, calls
+  `innerUnitFactor()` directly (it ignores the box), or a factor applied to the comps' $/sf.
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
   Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, appraisal, insurance, custom plans.
   Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
@@ -588,7 +589,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `orderByFields: objectid`, up to `SALES_MAX_PAGES`, with a flag if that's hit). `camaFetch()` runs
   `CAMA_CONCURRENCY` (4) chunks at once (`camaChunk()`; each chunk decides on its own whether the backup answered). On
   five test lots the 0.5 mi answers are identical before and after; a 1.5 mi pull went from 11 s to 7 s. `api/comps.js`
-  has `maxDuration` 30 in vercel.json. `?infill=0` skips the infill count (`infill.skipped`, no vet reason).
+  has `maxDuration` 30 in vercel.json. `?infill=0` skips the infill count (`infill.skipped`, no vet reason). Since v8.45
+  every county request goes through one cap, `MAX_INFLIGHT` (6) in `ajPost()` (a freed slot passes straight to the next
+  waiter), so a wide pull no longer bursts a dozen requests. Flag a county call that bypasses `ajPost()`.
 - **Pat's one-tap "why" (v8.41, research/12 Q1).** When Base ARV is $1/sf or more off `_arvTool.psf` (Apply writes the
   $/sf rounded, or rounded down when capped, so an applied ARV is never a change), chips ask why (`ARV_WHY`: infill,
   across a busy road, older stock, weaker street, finish, other) into `#arv-why-code` plus `#arv-why-note`, plain
