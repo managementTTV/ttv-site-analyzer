@@ -1605,7 +1605,7 @@ const ATTACHED_RULES={
 };
 const ATTACHED_DEFAULT={maxBuildingLen:null,sublotParentOnly:null,
   note:'Attached / townhouse subplot rules not yet loaded for this county — verify the local max building length, whether unit lots are exempt from min lot width/area, and access/frontage rules with the jurisdiction.'};
-// v8.48: keyed by zoneJur(), so a town with its own code (Huntersville) doesn't get Charlotte's UDO rules
+// v8.48: keyed by zoneRulesJur(), so a town with its own code (Huntersville) doesn't get Charlotte's UDO rules
 function attachedRules(county){return ATTACHED_RULES[county]||ATTACHED_DEFAULT;}
 const COUNTY_ZONES={
   'Mecklenburg':['N1-A','N1-B','N1-C','N1-D','N1-E','N1-F','N2-A','N2-B','N2-C','N2-A \u00b7 townhomes 5+','N2-B \u00b7 townhomes 5+','N2-C \u00b7 townhomes 5+','UR-2','UR-3','UR-4'],
@@ -2467,7 +2467,9 @@ function onAddrChange(){
   const city=($('addr-city').value||'').toLowerCase().trim();
   const det=CITY_COUNTY[city];
   if(det&&!$('county-sel').value){$('county-sel').value=det;onCountyChange();}
-  syncTownFromCity($('addr-city').value,$('addr-state').value);   // v8.48
+  // v8.48: only when the city or state itself changed, so a ZIP or street keystroke can't undo the town a County GIS
+  // lookup set (and wipe its zone and setbacks)
+  {const cs=townCitySig();if(cs!==_townCitySeen){_townCitySeen=cs;syncTownFromCity($('addr-city').value,$('addr-state').value);}}
   updateLinks();
   validateAddress();
   invalidateGisIfAddressMoved();
@@ -2553,7 +2555,7 @@ function clearGisSite(){
   const zs=$('zone-sel'),zo=zs.options[zs.selectedIndex];
   _clearedSite={lotMode,pts:polyPoints.map(p=>({x:p.x,y:p.y})),edges:edgeDesignations.slice(),scale:$('canvas-scale-ft').value,fromCounty:_lotFromCounty,
     structures:extraStructures,   // v8.26: the lot's garage / ADU go with it, and come back with Put them back
-    zone:zs.value,zoneText:zo?zo.textContent:'',fields,corner:$('corner-lot').checked,cornerSide:$('corner-street-side').value,abuts:$('n2-abuts-n1').checked,
+    zone:zs.value,zoneText:zo?zo.textContent:'',town:($('zone-town')||{}).value||'',fields,corner:$('corner-lot').checked,cornerSide:$('corner-street-side').value,abuts:$('n2-abuts-n1').checked,
     zrn:_zoneRestoreNote,mismatch:_gisMismatch,label:t&&t.label};
   polyPoints=[];edgeDesignations=[];dropLotEnvelope();_gisMismatch=null;extraStructures=[];_lotFromCounty=false;
   zs.value='';Object.keys(fields).forEach(id=>{$(id).value='';});$('corner-lot').checked=false;$('corner-street-side').value='left';
@@ -2566,6 +2568,8 @@ function clearGisSite(){
 }
 function putBackGisSite(){
   const c=_clearedSite;if(!c)return;_clearedSite=null;
+  // v8.48: the zone's list goes back with it
+  if(($('zone-town').value||'')!==(c.town||'')){$('zone-town').value=c.town||'';buildZoneList();_jurSeen=zoneJur();}
   const zs=$('zone-sel');
   if(c.zone&&!Array.from(zs.options).some(o=>o.value===c.zone)){const o=document.createElement('option');o.value=c.zone;o.textContent=c.zoneText||c.zone;zs.appendChild(o);}
   zs.value=c.zone;$('n2-abuts-n1').checked=c.abuts;_zoneRestoreNote=c.zrn;onZoneChange();
@@ -2658,6 +2662,10 @@ function updateLinks(){
 }
 let _countySeen='';   // v8.33: the county the zone list was last built for
 let _jurSeen='';   // v8.48: and the town or county whose list it is (zoneJur())
+let _townCitySeen='';   // v8.48: the city|state the town last followed (onAddrChange())
+function townCitySig(){return (($('addr-city')||{}).value||'').trim().toLowerCase()+'|'+(($('addr-state')||{}).value||'').trim().toUpperCase();}
+// the jurisdiction of the zone actually picked (a put-back or saved zone can be another list's), else zoneJur()
+function zoneRulesJur(){return ((($('zone-sel')||{}).value||'').split('|')[0])||zoneJur();}
 // v8.48: the Zoning Code picker: the County option's own list first, then the zoning table's towns (this county's first)
 function buildTownOptions(){
   const sel=$('zone-town');if(!sel)return;
@@ -2699,6 +2707,7 @@ function onZoningDbReady(){
   const zs=$('zone-sel'),keep=zs.value?{v:zs.value,t:(zs.options[zs.selectedIndex]||{}).textContent||zs.value}:null;
   buildTownOptions();
   if(!keep&&!isManual('zone-town'))$('zone-town').value=townForCity($('addr-city').value,$('addr-state').value);
+  _townCitySeen=townCitySig();
   buildZoneList();_jurSeen=zoneJur();
   if(keep){if(!Array.from(zs.options).some(o=>o.value===keep.v)){const o=document.createElement('option');o.value=keep.v;o.textContent=keep.t;zs.appendChild(o);}zs.value=keep.v;}
   renderZoneNote();renderZoneUses();showLooseSetbacks();
@@ -4988,7 +4997,7 @@ function subplotSvg(u,unitW,unitD,maxLen){
 }
 function renderSubplot(p){
   const box=$('sublot-result');if(!box)return;
-  const county=zoneJur();   // v8.48: the town whose code the zone list is (Charlotte's UDO rules are Mecklenburg's list only)
+  const county=zoneRulesJur();   // v8.48: the zone's town (Charlotte's UDO rules are Mecklenburg's rows only)
   const rules=attachedRules(county);
   const u=Math.max(1,pv('units'));
   const row=planLayout(p,u),unitW=p.w,unitD=p.d,bldgLen=row.w,maxLen=rules.maxBuildingLen;   // v8.31: the one row rule
@@ -5254,7 +5263,7 @@ function unitsWarnings(L,fs,name){
     +(u%L.per?` (room for ${L.bldgs*L.per}: Units isn’t a whole number of buildings)`:'')
     +`. They’re tested side by side${L.gap?`, ${L.gap} ft apart (two side setbacks)`:' with no gap (no side setback)'}, as if the lot were split: check the sub-lot card.`);
   if(L.attached&&u>1){
-    const county=zoneJur(),maxLen=attachedRules(county).maxBuildingLen;   // v8.48
+    const county=zoneRulesJur(),maxLen=attachedRules(county).maxBuildingLen;   // v8.48
     if(maxLen&&L.w>maxLen)out.push(`A row of ${u} is ${L.w.toFixed(0)} ft long, over ${county}’s ${maxLen} ft max building length (${Math.floor(maxLen/L.unitW)} units at most).`);
   }
   // one building that doesn't fit already says so; this is for a row or for several buildings
@@ -5807,7 +5816,7 @@ _countySeen=$('county-sel').value;   // v8.33: a county the browser restored on 
 const ZONING_LOADED=fetch('data/zoning-db.json',{cache:'no-cache'})
   .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(applyZoningDb)
   .catch(e=>{ZONING_DB.failed=true;console.warn('Town zoning table not loaded: '+e.message);})
-  .then(()=>{ZONING_DB.ready=true;onZoningDbReady();});
+  .then(()=>{ZONING_DB.ready=true;try{onZoningDbReady();}catch(e){console.warn('Town zoning pickers: '+e.message);}});
 buildPlanDropdown();
 renderUpgrades();
 renderComps();
@@ -7278,7 +7287,7 @@ function serializeDeal(){
 }
 function restoreDeal(d){
   // v8.48: a deal on a town's zone needs the town lists, so a restore waits for the zoning table (loaded or failed)
-  if(!ZONING_DB.ready){ZONING_LOADED.then(()=>restoreDeal(d));return;}
+  if(!ZONING_DB.ready){showToast('Loading the town zoning table\u2026');ZONING_LOADED.then(()=>restoreDeal(d));return;}
   // Check the file before step 0 resets the page: every field entry is an object, at least one is this page's, and
   // each collection has the shape serializeDeal() writes. Anything else is turned away with the page untouched.
   const vals=d&&d.fields;

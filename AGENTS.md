@@ -952,13 +952,18 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     checked numbers supersede the old consts (Kannapolis R6 min width 50 → 60, rears 30 → 25…), which stay only as the
     fallback when the file can't load.
   - **Mecklenburg rows never overwrite a `SETBACKS` row** (all 12 UDO rows matched the table on 2026-10-15). Charlotte
-    zones with no row (CG, OFC, IMU, TOD…, 41 rows) are added after them. A table townhome row is `mfa` in Charlotte,
+    zones with no row (CG, OFC, IMU, TOD…, 41 rows) are added after them. So a deal saved on one of those as a stub,
+    with blank setbacks, reopens with the row's setbacks filling the blanks: its fit (and Max land) can move, and the
+    reopen note says so. A table townhome row is `mfa` in Charlotte,
     `thRow` elsewhere; either way detached lot splits follow the base row (`renderSublot()`).
   - A blank in the table stays blank (the fit check then asks for it). `garage` is blank for table rows.
 - **The town follows the address.** `syncTownFromCity()` sets `#zone-town` from the typed City (`townForCity()`;
   "Greenville SC" needs state SC) and from County GIS's address-point city when the parcel has no Charlotte zoning
   (`applyGisData()`); a Charlotte zoning answer puts it back on Charlotte's list. A hand-picked town (`markManual`)
-  stays. Picking a town with no County sets the County (`townCounty()` via `CITY_COUNTY`). Moving from one list to
+  stays. `onAddrChange()` syncs only when the city or state itself changed (`_townCitySeen`), so a ZIP or street
+  keystroke can't undo the town a lookup set and wipe its zone (stopgap review, PR #52). `clearGisSite()` /
+  `putBackGisSite()` carry the town with the zone, and `attachedRules()` goes by the picked zone's own jurisdiction
+  (`zoneRulesJur()`). Picking a town with no County sets the County (`townCounty()` via `CITY_COUNTY`). Moving from one list to
   another clears the zone and setbacks, like a county change.
 - **Rows marked "(verify)"** (the 5 planner questions, `PLANNER_CALLS.md`) get an amber "Verify with the planner" line
   in `renderZoneNote()`. Every table row links to its own section of the code (`zone-udo-link`).
