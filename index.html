@@ -763,7 +763,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.46 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.47 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -3207,6 +3207,13 @@ function renderStreetCheck(d){
     const txt=t.aadt?'about '+t.aadt.toLocaleString()+' cars a day (NCDOT, '+t.aadt_year+')'+(tf?'; '+tf:'')
       :tf?tf+' (no NCDOT count)':'no NCDOT count and not a City thoroughfare: a neighbourhood street';
     h+='<div style="font-size:11.5px;color:'+(t.busy?'var(--amber)':'var(--text-mid)')+';margin-top:4px">'+(t.busy?'Busy road: ':'Traffic: ')+E(txt)+'.</div>';
+  }
+  if(d.nearby){   // v8.47: business parcels right around the lot, and stores within a quarter mile (shown, the store never judged)
+    const nb=d.nearby,uses=(nb.next_door_uses||[]).map(u=>u.n+' '+u.use.toLowerCase()).join(', ');
+    const nd=nb.next_door?nb.next_door+' business parcel'+(nb.next_door===1?'':'s')+(uses?' ('+uses+')':''):'no business parcels';
+    const st=nb.stores?nb.stores+', the nearest about '+nb.nearest_store_ft.toLocaleString()+' ft away':'none on the county’s records';
+    h+='<div style="font-size:11.5px;color:'+(nb.next_door?'var(--amber)':'var(--text-mid)')+';margin-top:4px">Next door (within '+nb.next_door_ft+' ft of the lot): '+E(nd)+'.</div>'
+      +'<div style="font-size:11.5px;color:var(--text-mid);margin-top:4px">Convenience store or gas station within ¼ mile: '+E(st)+'.</div>';
   }
   if(d.notes&&d.notes.length)h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">'+d.notes.map(E).join(' ')+'</div>';
   if(d.errors&&d.errors.length)h+='<div style="font-size:11px;color:var(--red);margin-top:4px">'+d.errors.map(E).join('; ')+'</div>';
@@ -7345,8 +7352,14 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.46', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.47', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.47',date:'Oct 2026',name:'What’s right around the lot',items:[
+   'The Street Check now looks right around the lot: any business parcel within 300 ft (next door, behind or across the street), and convenience stores or gas stations within a quarter mile.',
+   'A business next door turns an \u201cin line\u201d street into \u201cwatch\u201d, the same as a busy road. The store line is only shown: it never changes the verdict.',
+   'Fixed: the \u201cCommercial / industrial parcels\u201d check was counting churches, fire stations, parks, flood plain and public housing the county files under a business code. It now counts businesses only.',
+   'None of it changes the ARV or any number on The Underwrite.',
+ ]},
  {v:'8.46',date:'Oct 2026',name:'Exports and reopening a deal',items:[
    'The PDF and the Excel workbook now show the asking price (the PDF in Deal Summary beside the land cost used, Excel on Inputs and the Cover).',
    'The PDF cover had a \u201cTotal All-In\u201d that disagreed with the one on the scenario sheet. The cover now shows Total All-In / Unit (the Base figure the profit rule uses) and the project cost under it. The cost build-up\u2019s total is called Total Project Cost, and so is the Deal Pulse bar\u2019s.',

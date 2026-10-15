@@ -749,6 +749,22 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     (construction, new neighbours who call), which is why heavy building counts as up and a violations rise alone
     can't call such a street Slipping. Judgement, not backtested; the label never feeds the verdict, the ARV or the
     save file.
+- **Right around the lot (v8.47, `aroundLot()`, research/13 rubric v2 S2 / S3).** `out.nearby`:
+  - **next door:** business parcels (`isNonRes`) whose shape comes within `NEXT_DOOR_FT` (300 ft) of the lot's point:
+    each side, behind and across the street, on any street. One or more turns "in line" into "watch" and is named in
+    every verdict, like a busy road (the rubric's "non-home flag" that keeps a street from Like).
+  - **stores:** convenience stores and gas stations within `STORE_FT` (¼ mile), with the nearest distance. Shown,
+    never judged: a store is a building, never the people there. The county's land use names only ~121 stores
+    county-wide (most sit on a plain "COMMERCIAL" parcel); its building records (`CamaDataTables/1` `buildingtype`)
+    name 333, so the list is both, fetched once per warm instance (`storeList()`, 12 h) and measured on the server.
+  - **`isNonRes` fix (v8.47):** the county files churches, schools, parks, fire stations, flood plain, rights of way and
+    public housing ("MUNICIPAL HOUSING AUTHORITY") under C / I / O codes too, and the v8.18 rule counted them as
+    commercial. `NOT_NEIGHBOUR_DESC` and the housing words now leave them out, as the rule's own comment always said.
+    Commercial, industrial and office common areas (a strip centre's parking) still count. The connector's per-house
+    `kind` follows (`isNonRes`), so those parcels read "other" on the Street Walk.
+  - Over 76 saved streets: 7 of 45 "in line" moved to "watch" (a business next door); 2 lost a wrong "weaker" on
+    commercial parcels (3 fire-station parcels) and stayed "watch" for the business next door; 15 have a store within
+    ¼ mile.
 - **Assessor rows come through `camaQuery()` (v8.35).** One `ctx` per request: once a query falls back to the backup
   tables, the rest of the request stays there, and the notes open with `camaBackupNote()`. camadata held one row per
   building, so a lot with two buildings counted twice; the backup holds one row per lot, which runs neighbourhood
@@ -857,7 +873,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   the badge, because no analyzer screen changes; a change to street.js or gis.js output still does. Bump
   `SERVER_INFO.version` when a tool's input or output shape changes, since the Street Walk artifact is built against it
   (1.1.0: `aerial_crops` `outline`; 1.2.0, v8.43: `find_street`'s `profile` adds the street check's `records` and
-  `traffic`; 1.3.0, v8.44: and `trend`).
+  `traffic`; 1.3.0, v8.44: and `trend`; 1.4.0, v8.47: and `nearby`).
 - **Fair housing**, as in the street check: buildings, lots and land use only. Flag occupant, ownership-type or
   demographic data.
 
