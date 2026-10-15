@@ -262,6 +262,27 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   so a switch still due on reopen can still land on default taps. Files from before v8.14 have no
   `tapManual`, and their taps count as defaults, which is how v8.9–v8.13 treated them.
 
+### Exports, money boxes and saved deals (v8.45)
+- **One "Total All-In".** It means the Base per-unit figure the profit rule uses (land + build + costs + holding + sale
+  costs, `scenarios[].totalAllIn`): the PDF cover shows it as "Total All-In / Unit" with the project cost under it.
+  Land + all-in ex land is "Total Project Cost" everywhere (PDF cost build-up, Deal Pulse bar, Excel B6). Flag a second
+  figure called "All-In" that isn't one of those two.
+- **Asking price is in both exports** (`getReportData().asking` → PDF Deal Summary; `collectModelInputs().asking` → Excel
+  Inputs "Asking Price" and the Cover's row 8). Reference only: no Excel formula reads it. The PDF's "Check inputs" box
+  carries the money notes, the profit-rule notes and the loan-term notes (the same three lists `renderInputWarnings()`
+  shows), plus the land-above-asking and profit-rule-at-this-land notes next to the v8.38 asking and stress lines.
+- **Money and area boxes are `type="text" inputmode="decimal"`** (survey, taps, soft costs, lot factor lines, doc fee, tax,
+  lot / demo / hardscape areas), because Safari and Firefox hand back '' for "11,521" from a number box. `pv()` drops
+  commas, `$` and spaces. A new money box must be text too; counts, feet and percents stay number boxes.
+- **Reopening a deal says when it moved (S-F6).** The save file carries `snap {maxLand, planCost, appV}`; `restoreDeal()`
+  re-prices on today's plan list and rules, then names a plan that's gone, a changed plan price and a changed Max land
+  in one warning toast. It is a save-file field only; the deal-sheet payload (`v`, `HANDOFF_VERSION`) is untouched.
+- **Load and Resume ask before replacing an unsaved deal (S-F13).** `dealUnsaved()` compares `serializeDeal()` (minus
+  `ts`) with `_savedSig`, set on save-to-file and at the end of a restore. A blank page never asks. The resume bar is
+  taken down when an autosave replaces the session it offered, and `resumeAutosave()` refuses a session whose `ts` isn't
+  the one the bar named (S-F8). S-F9 (county fills after a reopen) was already fixed by v8.36's `autoManual`; a file
+  saved before v8.36 still keeps those boxes as typed.
+
 ### Architecture & footguns
 - **Stay single-file & buildless.** Flag any added framework, bundler, npm build step, or
   new runtime dependency. Export libs (`jsPDF`, `ExcelJS`) are **CDN, lazy-loaded only on
@@ -1204,6 +1225,8 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
+  - **v8.45 (exports + state): Max land $256,586 unchanged**, hash **`d8b21384601c`**: the only change in `getReportData()` is the new
+    top-level `asking` (0 on the check deal); with `asking` deleted it is v8.44's `54155a16bebc`.
   - **v8.42 (inner units): Max land $256,586**, hash **`54155a16bebc`** (recorded without opening Compare builds or the
     PDF). 3 × Dayton has 1 inner unit, so Base ARV / unit is $364,315 (0.9933 × $366,760), Base profit / unit $115,320
     ($117,618 before), total $345,960, CoC 46.3%, opening offer $205,000 ($210,000 before), stress profit $50,721. The loan
