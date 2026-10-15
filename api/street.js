@@ -444,10 +444,12 @@ export const NEXT_DOOR_FT = 300, STORE_FT = 1320;
 const CAMA_TABLES = `${MECK}/CamaDataTables/MapServer`;   // 1 = buildings, 3 = parcels (gis2 = latitude, gis1 = longitude)
 const STORE_BUILDINGS = ['CONVENIENCE STORE', 'MINI MART CONVENIENCE STORE', 'FAST FOOD/CONVENIENCE STORE'];
 const STORE_USES = ['CONVENIENCE STORE', 'CONVIENCE/FAST FOOD STORE', 'SERVICE STATION'];   // the county's spelling
-const STORE_TTL_MS = 12*3600000;
+const STORE_TTL_MS = 12*3600000, AROUND_MS = 8000;
 let _stores = null;   // {at, p}: one fetch shared by concurrent requests; a failed fetch isn't kept
-function storeList(fetchSignal){
+// Its own deadline, not a caller's signal: one request's abort mustn't fail the fetch every other request is waiting on.
+function storeList(){
   if(_stores && Date.now()-_stores.at < STORE_TTL_MS) return _stores.p;
+  const fetchSignal = () => AbortSignal.timeout(AROUND_MS);
   const p = (async ()=>{
     const b = await allRows(`${CAMA_TABLES}/1`, {where:`buildingtype IN (${STORE_BUILDINGS.map(t=>`'${t}'`).join(',')})`, orderByFields:'objectid'}, 'parcelid', fetchSignal);
     const pids = [...new Set(b.rows.map(r=>r.parcelid).filter(Boolean))];
@@ -460,9 +462,13 @@ function storeList(fetchSignal){
   p.catch(()=>{ if(_stores && _stores.p===p) _stores = null; });
   return p;
 }
+// ctx: a copy of the request's camaQuery() state, so a hiccup on this late, parallel read doesn't move the rest of the
+// request (and its note) onto the backup tables. fetchSignal: AROUND_MS, with the caller's when it has one.
 async function aroundLot(pid, lat, lng, ctx, fetchSignal){
-  const [nd, stores] = await Promise.all([camaRows({near:{lat, lng, ft:NEXT_DOOR_FT}}, ctx, fetchSignal), storeList(fetchSignal)]);
-  const biz = new Map(); nd.rows.forEach(r=>{ if(r.pid!==pid && isNonRes(r)) biz.set(r.pid, r); });   // one per parcel
+  const sig = () => fetchSignal && AbortSignal.any ? AbortSignal.any([AbortSignal.timeout(AROUND_MS), fetchSignal()]) : AbortSignal.timeout(AROUND_MS);
+  const [nd, stores] = await Promise.all([camaRows({near:{lat, lng, ft:NEXT_DOOR_FT}}, Object.assign({}, ctx), sig), storeList()]);
+  // one per parcel; a parcel needs a land-use description to be named a business (a blank one on a C code is a remnant)
+  const biz = new Map(); nd.rows.forEach(r=>{ if(r.pid!==pid && (r.landuse_description||'').trim() && isNonRes(r)) biz.set(r.pid, r); });
   const uses = {}; biz.forEach(r=>{ const u=(r.landuse_description||r.lusecode||'').trim(); uses[u]=(uses[u]||0)+1; });
   const ref = {lat, lng}, near = stores.filter(x=>x.pid!==pid).map(x=>{ const q=toFt(ref, x.lat, x.lng); return Math.round(Math.hypot(q.x, q.y)); })
     .filter(d=>d<=STORE_FT).sort((a,b)=>a-b);
