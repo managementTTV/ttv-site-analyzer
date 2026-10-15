@@ -1605,6 +1605,7 @@ const ATTACHED_RULES={
 };
 const ATTACHED_DEFAULT={maxBuildingLen:null,sublotParentOnly:null,
   note:'Attached / townhouse subplot rules not yet loaded for this county — verify the local max building length, whether unit lots are exempt from min lot width/area, and access/frontage rules with the jurisdiction.'};
+// v8.48: keyed by zoneJur(), so a town with its own code (Huntersville) doesn't get Charlotte's UDO rules
 function attachedRules(county){return ATTACHED_RULES[county]||ATTACHED_DEFAULT;}
 const COUNTY_ZONES={
   'Mecklenburg':['N1-A','N1-B','N1-C','N1-D','N1-E','N1-F','N2-A','N2-B','N2-C','N2-A \u00b7 townhomes 5+','N2-B \u00b7 townhomes 5+','N2-C \u00b7 townhomes 5+','UR-2','UR-3','UR-4'],
@@ -1621,7 +1622,7 @@ const COUNTY_ZONES={
 // data/zoning-db.json is the file research/data/zoning-2026-10-08/build_table.py writes, byte-identical to the Drive copy
 // the sheet's applyZoningDatabase() reads (09 - Automation/UW Templates (management only), id 1aP0FuatasXMpVR6_E3HnyrcuIT8otrGD).
 // To change a row, fix it in verify/*.json, rebuild, and copy the output to Drive and here: one fix, both tools. Only the
-// re-checked rows load (the "Checked" column); the sheet's older county rows stay on the consts above. Loading it:
+// re-checked rows load (a date in the "Checked" column); the sheet's older county rows stay on the consts above. Loading it:
 // - each town (Huntersville, Concord, Gastonia…) gets its own zone list, picked in #zone-town. Its keys are the sheet's
 //   own (column A | column B: "Huntersville|NR · townhomes"), so the names match the sheet's;
 // - a jurisdiction that is also a County option (Kannapolis, Monroe) replaces that option's list: the checked rows
@@ -1643,7 +1644,7 @@ function applyZoningDb(d){
     if(!Array.isArray(r))return;
     const txt=n=>String(r[C[n]]==null?'':r[C[n]]).replace(/^'/,'').trim();
     const jur=txt('City/Town/County'),zone=txt('Zoning');
-    if(!jur||!zone||!txt('Checked'))return;   // the sheet's older rows ("Not re-checked") stay on the consts above
+    if(!jur||!zone||!/^\d{4}-\d\d-\d\d/.test(txt('Checked')))return;   // the sheet's older rows ("Not re-checked (older data)") stay on the consts above
     const key=jur+'|'+zone,uses={};
     USE_COLS.forEach(([k,n])=>{uses[k]=txt(n);});
     ZONING_DB.info[key]={uses,home:txt('Home type'),rules:txt('Use rules'),sbNotes:txt('Setback notes'),other:txt('Other limits'),
@@ -4944,7 +4945,7 @@ function onUnitsChange(){
   applySurveyDefault();   // v8.36: one lot or a split
   updateAttachedBuild();syncUnitsUI();
   calcAll();renderSublot();
-  calcBUA();renderFitCheck();renderPlanFitMsg();
+  calcBUA();renderFitCheck();renderPlanFitMsg();renderZoneUses();   // v8.48: Units can move the plan's home type
   drawDiagram();
 }
 function bumpUnits(delta){const u=$('units');if(!u)return;const cur=Math.max(1,parseInt(u.value)||1);u.value=Math.min(20,Math.max(1,cur+delta));onUnitsChange();}
@@ -4987,7 +4988,7 @@ function subplotSvg(u,unitW,unitD,maxLen){
 }
 function renderSubplot(p){
   const box=$('sublot-result');if(!box)return;
-  const county=($('county-sel')||{}).value||'';
+  const county=zoneJur();   // v8.48: the town whose code the zone list is (Charlotte's UDO rules are Mecklenburg's list only)
   const rules=attachedRules(county);
   const u=Math.max(1,pv('units'));
   const row=planLayout(p,u),unitW=p.w,unitD=p.d,bldgLen=row.w,maxLen=rules.maxBuildingLen;   // v8.31: the one row rule
@@ -5181,7 +5182,7 @@ function onPlanChange(){
   {const gk=isCustom?'__CUSTOM__':name,fg=$('front-garage');
    if(fg&&gk!==_garageFor){const po=isCustom?null:PLANS.find(x=>x.n===name);fg.checked=!!(po&&po.fg);_garageFor=gk;}}
   renderGarageFt();
-  renderPlanFitMsg();
+  renderPlanFitMsg();renderZoneUses();   // v8.48: the zone's home types mark this plan's
   const isDuet=(!isCustom)&&(val.includes('Duet')||val.includes('Triplex'));
   const county=$('county-sel').value;
   const dp=$('duet-prompt');if(dp)dp.style.display=(isDuet&&county==='Mecklenburg')?'':'none';
@@ -5253,7 +5254,7 @@ function unitsWarnings(L,fs,name){
     +(u%L.per?` (room for ${L.bldgs*L.per}: Units isn’t a whole number of buildings)`:'')
     +`. They’re tested side by side${L.gap?`, ${L.gap} ft apart (two side setbacks)`:' with no gap (no side setback)'}, as if the lot were split: check the sub-lot card.`);
   if(L.attached&&u>1){
-    const county=($('county-sel')||{}).value||'',maxLen=attachedRules(county).maxBuildingLen;
+    const county=zoneJur(),maxLen=attachedRules(county).maxBuildingLen;   // v8.48
     if(maxLen&&L.w>maxLen)out.push(`A row of ${u} is ${L.w.toFixed(0)} ft long, over ${county}’s ${maxLen} ft max building length (${Math.floor(maxLen/L.unitW)} units at most).`);
   }
   // one building that doesn't fit already says so; this is for a row or for several buildings

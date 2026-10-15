@@ -290,7 +290,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 ### Architecture & footguns
 - **Stay single-file & buildless.** Flag any added framework, bundler, npm build step, or
   new runtime dependency. Export libs (`jsPDF`, `ExcelJS`) are **CDN, lazy-loaded only on
-  export** — keep them that way.
+  export** — keep them that way. One static data file is fetched at load, `data/zoning-db.json` (v8.48, see "Town
+  zoning"): it's the locked sheet's own Zoning Database, shared on purpose, not a build output of this repo.
 - **Browser storage is limited to the two existing `localStorage` keys** — no others:
   `ttv-analyzer-last-seen-version` (release-notes gate) and `ttv-analyzer-autosave`
   (the v7.4 autosave/resume flow: `scheduleAutosave`, `resumeAutosave`,
@@ -298,8 +299,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   *new* storage key or any `sessionStorage` use, but do **not** flag routine maintenance
   of those two existing keys.
 - **Don't hand-maintain derived data.** `p.val`, `PLAN_KEY_MAP`, `PLANS_FP` and all
-  dropdowns are generated from the `const`s (`PLANS`, `SETBACKS`, `COUNTY_ZONES`…). Flag
-  edits that set derived values by hand instead of regenerating them.
+  dropdowns are generated from the `const`s (`PLANS`, `SETBACKS`, `COUNTY_ZONES`…) and, since v8.48, from
+  `data/zoning-db.json`. Flag edits that set derived values by hand instead of regenerating them, and any hand edit
+  of `data/zoning-db.json` (it must stay byte-identical to the Drive copy the sheet reads).
 - **No secrets committed.** No tokens, keys, or private URLs in `index.html` or
   `api/gis.js`. The ArcGIS org URL is resolved at runtime from an item id
   (`cf66446f...`) on purpose — keep it that way; don't hard-code it.
@@ -927,11 +929,46 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   (handoff §4.4, §12), *not* something already removed. Don't add them anywhere new, and
   flag any change that reintroduces them **or that assumes they've already been deleted**.
 - Townhome/attached plays *should* be gated by the **permitted-use matrix**, not geometry
-  alone (attached is not by-right in N1-A..E). **That matrix is NOT wired into the app
-  yet** — today the attached flow runs on plan type + geometry/length checks and only
-  shows a "verify the zone permits" note (handoff §10, §12; it's a roadmap item). Flag any
+  alone (attached is not by-right in N1-A..E). **That matrix is NOT wired into the app's
+  fit or money yet.** Since v8.48 it is *shown*: `renderZoneUses()` lists the zone row's P / C / S / No for house,
+  duplex, triplex, quad and townhome from the sheet's table, marks the plan's column (`planUseCol()`: in Charlotte a
+  2–4 unit townhome row is a duplex / triplex / quadraplex, §15.3) and warns on No (red) or S (amber). Nothing is
+  blocked and no number moves; the attached flow still runs on plan type + geometry/length checks. Flag any
   change that hard-codes a townhome *recommendation* as if the gate already existed, and
   treat wiring the use-matrix gate as still-to-do.
+
+**Town zoning (v8.48): one table for the sheet and the analyzer.**
+- **The source.** `data/zoning-db.json` is the file `research/data/zoning-2026-10-08/build_table.py` writes (project
+  folder, outside this repo), byte-identical to the Drive copy the locked sheet's `applyZoningDatabase()` reads
+  (`09 - Automation/UW Templates (management only)/zoning-database-2026-10-08.json`, id `1aP0FuatasXMpVR6_E3HnyrcuIT8otrGD`).
+  To change a row: fix `verify/*.json`, rebuild, copy the output over the Drive file (it keeps its id) and into
+  `data/` by PR, then re-run `applyZoningDatabase()` in the template. Never edit the repo copy by hand.
+- **Loading.** `ZONING_LOADED` fetches it at start; `applyZoningDb()` reads columns by header name and takes only
+  re-checked rows (a date in "Checked"; the sheet's "Not re-checked (older data)" county rows stay on the consts). Keys
+  are the sheet's own, column A | column B ("Huntersville|NR · townhomes", "Concord|RV · townhomes (verify)").
+  - A town becomes its own list in `ZONING_DB.townZones`, picked in `#zone-town` ("Zoning Code (town)"). `zoneJur()`
+    (the town, else the County option) is whose list `zone-sel` shows and whose code `attachedRules()` gets.
+  - A jurisdiction that is also a County option (Kannapolis, Monroe) replaces that option's list and rows: the
+    checked numbers supersede the old consts (Kannapolis R6 min width 50 → 60, rears 30 → 25…), which stay only as the
+    fallback when the file can't load.
+  - **Mecklenburg rows never overwrite a `SETBACKS` row** (all 12 UDO rows matched the table on 2026-10-15). Charlotte
+    zones with no row (CG, OFC, IMU, TOD…, 41 rows) are added after them. A table townhome row is `mfa` in Charlotte,
+    `thRow` elsewhere; either way detached lot splits follow the base row (`renderSublot()`).
+  - A blank in the table stays blank (the fit check then asks for it). `garage` is blank for table rows.
+- **The town follows the address.** `syncTownFromCity()` sets `#zone-town` from the typed City (`townForCity()`;
+  "Greenville SC" needs state SC) and from County GIS's address-point city when the parcel has no Charlotte zoning
+  (`applyGisData()`); a Charlotte zoning answer puts it back on Charlotte's list. A hand-picked town (`markManual`)
+  stays. Picking a town with no County sets the County (`townCounty()` via `CITY_COUNTY`). Moving from one list to
+  another clears the zone and setbacks, like a county change.
+- **Rows marked "(verify)"** (the 5 planner questions, `PLANNER_CALLS.md`) get an amber "Verify with the planner" line
+  in `renderZoneNote()`. Every table row links to its own section of the code (`zone-udo-link`).
+- **Saved deals.** `zone-town` is a `.page` field, so it saves. `restoreDeal()` waits for `ZONING_LOADED` (a town zone
+  needs the town lists), then sets the town before `onCountyChange()` builds the list. A file from before v8.48 has
+  no town: it reopens on the County option's list, as before. If the file fails to load, a saved town zone reopens
+  as a "(saved)" stub and `renderZoneNote()` says the table didn't load.
+- **The hand-off doesn't carry the town yet.** The payload sends `county` and the zone name; for a town zone the
+  sheet finds no "Mecklenburg|NR · townhomes" and leaves K6 blank with a note. Sending the town as column A is the
+  hand-off chat's job (Chat 11), not a payload edit here.
 
 **Current state, not target (v8.15):**
 - **The Mecklenburg N2 rows follow the UDO** (Charlotte UDO as amended 3/23/2026, text amendment 2025-118).
@@ -1233,6 +1270,9 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
+  - **v8.48 (town zoning): Max land $256,586 unchanged**, hash **`d8b21384601c`** (same as v8.46; envelope 3,309 sf).
+    N1-B now shows its home types (House P, Duplex C, Triplex C marked, Quad C, Townhome No) and links to the UDO's
+    Neighborhood 1 article; no number in `getReportData()` moves.
   - **v8.46 (exports + state): Max land $256,586 unchanged**, hash **`d8b21384601c`**: the only change in `getReportData()` is the new
     top-level `asking` (0 on the check deal); with `asking` deleted it is v8.44's `54155a16bebc`.
   - **Current reference (v8.42 through v8.44, re-run on a fresh page 2026-10-15 on v8.44): Max land $256,586, hash
