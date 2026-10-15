@@ -763,7 +763,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.45 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.46 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -899,7 +899,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="field"><label>Lot Width (ft)</label><input type="number" id="lot-w" placeholder="e.g. 75" oninput="calcBuildable()"></div>
           <div class="field"><label>Lot Depth (ft)</label><input type="number" id="lot-d" placeholder="e.g. 180" oninput="calcBuildable()"></div>
         </div>
-        <div class="field"><label>Lot Area (sq ft) — auto or manual override</label><input type="number" id="lot-sf" placeholder="Auto from W × D" oninput="calcBuildable()"><p class="note">Enter actual sq ft if lot is irregular.</p></div>
+        <div class="field"><label>Lot Area (sq ft) — auto or manual override</label><input type="text" inputmode="decimal" id="lot-sf" placeholder="Auto from W × D" oninput="calcBuildable()"><p class="note">Enter actual sq ft if lot is irregular.</p></div>
         <div class="toggle-row" style="margin-top:4px">
           <span class="toggle-lbl">Corner lot (corner side setback applies to one side)</span>
           <label class="tog"><input type="checkbox" id="corner-lot" onchange="calcBuildable()"><div class="tog-track"></div><div class="tog-thumb"></div></label>
@@ -962,7 +962,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
 
         <div class="field" style="margin-top:10px">
           <label>Total Lot Area (sq ft) &mdash; from GIS / Polaris (overrides calculated)</label>
-          <input type="number" id="lot-sf-poly" placeholder="Optional &mdash; read off Polaris for accuracy" oninput="calcBuildable()">
+          <input type="text" inputmode="decimal" id="lot-sf-poly" placeholder="Optional &mdash; read off Polaris for accuracy" oninput="calcBuildable()">
         </div>
       </div>
 
@@ -1027,12 +1027,12 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="card">
         <div class="card-title"><span class="dot"></span>Buildable Envelope</div>
         <div id="buildable-result"></div>
-        <div id="rect-override-field" class="field" style="margin-top:16px"><label>Buildable Area Override (sq ft)</label><input type="number" id="buildable-override" placeholder="Leave blank to use calculated value" oninput="calcBuildable()"><p class="note">Use if lot is irregular and you've measured in GIS.</p></div>
+        <div id="rect-override-field" class="field" style="margin-top:16px"><label>Buildable Area Override (sq ft)</label><input type="text" inputmode="decimal" id="buildable-override" placeholder="Leave blank to use calculated value" oninput="calcBuildable()"><p class="note">Use if lot is irregular and you've measured in GIS.</p></div>
         <div id="bua-section" style="display:none">
           <div class="bua-block">
             <div class="bua-title">Mecklenburg BUA / Watershed Check</div>
             <div class="fr2">
-              <div class="field"><label>Estimated Hardscape (sf)</label><input type="number" id="bua-hardscape" value="500" placeholder="500" oninput="calcBUA()"><p class="note">Driveway + walks. Default 500 sf; blank uses the default, 0 means none.</p></div>
+              <div class="field"><label>Estimated Hardscape (sf)</label><input type="text" inputmode="decimal" id="bua-hardscape" value="500" placeholder="500" oninput="calcBUA()"><p class="note">Driveway + walks. Default 500 sf; blank uses the default, 0 means none.</p></div>
               <div style="padding-top:20px" id="bua-result"></div>
             </div>
             <div class="bua-meter"><div class="bua-fill" id="bua-fill"></div></div>
@@ -1244,9 +1244,9 @@ body[data-screen="2"] .page{padding-bottom:108px}
             <div class="field"><label>House Depth (ft)</label><div class="input-wrap"><input type="number" id="cust-d" placeholder="e.g. 55" oninput="applyCustomDims()"><span class="sfx">ft</span></div></div>
           </div>
           <div class="fr3" style="margin-top:2px">
-            <div class="field"><label>Finished SF <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><input type="number" id="cust-sf" placeholder="—" oninput="applyCustomDims()"></div>
+            <div class="field"><label>Finished SF <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><input type="text" inputmode="decimal" id="cust-sf" placeholder="—" oninput="applyCustomDims()"></div>
             <div class="field"><label>Units <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><input type="number" id="cust-u" value="1" min="1" oninput="applyCustomDims()"></div>
-            <div class="field"><label>Build Cost <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="cust-c" placeholder="—" oninput="applyCustomDims()"></div></div>
+            <div class="field"><label>Build Cost <span style="color:var(--text-dim);font-weight:400;font-size:10px">(opt)</span></label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="cust-c" placeholder="—" oninput="applyCustomDims()"></div></div>
           </div>
           <div id="cust-fit-msg" style="margin-top:6px"></div>
           <p class="note" style="margin-top:4px">Enter a width &amp; depth to plot the footprint on the Site Intelligence diagram and run the fit check. Leave build cost blank to test the footprint only; the cost stack stays at $0 until you enter one.</p>
@@ -1261,8 +1261,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="card-title"><span class="dot"></span>Utility Taps</div>
         <p class="note" style="margin-bottom:10px">Auto-filled from the county/city on Site Intelligence — per unit. Override with a project-specific quote if you have one.</p>
         <div class="fr2">
-          <div class="field"><label>Water Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-water" value="0" oninput="markManual(this);calcAll()" onblur="renderTapHint()"></div></div>
-          <div class="field"><label>Sewer Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="tap-sewer" value="0" oninput="markManual(this);calcAll()" onblur="renderTapHint()"></div></div>
+          <div class="field"><label>Water Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="tap-water" value="0" oninput="markManual(this);calcAll()" onblur="renderTapHint()"></div></div>
+          <div class="field"><label>Sewer Tap (per unit)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="tap-sewer" value="0" oninput="markManual(this);calcAll()" onblur="renderTapHint()"></div></div>
         </div>
         <div class="toggle-row">
           <span class="toggle-lbl">No water tap (existing / not available)</span>
@@ -1272,19 +1272,19 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <span class="toggle-lbl">No sewer tap — install septic instead</span>
           <label class="tog"><input type="checkbox" id="skip-sewer" onchange="onSewerSkip()"><div class="tog-track"></div><div class="tog-thumb"></div></label>
         </div>
-        <div class="field" id="septic-f" style="display:none;margin-top:8px"><label>Septic Install (per lot)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="septic-cost" value="8000" oninput="calcAll()"></div><p class="note">Default estimate — confirm with installer. Per lot, not × units (for multi-unit on separate systems, enter the combined cost). Set $0 if an existing sewer tap is present.</p></div>
+        <div class="field" id="septic-f" style="display:none;margin-top:8px"><label>Septic Install (per lot)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="septic-cost" value="8000" oninput="calcAll()"></div><p class="note">Default estimate — confirm with installer. Per lot, not × units (for multi-unit on separate systems, enter the combined cost). Set $0 if an existing sewer tap is present.</p></div>
         <div id="tap-hint" class="warn" style="margin-top:8px;display:none"></div>
         <div id="tap-msg" style="margin-top:8px"></div>
       </div>
       <div class="card">
         <div class="card-title"><span class="dot"></span>Other Soft Costs</div>
         <div class="fr3">
-          <div class="field"><label>Survey</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="survey" value="1500" oninput="markManual(this);calcAll()"></div></div>
-          <div class="field"><label>Appraisal</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="appraisal" value="725" oninput="calcAll()"></div></div>
-          <div class="field"><label>Insurance (build period)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="insurance" value="1400" oninput="calcAll()"></div></div>
+          <div class="field"><label>Survey</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="survey" value="1500" oninput="markManual(this);calcAll()"></div></div>
+          <div class="field"><label>Appraisal</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="appraisal" value="725" oninput="calcAll()"></div></div>
+          <div class="field"><label>Insurance (build period)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="insurance" value="1400" oninput="calcAll()"></div></div>
         </div>
         <p class="note" style="margin-top:4px">Survey is the front-end survey, once per project: $1,500 for one house on one lot, $3,000 when the project is split into lots (townhomes, a duet, the triplex, or more than one unit). Phoenix Land Surveying&rsquo;s 9/2/26 quote, rounded. The per-house stakeout is in Slate&rsquo;s build.</p>
-        <div class="field" style="margin-top:10px"><label for="custom-plans">Custom plans (architect / engineer)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="custom-plans" value="0" min="0" oninput="markManual(this);calcAll()"></div><p class="note">Only when an architect or engineer has to draw new plans. Once per deal, financed with the other costs.</p></div>
+        <div class="field" style="margin-top:10px"><label for="custom-plans">Custom plans (architect / engineer)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="custom-plans" value="0" min="0" oninput="markManual(this);calcAll()"></div><p class="note">Only when an architect or engineer has to draw new plans. Once per deal, financed with the other costs.</p></div>
       </div>
       <div class="card">
         <div class="card-title"><span class="dot"></span>Upgrades (per unit)</div>
@@ -1316,8 +1316,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="card">
         <div class="card-title"><span class="dot"></span>Existing Structure</div>
         <div class="fr2">
-          <div class="field"><label>Structure Size (sq ft)</label><input type="number" id="demo-sqft" value="0" oninput="markManual(this);calcLF()" placeholder="0 = vacant"><p class="note">$8–$10/sf. Enter 0 if vacant.</p></div>
-          <div class="field"><label>Demo Rate ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="demo-rate" value="9" oninput="calcLF()"></div></div>
+          <div class="field"><label>Structure Size (sq ft)</label><input type="text" inputmode="decimal" id="demo-sqft" value="0" oninput="markManual(this);calcLF()" placeholder="0 = vacant"><p class="note">$8–$10/sf. Enter 0 if vacant.</p></div>
+          <div class="field"><label>Demo Rate ($/sf)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="demo-rate" value="9" oninput="calcLF()"></div></div>
         </div>
       </div>
       <div class="card">
@@ -1341,7 +1341,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
           <div class="fr3">
             <div class="field"><label># ROW Trees</label><input type="number" id="row-count" value="0" min="0" oninput="calcLF()"></div>
             <div class="field"><label>Avg Diameter (inches)</label><input type="number" id="row-diam" value="0" oninput="calcLF()"></div>
-            <div class="field"><label>Removal Labor / Tree</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="row-labor" value="3500" oninput="calcLF()"></div></div>
+            <div class="field"><label>Removal Labor / Tree</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="row-labor" value="3500" oninput="calcLF()"></div></div>
           </div>
           <div id="row-tree-msg" style="margin-top:6px"></div>
         </div>
@@ -1359,21 +1359,21 @@ body[data-screen="2"] .page{padding-bottom:108px}
         </div>
         <div class="fr2">
           <div class="field"><label>Loads of Dirt</label><input type="number" id="dirt-loads" value="0" min="0" oninput="calcLF()"><p class="note">~5 loads = 4 ft grade over 130 ft</p></div>
-          <div class="field"><label>Cost / Load</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="dirt-rate" value="500" oninput="calcLF()"></div></div>
+          <div class="field"><label>Cost / Load</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="dirt-rate" value="500" oninput="calcLF()"></div></div>
         </div>
         <div class="fr2">
-          <div class="field"><label>Grading</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="grading" value="2500" oninput="markManual(this);calcLF()"></div></div>
-          <div class="field"><label>Site Prep / Driveway</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="site-prep" value="750" oninput="calcLF()"></div></div>
+          <div class="field"><label>Grading</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="grading" value="2500" oninput="markManual(this);calcLF()"></div></div>
+          <div class="field"><label>Site Prep / Driveway</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="site-prep" value="750" oninput="calcLF()"></div></div>
         </div>
         <div class="fr2">
-          <div class="field"><label>Utilities / Connections</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="utilities" value="1500" oninput="calcLF()"></div></div>
-          <div class="field"><label>Framing Labor Buffer</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="framing" value="600" oninput="calcLF()"></div></div>
+          <div class="field"><label>Utilities / Connections</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="utilities" value="1500" oninput="calcLF()"></div></div>
+          <div class="field"><label>Framing Labor Buffer</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="framing" value="600" oninput="calcLF()"></div></div>
         </div>
         <div class="fr2">
-          <div class="field"><label>Culverts</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="culverts" value="0" oninput="calcLF()"></div></div>
-          <div class="field"><label>Landscaping</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="landscaping" value="500" oninput="calcLF()"></div></div>
+          <div class="field"><label>Culverts</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="culverts" value="0" oninput="calcLF()"></div></div>
+          <div class="field"><label>Landscaping</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="landscaping" value="500" oninput="calcLF()"></div></div>
         </div>
-        <div class="field"><label>Site Work to SOP Band</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="sop-band" value="0" min="0" oninput="markManual(this);calcLF()"></div><p class="note">The County GIS auto-fill tops the site work (clearing through landscaping) up to the SOP band&rsquo;s low end: $15,000 flat and clear, $25,000 trees or slope, $40,000 heavy trees and steep. Type your own figure, or 0, to replace it.</p></div>
+        <div class="field"><label>Site Work to SOP Band</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="sop-band" value="0" min="0" oninput="markManual(this);calcLF()"></div><p class="note">The County GIS auto-fill tops the site work (clearing through landscaping) up to the SOP band&rsquo;s low end: $15,000 flat and clear, $25,000 trees or slope, $40,000 heavy trees and steep. Type your own figure, or 0, to replace it.</p></div>
         <label class="note" style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer"><input type="checkbox" id="lf-house-min" checked onchange="calcLF()"> <span>$30,000 minimum lot factor with a house to tear down (Structure Size over 0; Adam&rsquo;s minimum, once per deal). A deal saved before v8.39 reopens with this off, so its Max land doesn&rsquo;t move.</span></label>
       </div>
     </div>
@@ -1409,9 +1409,9 @@ body[data-screen="2"] .page{padding-bottom:108px}
         </div>
         <div class="fr2">
           <div class="field"><label>Loan Points</label><div class="input-wrap"><input type="number" id="fin-points" value="1" step="0.25" class="sfx-pad" oninput="calcFinancing()"><span class="sfx">%</span></div></div>
-          <div class="field"><label>Origination / Doc Fee (flat)</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="fin-doc-fee" value="750" oninput="calcFinancing()"></div></div>
+          <div class="field"><label>Origination / Doc Fee (flat)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="fin-doc-fee" value="750" oninput="calcFinancing()"></div></div>
         </div>
-        <div class="field"><label for="fin-tax">Annual Property Tax</label><div class="input-wrap"><span class="pfx">$</span><input type="number" id="fin-tax" value="0" oninput="markManual(this);calcFinancing()"></div><p class="note">Yearly amount, prorated by loan term per scenario. A County GIS lookup fills it from the county bill.</p><p class="note" id="tax-hint" style="display:none"></p></div>
+        <div class="field"><label for="fin-tax">Annual Property Tax</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="fin-tax" value="0" oninput="markManual(this);calcFinancing()"></div><p class="note">Yearly amount, prorated by loan term per scenario. A County GIS lookup fills it from the county bill.</p><p class="note" id="tax-hint" style="display:none"></p></div>
       </div>
 
       <!-- Loan Term per Scenario -->
@@ -2280,7 +2280,12 @@ let _structDrag = null;
 const $=id=>document.getElementById(id);
 const fmt=n=>(!n&&n!==0)||isNaN(n)?'—':'$'+Math.round(n).toLocaleString();
 const fmtN=n=>isNaN(n)?'—':Math.round(n).toLocaleString();
-const pv=id=>{const e=$(id);if(!e)return 0;const v=parseFloat((e.value||'').replace(/,/g,''));return isNaN(v)?0:v;};
+// v8.46 (S-F5): money and area boxes are text, so Safari/Firefox keep "11,521"; commas, $ and spaces are dropped here
+// The boxes that were number boxes (v8.46) still refuse letters, as a number box does: "12k" or "abc" is dropped as it's typed
+// rather than read as 12 or 0 without a word. Capture phase, so it runs before the box's own oninput.
+const _NUM_TEXT=new Set(['cust-c','tap-water','tap-sewer','septic-cost','survey','appraisal','insurance','custom-plans','demo-rate','row-labor','dirt-rate','grading','site-prep','utilities','framing','culverts','landscaping','sop-band','fin-doc-fee','fin-tax','lot-sf','lot-sf-poly','demo-sqft','cust-sf','buildable-override','bua-hardscape']);
+document.addEventListener('input',e=>{const t=e.target;if(t&&_NUM_TEXT.has(t.id)){const v=t.value.replace(/[^0-9.,$\s-]/g,'');if(v!==t.value)t.value=v;}},true);
+const pv=id=>{const e=$(id);if(!e)return 0;const v=parseFloat((e.value||'').replace(/[$,\s]/g,''));return isNaN(v)?0:v;};
 // v8.8 MONEY TEXT FIELDS. Land cost, asking price and the three ARV $/sf fields are type="text", so "$185,000"
 // can be typed or pasted. pv() can't read that: it drops every comma and runs parseFloat, so "$185,000" was 0,
 // "185k" was 185 and "385,5" was 3,855, with no warning. mv() reads these five with parseRuleValue()'s rules
@@ -5787,6 +5792,7 @@ function getReportData(){
     date:new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),
     fin,cost,scenarios,psf,terms,arvFactor,innerUnits,
     maxLand:($('max-land-display')||{}).textContent||'—',
+    asking:mv('asking-price')||0,   // v8.46 (N2.3): the PDF's Deal Summary and the workbook's Inputs
     offer:offerCheck(landCost),   // v8.38: opening offer, the profit rule at this land and at asking, the SOP-08 stress
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     lfItems:((typeof window!=='undefined'&&window._lfItems)||[]).slice(),
@@ -5825,7 +5831,8 @@ function buildReportHTML(canvasDataUrl){
   const baseProfit=base.hasArv?sign(base.profit):'<span style="color:#647a8e">Enter ARV</span>';
   const baseCoc=base.hasArv?signPct(base.coc):'—';
   // v8.8: the same notes as the screen's #lever-warn, so the memo can't quietly run on a misread land or ARV
-  const inputNotes=moneyIssues().map(i=>i.msg).join(' ');
+  // v8.46 (X-L6): and the profit-rule and loan-term notes (#profit-rule-warn, #term-warn), which the memo left out
+  const inputNotes=[...moneyIssues(),...d.fin.profitRule.issues,...getTerms().issues].map(i=>i.msg).join(' ');
   // v8.38: the asking check and the SOP-08 stress test, as on the screen (green, amber or red line; the stress box only
   // when it fails)
   const offerNotes=(()=>{
@@ -5837,6 +5844,11 @@ function buildReportHTML(canvasDataUrl){
       h+='<div class="avoid" style="border-left:3px solid '+col+';padding:5px 10px;margin:6px 0;font-size:10px"><b>Asking '+F(o.asking)+':</b> '
         +(ok?'clears the profit rule.':'misses the profit rule'+(o.maxLand>0?' ('+F(o.asking-o.maxLand)+' over max land).':' even at $0 land.'))+'</div>';
     }
+    if(o.asking>0&&d.cost.land>0&&Math.round(d.cost.land)>Math.round(o.asking))
+      h+=noteBox('Land above asking','The land cost ('+F(d.cost.land)+') is '+F(d.cost.land-o.asking)+' over the asking price ('+F(o.asking)+').');
+    if(o.status&&o.status!=='pass'&&d.cost.land>0)
+      h+=noteBox('Profit rule at '+F(d.cost.land)+' land',(o.status==='under'?'Base profit is under':'Base profit misses')+' the profit rule ('+profitRuleLabels(d.fin.profitRule).text+').'
+        +(o.maxLand>0?' Max land is '+F(o.maxLand)+'.':' It misses even at $0 land.'));
     if(o.stress.warn)h+=noteBox('SOP-08 stress test','ARV \u221210%, Base months + 3 = '+o.stress.term+', build +15%: '+S(o.stress.profit)
       +' profit per unit at '+F(d.cost.land)+' land, under the $10k per unit the SOP asks for. Max land doesn\u2019t change.');
     return h;
@@ -5846,7 +5858,7 @@ function buildReportHTML(canvasDataUrl){
     +noteBox('Check inputs',inputNotes)
     +'<div class="metric-row">'
       +metric('Base-Case Profit / Unit',baseProfit,base.hasArv?('CoC '+base.coc.toFixed(1)+'% (target '+profitRuleLabels(d.fin.profitRule).pct+')'):'',true)
-      +metric('Total All-In',F(d.cost.total),d.units>1?(d.units+' units'):'',true)
+      +metric('Total All-In / Unit',F(base.totalAllIn),'Base case, with holding and sale. Project cost '+F(d.cost.total)+(d.units>1?(' ('+d.units+' units)'):''),true)
       +metric('Cash at Closing',F(d.fin.cash),F(d.fin.cashHold)+' through the hold ('+d.terms.b+' mo)',true)
       +metric('Max Land (Base, profit rule)',d.maxLand,(/^\u2212/.test(d.maxLand)?'Doesn\u2019t work: misses the rule even at $0 land. ':'')+profitRuleLabels(d.fin.profitRule).text
         +(d.offer&&d.offer.opening>0?'<br><b>Opening offer '+F(d.offer.opening)+'</b> (about '+d.offer.pct+'% under)':''),true)
@@ -5859,6 +5871,8 @@ function buildReportHTML(canvasDataUrl){
           +'<tr><td>County / Zone</td><td>'+esc(d.county)+' / '+esc(d.zone)+'</td></tr>'
           +'<tr><td>Lot</td><td>'+(d.lotMode==='poly'?'Irregular (polygon)':(d.lotW&&d.lotD?(d.lotW+"' × "+d.lotD+"' ("+(d.lotW*d.lotD).toLocaleString()+' sf)'):'—'))+'</td></tr>'
           +'<tr><td>Buildable Area</td><td>'+(d.buildable_sf?d.buildable_sf.toLocaleString()+' sf':'—')+'</td></tr>'
+          +'<tr><td>Asking Price</td><td>'+(d.asking>0?F(d.asking):'not entered')+'</td></tr>'
+          +'<tr><td>Land Cost Used</td><td>'+F(d.cost.land)+'</td></tr>'
           +'<tr><td>Units</td><td>'+d.units+'</td></tr>'
           +'<tr><td>Plan Selected</td><td>'+esc(d.plan)+'</td></tr>'
           +'<tr><td>Finished SF / Unit</td><td>'+(d.sf?d.sf.toLocaleString()+' sf':'—')+'</td></tr>'
@@ -5909,7 +5923,7 @@ function buildReportHTML(canvasDataUrl){
     +'<table class="kv avoid">'
       +costRows.map(r=>'<tr'+(r[2]==='sub'?' class="subrow"':'')+'><td>'+r[0]+'</td><td>'+F(r[1])+'</td></tr>').join('')
       +'<tr class="subtotal"><td>All-In (excl. land)</td><td>'+F(c.allInExLand)+'</td></tr>'
-      +'<tr class="total"><td>TOTAL ALL-IN</td><td>'+F(c.total)+'</td></tr>'
+      +'<tr class="total"><td>TOTAL PROJECT COST (land + all-in ex land)</td><td>'+F(c.total)+'</td></tr>'
     +'</table>';
 
   const holdRowsFor=s=>{
@@ -6247,7 +6261,7 @@ function collectModelInputs(d){
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
     // same raw values the screen uses; `||6` etc. would turn a deliberate 0 into a default and move Max Land
-    land:mv('land-cost'),ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
+    land:mv('land-cost'),asking:d.asking||0,ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
     docFee:pv('fin-doc-fee'),annTax:pv('fin-tax'),salePct:pv('sale-cost-pct')/100,
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
@@ -6333,7 +6347,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   inp('survey','Survey (once per project)',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
   inp('plans','Custom Plans (architect / engineer)',M.customPlans,MONEY);
   sec('FINANCING'); inp('ltc','Loan % of Project Cost',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
-  sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
+  sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('ask','Asking Price (reference; 0 = not entered)',M.asking,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
   // v8.13: a note beside each term cell, like the rule cells', when it isn't used as typed (Scenarios row 16 applies
   // the default and the 1-month floor) or is over the app's max; a text term like "12 mo" is otherwise silent
   ['termW','termB','termBest'].forEach(k=>{const x=IN[k], c=wsI.getCell(x.replace('B','C'));
@@ -6479,6 +6493,8 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   head(17,'Loan Amount','Scenarios!B8',MONEY,NAVY);
   head(19,'Cash at Closing','Scenarios!B12',MONEY,STEEL);
   head(21,'Cash Through the Hold (Base)','Scenarios!B31',MONEY,STEEL);
+  {const a=wc.getCell('A8'),b=wc.getCell('B8');a.value='Asking Price';a.font={size:9,color:{argb:'FF566B82'},name:'Arial'};
+   b.value={formula:`IF(N(Inputs!${IN.ask})>0,Inputs!${IN.ask},"not entered")`};b.numFmt=MONEY;b.font={size:10,bold:true,color:{argb:NAVY},name:'Arial'};b.alignment={horizontal:'left'};}
   wc.mergeCells('C6:E6'); wc.getCell('C6').value=[M.county,M.zone,M.units+' unit'+(M.units>1?'s':''),M.planName].filter(Boolean).join('  \u00b7  ');
   wc.getCell('C6').font={size:9.5,color:{argb:'FF566B82'},name:'Arial'};
   if(M.gis){let gr=9;
@@ -6957,11 +6973,11 @@ function renderCompare(){
 }
 /* ════════ V7.4 UX LAYER (additive — no math functions modified) ════════ */
 // Toasts (also absorbs legacy alert())
-function showToast(msg,type){
+function showToast(msg,type,ms){
   const w=$('toast-wrap');if(!w){console.log('[toast]',msg);return;}
   const t=document.createElement('div');t.className='toast '+(type||'');t.textContent=String(msg);
   w.appendChild(t);
-  setTimeout(()=>{t.classList.add('out');setTimeout(()=>t.remove(),300);},4200);
+  setTimeout(()=>{t.classList.add('out');setTimeout(()=>t.remove(),300);},ms||4200);
 }
 window.alert=function(m){showToast(m,'warn');};
 
@@ -7081,7 +7097,10 @@ function serializeDeal(){
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     gisMismatch:_gisMismatch,   // v8.16: a reopened parcel that isn't this address stays flagged across saves
     sheetHandoff:_sheetHandoff,   // v8.21: sent to its deal sheet
-    arvTool:_arvTool};   // v8.41: what the last county pull said about the ARV (vet verdict)
+    arvTool:_arvTool,   // v8.41: what the last county pull said about the ARV (vet verdict)
+    // v8.46 (S-F6): what the deal read when it was saved, so a reopen can say when today's plan prices or rules moved it.
+    // The save file only: the deal-sheet hand-off payload is built elsewhere and doesn't carry it.
+    snap:{maxLand:(($('max-land-display')||{}).textContent||'').trim(),planCost:currentPlanCost||0,appV:APP_VERSION}};
 }
 function restoreDeal(d){
   // Check the file before step 0 resets the page: every field entry is an object, at least one is this page's, and
@@ -7233,15 +7252,37 @@ function restoreDeal(d){
      renderTaxHint();}
     updateLinks();updateGISLink();   // step 1 built these before the street and ZIP were back
     updateDealPulse();
+    // v8.46 (S-F6): reopening re-prices on today's plan list and rules, so say so when that moved the deal (a saved plan
+    // that's gone, its price, or the Max land) instead of leaving it to be noticed
+    const moved=[];
+    {const sn=d.snap&&typeof d.snap==='object'?d.snap:null,mlNow=(($('max-land-display')||{}).textContent||'').trim();
+     if(d.plan&&planNameFromVal($('plan-sel').value)!==d.plan)moved.push(`${d.plan} isn\u2019t in the plan list any more, so no plan is picked. Pick one.`);
+     else if(sn&&+sn.planCost>0&&Math.abs((currentPlanCost||0)-sn.planCost)>=1)
+       moved.push(`${d.plan} now costs ${fmt(currentPlanCost||0)} a unit; it was ${fmt(sn.planCost)} when saved.`);
+     if(sn&&!moved.some(m=>/any more/.test(m))&&typeof sn.maxLand==='string'&&sn.maxLand&&sn.maxLand!==mlNow)moved.push(`Max land is ${mlNow} now; it was ${sn.maxLand} when saved.`);}
     // the resume bar's offer is stale now: the autosave is about to write this deal into its slot
     dismissResume();
-    showToast('Deal restored: '+(d.address||'saved deal'),'ok');
+    _savedSig=dealSig();   // v8.46 (S-F13): what's on screen now is what was saved or loaded
+    showToast('Deal restored: '+(d.address||'saved deal')+(moved.length?'. Heads up, it was re-priced on today\u2019s numbers: '+moved.join(' '):''),moved.length?'warn':'ok',moved.length?10000:0);
   }catch(e){
     console.error('restore',e);
     // step 0 has reset the page, so it's only partly loaded: stop the pending autosave writing it over the resume slot
     clearTimeout(_autosaveTimer);
     showToast('Restore failed: '+e.message+'. The page is only partly loaded: reload it before you carry on.','warn');
   }
+}
+// v8.46 (S-F13): is there a deal on screen that hasn't been saved to a file (or loaded from one) as it stands? Compared
+// with what the last save or restore left, so a deal nobody has touched, or a blank page, never asks.
+let _savedSig=null;
+const dealSig=()=>{const d=serializeDeal();delete d.ts;return JSON.stringify(d);};
+function dealUnsaved(){
+  if(!(($('addr-street')||{}).value||'').trim()&&!(($('addr-city')||{}).value||'').trim())return false;
+  return _savedSig!==dealSig();
+}
+function confirmReplaceDeal(what){
+  if(!dealUnsaved())return true;
+  const a=[($('addr-street')||{}).value,($('addr-city')||{}).value].map(x=>(x||'').trim()).filter(Boolean).join(', ');
+  return confirm(`${what} replaces the deal on screen (${a}), which isn\u2019t saved to a file. Go ahead?`);
 }
 function downloadDealJSON(){
   try{
@@ -7250,11 +7291,13 @@ function downloadDealJSON(){
     const blob=new Blob([JSON.stringify(d,null,1)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=slug+'_deal.json';
     document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    _savedSig=dealSig();
     showToast('Deal saved to file \u2014 drop it in the project\u2019s Drive folder to share.','ok');
   }catch(e){showToast('Save failed: '+e.message,'warn');}
 }
 function loadDealFile(inp){
   const f=inp.files&&inp.files[0];if(!f)return;
+  if(!confirmReplaceDeal('Loading that file')){inp.value='';return;}   // v8.46 (S-F13)
   const r=new FileReader();
   r.onload=()=>{try{restoreDeal(JSON.parse(r.result));}catch(e){showToast('Couldn\u2019t read that file: '+e.message,'warn');}};
   r.readAsText(f);inp.value='';
@@ -7268,21 +7311,29 @@ function scheduleAutosave(){
     // v8: navigating now triggers recalcs (and so autosaves) before Resume is clicked; a blank form
     // must never overwrite a saved session the resume bar is still offering.
     if(!d.address&&localStorage.getItem(AUTOSAVE_KEY))return;
+    // v8.46 (S-F8): this write replaces the session the resume bar offers, so take the offer down rather than leave a
+    // button that would restore something else under that address
+    {const rb=$('resume-bar');if(rb&&rb.classList.contains('show'))dismissResume();}
     localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(d));
   }catch(_){ }},900);
 }
 document.addEventListener('input',scheduleAutosave);
 document.addEventListener('change',scheduleAutosave);
 function resumeAutosave(){
-  try{const d=JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null');if(d)restoreDeal(d);}catch(e){showToast('Couldn\u2019t restore the session.','warn');}
+  try{const d=JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null');
+    // v8.46 (S-F8): only the session the bar named; another tab or a newer edit may have replaced it since
+    if(d&&_resumeTs&&d.ts!==_resumeTs){dismissResume();showToast('That saved session has been replaced by newer work, so it can\u2019t be resumed.','warn');return;}
+    if(d&&confirmReplaceDeal('Resuming that session'))restoreDeal(d);   // v8.46 (S-F13)
+    else if(d)return;}catch(e){showToast('Couldn\u2019t restore the session.','warn');}
   dismissResume();
 }
+let _resumeTs=0;   // v8.46: the saved session the bar is offering
 function dismissResume(){const b=$('resume-bar');if(b)b.classList.remove('show');}
 function checkResumeBanner(){
   try{
     const raw=localStorage.getItem(AUTOSAVE_KEY);if(!raw)return;
     const d=JSON.parse(raw);if(!d||!d.address)return;
-    $('resume-addr').textContent=d.address;
+    $('resume-addr').textContent=d.address;_resumeTs=d.ts||0;
     const mins=Math.max(1,Math.round((Date.now()-(d.ts||Date.now()))/60000));
     $('resume-when').textContent='\u00b7 '+(mins<60?mins+' min ago':Math.round(mins/60)+' hr ago');
     $('resume-bar').classList.add('show');
@@ -7294,8 +7345,14 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.45', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.46', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.46',date:'Oct 2026',name:'Exports and reopening a deal',items:[
+   'The PDF and the Excel workbook now show the asking price (the PDF in Deal Summary beside the land cost used, Excel on Inputs and the Cover).',
+   'The PDF cover had a \u201cTotal All-In\u201d that disagreed with the one on the scenario sheet. The cover now shows Total All-In / Unit (the Base figure the profit rule uses) and the project cost under it. The cost build-up\u2019s total is called Total Project Cost, and so is the Deal Pulse bar\u2019s.',
+   'The PDF cover now carries the same warnings as the screen: loan-term and profit-rule notes, land above asking, the deal missing the profit rule at its land cost (the stress and asking lines were already there).',
+   'Money and square-foot boxes accept commas and a $ in Safari and Firefox, not just Chrome (\u201c11,521\u201d no longer reads as $0).',
+   'Loading a saved file, or resuming a session, asks first when the deal on screen isn\u2019t saved. A reopened deal says when today\u2019s plan price or Max land differs from when it was saved, or when its plan is gone. The Resume bar comes down once newer work replaces the session it offered, and Resume refuses a session that\u2019s been replaced.']},
  {v:'8.45',date:'Oct 2026',name:'Comps housekeeping',items:[
    'County comps pulls send at most 6 requests to the county at a time, so the 1.5 mi wide-area check on infill lots no longer bursts a dozen at once. Results are the same.',
    'Behind the scenes: every ARV / unit (scenarios, Max land, the stress test, the PDF, Compare builds and the deal-sheet note) now comes from one formula. No number changes.']},
@@ -7649,7 +7706,7 @@ updateDealPulse();
 
 <!-- PLAN DRAWING LIGHTBOX -->
 <div class="deal-pulse" id="deal-pulse">
-  <div class="dp-item"><span class="dp-lbl">All-In Total</span><span class="dp-val" id="dp-allin">&mdash;</span></div>
+  <div class="dp-item"><span class="dp-lbl">Project Cost</span><span class="dp-val" id="dp-allin">&mdash;</span></div>
   <div class="dp-item"><span class="dp-lbl">Loan</span><span class="dp-val" id="dp-loan">&mdash;</span></div>
   <div class="dp-item"><span class="dp-lbl">Cash at Close</span><span class="dp-val amb" id="dp-cash">&mdash;</span></div>
   <div class="dp-item"><span class="dp-lbl">Base Profit / Unit</span><span class="dp-val" id="dp-profit">&mdash;</span><span class="dp-sub" id="dp-coc"></span></div>
