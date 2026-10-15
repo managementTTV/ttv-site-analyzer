@@ -161,6 +161,11 @@ function boxAround(rows, lat, lng){
   return {geometry:JSON.stringify({xmin:x0-RECORD_PAD_DEG, ymin:y0-RECORD_PAD_DEG, xmax:x1+RECORD_PAD_DEG, ymax:y1+RECORD_PAD_DEG,
     spatialReference:{wkid:4326}}), geometryType:'esriGeometryEnvelope', inSR:'4326', spatialRel:'esriSpatialRelIntersects'};
 }
+// A nuisance case of this kind: it cites one of the kind's sections (matched on the City's server, never returned).
+const caseLike = k => '('+k.pats.map(p=>`DetailedDescription LIKE '%${sq(p)}%'`).join(' OR ')+')';
+// v8.45: the cases worth fetching at all: housing cases, and nuisance cases that cite one of CASE_KINDS. Filtering in
+// the fetch keeps the four-year pull small, so only the last RECORD_MONTHS need sorting into kinds.
+const casesWhere = () => `(CaseType='Housing' OR (CaseType='Nuisance' AND (${CASE_KINDS.map(caseLike).join(' OR ')})))`;
 // Each record id's kinds, matched on the City's server on ids only (no text comes back): kinds[i].where(...) per chunk.
 async function kindsOf(layer, ids, kinds, whereFor, fetchSignal){
   const map = new Map();
@@ -193,7 +198,7 @@ async function conditionRecords(lat, lng, stRows, areaRows, fetchSignal, notes){
   const sP = new Set(stRows.map(r=>pidKey(r.pid))), aP = areaRows ? new Set(areaRows.map(r=>pidKey(r.pid))) : null;
   const box = boxAround(stRows.concat(areaRows||[]), lat, lng);
   const [ce, sr, demo] = await Promise.all([
-    allRows(CE_LAYER, Object.assign({where:`CaseType IN ('Nuisance','Housing') AND DateCreated >= DATE '${priorSince}' AND ${CONFIRMED}`,
+    allRows(CE_LAYER, Object.assign({where:`${casesWhere()} AND DateCreated >= DATE '${priorSince}' AND ${CONFIRMED}`,
       orderByFields:'OBJECTID'}, box), 'OBJECTID,ParcelId,CaseType,DateCreated', fetchSignal),
     allRows(SR311_LAYER, Object.assign({where:`RECEIVED_DATE >= DATE '${since}' AND RECEIVED_DATE < DATE '${until}' AND REQUEST_TYPE IN (${COMPLAINT_TYPES.map(t=>`'${t}'`).join(',')})`,
       orderByFields:'OBJECTID'}, box), 'OBJECTID,PID', fetchSignal),
@@ -201,21 +206,22 @@ async function conditionRecords(lat, lng, stRows, areaRows, fetchSignal, notes){
   if(ce.truncated || sr.truncated) notes.push('More City records in this area than one lookup returns, so the counts may run low.');
   const ours = (rows, f) => rows.filter(r=>{ const k = pidKey(r[f]); return sP.has(k) || (aP && aP.has(k)); });
   const ceRows = ours(ce.rows, 'ParcelId'), srRows = ours(sr.rows, 'PID');
+  const ceNow = ceRows.filter(r=>r.DateCreated >= cut), ceBefore = ceRows.filter(r=>!(r.DateCreated >= cut));
+  // Only the last RECORD_MONTHS are sorted into kinds; the window before only needs its total (every fetched case counts).
   const [caseKinds, complaintKinds] = await Promise.all([
-    kindsOf(CE_LAYER, ceRows.filter(r=>r.CaseType==='Nuisance').map(r=>r.OBJECTID), CASE_KINDS,
-      k=>'('+k.pats.map(p=>`DetailedDescription LIKE '%${sq(p)}%'`).join(' OR ')+')', fetchSignal),
+    kindsOf(CE_LAYER, ceNow.filter(r=>r.CaseType==='Nuisance').map(r=>r.OBJECTID), CASE_KINDS, caseLike, fetchSignal),
     kindsOf(SR311_LAYER, srRows.map(r=>r.OBJECTID), COMPLAINT_KINDS, k=>k.where, fetchSignal)]);
   const housing = r => r.CaseType==='Housing' ? 'housing' : null;
   const caseKeys = CASE_KINDS.map(k=>k.key).concat('housing'), compKeys = COMPLAINT_KINDS.map(k=>k.key);
-  const ceNow = ceRows.filter(r=>r.DateCreated >= cut), ceBefore = ceRows.filter(r=>!(r.DateCreated >= cut));
+  const countIn = (rows, pids) => rows.filter(r=>pids.has(pidKey(r.ParcelId))).length;
   const sc = tally(ceNow, 'ParcelId', sP, caseKinds, caseKeys, housing), scomp = tally(srRows, 'PID', sP, complaintKinds, compKeys);
   const demolition = demo.rows.filter(r=>sP.has(pidKey(r.ParcelId))).length;
   const out = {city:true, months:RECORD_MONTHS, since, prior_since:priorSince, truncated:!!(ce.truncated || sr.truncated),
-    street:{parcels:sP.size, cases:sc.total, cases_by:sc.by, cases_prior:tally(ceBefore, 'ParcelId', sP, caseKinds, caseKeys, housing).total,
+    street:{parcels:sP.size, cases:sc.total, cases_by:sc.by, cases_prior:countIn(ceBefore, sP),
       complaints:scomp.total, complaints_by:scomp.by, demolition_orders:demolition},
     area:null};
   if(aP) out.area = {parcels:aP.size, cases:tally(ceNow, 'ParcelId', aP, caseKinds, caseKeys, housing).total,
-    cases_prior:tally(ceBefore, 'ParcelId', aP, caseKinds, caseKeys, housing).total,
+    cases_prior:countIn(ceBefore, aP),
     complaints:tally(srRows, 'PID', aP, complaintKinds, compKeys).total};
   return out;
 }

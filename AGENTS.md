@@ -2,7 +2,9 @@
 
 Shared rulebook for the two agents that touch this repo:
 - **Claude (Cowork)** — *author.* Implements changes, tests headless, opens the PR.
-- **Codex** — *reviewer.* Reviews every PR against the guidelines below, flags P0/P1.
+- **Codex** — *reviewer.* Reviews every PR against the guidelines below, flags P0/P1. **Codex has never
+  reviewed a PR on this repo** (it answers "usage limits"); until it does, the **Claude stopgap review** is the
+  review step (see PR protocol).
 - **Brian** — *merge gate.* Reads Codex's findings + Claude's responses, then merges.
 
 Both agents read this file. Claude follows it while writing; Codex enforces it while
@@ -26,11 +28,12 @@ in the repo, version it with the code.
   `markAllManual()` select `.page input[id]`). Hero tiles and section summaries are display-only,
   filled from `getReportData()` in `updateHero()`.
 - **Architecture:** a **single, fully client-side `index.html`** (UI + all logic + all
-  plan data, ~4,900 lines) + five serverless functions in `api/`: `gis.js` (Charlotte/Meck
+  plan data, ~7,700 lines) + eight serverless functions in `api/`: `gis.js` (Charlotte/Meck
   GIS + county assessor proxy), `comps.js` (county new-build comps), `street.js` (the street check,
   v8.18), `permits.js` (the permitting board's data proxy), `deal-sheet.js` (v8.21, a redirect to the
   New Deal web app; see Deal-sheet hand-off) and `mcp.js` (the "TTV Street Data" MCP connector for
-  claude.ai, 2026-10-01; see Street Data connector) + `plans/` images + `assets/` logos. No framework, no build
+  claude.ai, 2026-10-01; see Street Data connector), plus `accela.js` and `permit-reminders.js` (the permitting board's
+  Accela status sync and reminders; see the permitting board section) + `plans/` images + `assets/` logos. No framework, no build
   step, no database. Everything runs in the browser. Two small static pages sit beside it: `permits.html` (below) and
   `streetview.html` (v8.20, the lot's Street View on its own page; see Street check).
 - **Deploy model — why review matters:** Vercel serves the static files; **every push to
@@ -78,8 +81,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   $/sf is one unit's, ends and inner units mixed. The locked deal sheet prices every unit at $/sf × sf, so the hand-off
   adds a note (`innerUnitNotes()`) saying how much higher the sheet's ARV is. The `#inner-cut` box (`arvFactorFor()`,
   `innerCount()`) is ticked on a fresh page and unticked by `restoreDeal()` for a file saved before v8.42, so reopening an
-  older deal doesn't move its Max land (the v8.39 `#lf-house-min` pattern). Flag a new $/sf × sf reader that skips
-  `arvFactorFor()`, calls `innerUnitFactor()` directly (it ignores the box), or a factor applied to the comps' $/sf.
+  older deal doesn't move its Max land (the v8.39 `#lf-house-min` pattern). Since v8.45 every reader computes ARV / unit
+  through `unitArv(psf, sf, f)`. Flag a new $/sf × sf reader that skips `unitArv()` or `arvFactorFor()`, calls
+  `innerUnitFactor()` directly (it ignores the box), or a factor applied to the comps' $/sf.
 - **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
   Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, appraisal, insurance, custom plans.
   Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
@@ -261,6 +265,27 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `restoreDeal()` clears the taps' flags in step 0 and re-applies `tapManual` after `markAllManual()`,
   so a switch still due on reopen can still land on default taps. Files from before v8.14 have no
   `tapManual`, and their taps count as defaults, which is how v8.9–v8.13 treated them.
+
+### Exports, money boxes and saved deals (v8.46)
+- **One "Total All-In".** It means the Base per-unit figure the profit rule uses (land + build + costs + holding + sale
+  costs, `scenarios[].totalAllIn`): the PDF cover shows it as "Total All-In / Unit" with the project cost under it.
+  Land + all-in ex land is "Total Project Cost" everywhere (PDF cost build-up, Deal Pulse bar, Excel B6). Flag a second
+  figure called "All-In" that isn't one of those two.
+- **Asking price is in both exports** (`getReportData().asking` → PDF Deal Summary; `collectModelInputs().asking` → Excel
+  Inputs "Asking Price" and the Cover's row 8). Reference only: no Excel formula reads it. The PDF's "Check inputs" box
+  carries the money notes, the profit-rule notes and the loan-term notes (the same three lists `renderInputWarnings()`
+  shows), plus the land-above-asking and profit-rule-at-this-land notes next to the v8.38 asking and stress lines.
+- **Money and area boxes are `type="text" inputmode="decimal"`** (survey, taps, soft costs, lot factor lines, doc fee, tax,
+  lot / demo / hardscape areas), because Safari and Firefox hand back '' for "11,521" from a number box. `pv()` drops
+  commas, `$` and spaces. A new money box must be text too; counts, feet and percents stay number boxes.
+- **Reopening a deal says when it moved (S-F6).** The save file carries `snap {maxLand, planCost, appV}`; `restoreDeal()`
+  re-prices on today's plan list and rules, then names a plan that's gone, a changed plan price and a changed Max land
+  in one warning toast. It is a save-file field only; the deal-sheet payload (`v`, `HANDOFF_VERSION`) is untouched.
+- **Load and Resume ask before replacing an unsaved deal (S-F13).** `dealUnsaved()` compares `serializeDeal()` (minus
+  `ts`) with `_savedSig`, set on save-to-file and at the end of a restore. A blank page never asks. The resume bar is
+  taken down when an autosave replaces the session it offered, and `resumeAutosave()` refuses a session whose `ts` isn't
+  the one the bar named (S-F8). S-F9 (county fills after a reopen) was already fixed by v8.36's `autoManual`; a file
+  saved before v8.36 still keeps those boxes as typed.
 
 ### Architecture & footguns
 - **Stay single-file & buildless.** Flag any added framework, bundler, npm build step, or
@@ -588,7 +613,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   `orderByFields: objectid`, up to `SALES_MAX_PAGES`, with a flag if that's hit). `camaFetch()` runs
   `CAMA_CONCURRENCY` (4) chunks at once (`camaChunk()`; each chunk decides on its own whether the backup answered). On
   five test lots the 0.5 mi answers are identical before and after; a 1.5 mi pull went from 11 s to 7 s. `api/comps.js`
-  has `maxDuration` 30 in vercel.json. `?infill=0` skips the infill count (`infill.skipped`, no vet reason).
+  has `maxDuration` 30 in vercel.json. `?infill=0` skips the infill count (`infill.skipped`, no vet reason). Since v8.45
+  every county request goes through one cap, `MAX_INFLIGHT` (6) in `ajPost()` (a freed slot passes straight to the next
+  waiter), so a wide pull no longer bursts a dozen requests. Flag a county call that bypasses `ajPost()`.
 - **Pat's one-tap "why" (v8.41, research/12 Q1).** When Base ARV is $1/sf or more off `_arvTool.psf` (Apply writes the
   $/sf rounded, or rounded down when capped, so an applied ARV is never a change), chips ask why (`ARV_WHY`: infill,
   across a busy road, older stock, weaker street, finish, other) into `#arv-why-code` plus `#arv-why-note`, plain
@@ -668,7 +695,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     found (`%Compliance%` or "Vehicle Towed"; dismissed, no-violation and open cases don't count), sorted by the section
     they cite (`CASE_KINDS`: overgrowth 10-155, vehicles 10-165/166/167, lawn parking 14-216, junk 10-136/138; section
     number and title, the same rule as `VIOLATIONS` in mcp.js), plus Housing cases whole. The City's "Parking" case type
-    doesn't cite 14-216, so it isn't lawn parking and isn't counted.
+    doesn't cite 14-216, so it isn't lawn parking and isn't counted. The fetch itself asks only for Housing cases and
+    Nuisance cases citing a `CASE_KINDS` section (`casesWhere()`), so the four-year pull stays small; only the last 24
+    months are sorted into kinds (one query per kind per 500 ids), and the 24 before only need a total.
   - **311 condition complaints** (`ServiceRequests311`, CC BY 4.0): the condition request types, then `COMPLAINT_KINDS`
     by type and by keyword in TITLE for the "HNS HEALTH AND SANITATION" catch-all (yard: weeds, grass, trash,
     dumping, debris, junk that isn't a vehicle; vehicles: vehicle, parking, parked; boarded). Shown, never
@@ -1128,7 +1157,7 @@ sending it in either request (Vercel never sees the deal); the New Deal page rea
 `google.script.url.getLocation()` and passes it to `createDealFromAnalyzer()`, which copies the V1.1 template into Underwritten, fills the green input cells, ticks the matching
 Upgrades rows, writes the comps, and adds a locked **Analyzer Snapshot** tab (site facts, the analyzer's
 worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules:
-- **`NEW_DEAL_URL` is a Vercel env var only** (Production + Preview), like the permits feed: the repo is public. Flag the
+- **`NEW_DEAL_URL` is a Vercel env var only** (set on Production only, not Preview, so a preview's Send to deal sheet shows the "not set up" page), like the permits feed: the repo is public. Flag the
   /exec link appearing in `index.html` or any committed file. `deal-sheet.js` refuses anything that isn't a
   `script.google.com/.../exec` (or `/dev`) URL and answers 501 with a set-up note when it's missing.
 - **The payload is read through the exporters' readers** (`getReportData()`, `collectModelInputs()`, `moneyIssues()`),
@@ -1220,6 +1249,10 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
+  - **v8.46 (exports + state): Max land $256,586 unchanged**, hash **`d8b21384601c`**: the only change in `getReportData()` is the new
+    top-level `asking` (0 on the check deal); with `asking` deleted it is v8.44's `54155a16bebc`.
+  - **Current reference (v8.42 through v8.44, re-run on a fresh page 2026-10-15 on v8.44): Max land $256,586, hash
+    `54155a16bebc`.** v8.43 and v8.44 (Street Check records and trend) don't move it; the county assessor block reads "Mecklenburg County CAMA".
   - **v8.42 (inner units): Max land $256,586**, hash **`54155a16bebc`** (recorded without opening Compare builds or the
     PDF). 3 × Dayton has 1 inner unit, so Base ARV / unit is $364,315 (0.9933 × $366,760), Base profit / unit $115,320
     ($117,618 before), total $345,960, CoC 46.3%, opening offer $205,000 ($210,000 before), stress profit $50,721. The loan
@@ -1269,10 +1302,14 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
 1. **Claude** branches off `main` (never commits straight to `main`), implements, tests
    headless, and opens a PR whose description states **what changed, why, and the manual
    verification numbers**.
-2. **Codex** auto-reviews against this file and posts P0/P1 findings. Focused passes on
-   request: `@codex review for financing-math regressions`.
+2. **Review.** **Codex** is meant to auto-review against this file and post P0/P1 findings (focused passes on
+   request: `@codex review for financing-math regressions`), but it has never done so on this repo (usage limit). While
+   it is at its limit, the **Claude stopgap review** is the review step: a separate Claude pass over the PR diff against
+   this file, with its findings fixed or answered in the PR before it goes to Brian. Still post `@codex review`
+   (as WolfDens) so Codex catches up when its quota allows.
 3. **Claude** responds to each finding in-thread — fix, or justify why it's a
    non-issue — and pushes follow-up commits.
 4. **Brian** reads the resolved thread + the Vercel preview, then merges → Vercel deploys.
 
-Nothing reaches production without passing through this loop.
+Nothing reaches production without passing through this loop: a review (Codex when it works, the Claude stopgap
+review while it is at its limit), then Brian's merge.
