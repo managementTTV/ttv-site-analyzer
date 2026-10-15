@@ -130,13 +130,24 @@ const INFILL_FT = 300, INFILL_MIN = 3;
 const SALES_PAGE = 2000, SALES_MAX_PAGES = 10;
 
 // ArcGIS answers a bad field or where-clause with HTTP 200 and an {error:...} body, so check for it.
+// v8.45 (#41 review): one cap on the county requests in flight. The CAMA chunks (4 at a time, each with two backup-table
+// queries), the deed look-ups and the infill count all go through ajPost; a 1.5 mi wide-area pull used to send a dozen or
+// more at once. A freed slot passes straight to the next waiter, so the count never goes over MAX_INFLIGHT.
+const MAX_INFLIGHT = 6;
+let inflight = 0;
+const waiting = [];
+function acquireSlot(){ if(inflight < MAX_INFLIGHT){ inflight++; return Promise.resolve(); } return new Promise(r=>waiting.push(r)); }
+function releaseSlot(){ const next = waiting.shift(); if(next) next(); else inflight--; }
 async function ajPost(url, params){
-  const body = new URLSearchParams(params).toString();
-  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
-  if(!r.ok) throw new Error('HTTP '+r.status+' '+url);
-  const j = await r.json();
-  if(j && j.error) throw new Error('ArcGIS '+(j.error.code||'')+': '+(j.error.message||''));
-  return j;
+  await acquireSlot();
+  try{
+    const body = new URLSearchParams(params).toString();
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+    if(!r.ok) throw new Error('HTTP '+r.status+' '+url);
+    const j = await r.json();
+    if(j && j.error) throw new Error('ArcGIS '+(j.error.code||'')+': '+(j.error.message||''));
+    return j;
+  }finally{ releaseSlot(); }
 }
 const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 // Assessor records for a list of PIDs, as a Map pid -> attributes named the way TaxParcel_camadata names them
