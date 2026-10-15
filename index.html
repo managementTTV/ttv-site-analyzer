@@ -3385,6 +3385,13 @@ function renderStreetCheck(d){
       :tf?tf+' (no NCDOT count)':'no NCDOT count and not a City thoroughfare: a neighbourhood street';
     h+='<div style="font-size:11.5px;color:'+(t.busy?'var(--amber)':'var(--text-mid)')+';margin-top:4px">'+(t.busy?'Busy road: ':'Traffic: ')+E(txt)+'.</div>';
   }
+  if(d.nearby){   // v8.47: business parcels right around the lot, and stores within a quarter mile (shown, the store never judged)
+    const nb=d.nearby,uses=(nb.next_door_uses||[]).map(u=>u.n+' '+u.use.toLowerCase()).join(', ');
+    const nd=nb.next_door?nb.next_door+' business parcel'+(nb.next_door===1?'':'s')+(uses?' ('+uses+')':''):'no business parcels';
+    const st=nb.stores?nb.stores+', the nearest about '+nb.nearest_store_ft.toLocaleString()+' ft away':'none on the county’s records';
+    h+='<div style="font-size:11.5px;color:'+(nb.next_door?'var(--amber)':'var(--text-mid)')+';margin-top:4px">Next door (within '+nb.next_door_ft+' ft of the lot): '+E(nd)+'.</div>'
+      +'<div style="font-size:11.5px;color:var(--text-mid);margin-top:4px">Convenience store or gas station within ¼ mile: '+E(st)+'.</div>';
+  }
   if(d.notes&&d.notes.length)h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">'+d.notes.map(E).join(' ')+'</div>';
   if(d.errors&&d.errors.length)h+='<div style="font-size:11px;color:var(--red);margin-top:4px">'+d.errors.map(E).join('; ')+'</div>';
   h+='<div style="font-size:11px;color:'+dim+';margin-top:6px">Mecklenburg County assessor records: buildings, lots and land use only. Sales are each home’s last market sale in '
@@ -7538,6 +7545,12 @@ const RELEASE_NOTES=[
    'Picking a town\u2019s zone fills the setbacks and minimum lot width with the sheet\u2019s numbers, under the sheet\u2019s own names (\u201cNR \u00b7 townhomes\u201d), with a link to that part of the town\u2019s code.',
    'Every zone from the table, Charlotte\u2019s included, now shows which home types it allows: P by right, C with conditions, S needs approval, No not allowed. Your plan\u2019s type is marked, with a note when the table says No or S. It\u2019s a heads-up; it doesn\u2019t change any number.',
    'Rows the sheet marks \u201c(verify)\u201d carry an amber note to check with the town\u2019s planner. Charlotte\u2019s setbacks are unchanged; Charlotte zones the app had no setbacks for (CG, OFC, IMU, TOD and others) now fill from the table.',
+ ]},
+ {v:'8.47',date:'Oct 2026',name:'What’s right around the lot',items:[
+   'The Street Check now looks right around the lot: any business parcel within 300 ft (next door, behind or across the street), and convenience stores or gas stations within a quarter mile.',
+   'A business next door turns an \u201cin line\u201d street into \u201cwatch\u201d, the same as a busy road. The store line is only shown: it never changes the verdict.',
+   'Fixed: the \u201cCommercial / industrial parcels\u201d check was counting churches, fire stations, parks, flood plain and public housing the county files under a business code. It now counts businesses only.',
+   'None of it changes the ARV or any number on The Underwrite.',
  ]},
  {v:'8.46',date:'Oct 2026',name:'Exports and reopening a deal',items:[
    'The PDF and the Excel workbook now show the asking price (the PDF in Deal Summary beside the land cost used, Excel on Inputs and the Cover).',

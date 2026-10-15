@@ -380,10 +380,13 @@ const within = (lat, lng, ft) => ({geometry:`${lng},${lat}`, geometryType:'esriG
 export function isVacant(r){ return /^VAC/i.test((r.vacorimprov||'').trim()) && !(num(r.heatedarea)>0); }
 // Some homes carry a commercial code ("C700 MULTI FAMILY", "O400 MULTI FAMILY"): the description decides, so housing of
 // any kind never counts as a commercial neighbour. A commercial, office or warehouse condominium is still commercial.
-const HOUSING_DESC = /RESIDENTIAL|MULTI ?FAMIL|APARTMENT|AFFORDABLE|CONDO|TOWN ?HOUSE|DUPLEX|TRIPLEX|MOBILE HOME|HOME FOR THE AGED/i;
+const HOUSING_DESC = /RESIDENTIAL|MULTI ?FAMIL|APARTMENT|AFFORDABLE|CONDO|TOWN ?HOUSE|DUPLEX|TRIPLEX|MOBILE HOME|HOME FOR THE AGED|HOUSING AUTHORITY|PATIO HOME/i;
 const BUSINESS_DESC = /COMMERCIAL|OFFICE|WAREHOUSE|MEDICAL|RETAIL|INDUSTRIAL|HOTEL/i;
+// v8.47: the county files many civic and open-land parcels under C / I / O codes too ("C700 CHURCH", "I600 REC AREA",
+// "O400 OTHER MUNICIPAL", flood plain, right of way). The description decides: these are never a business neighbour.
+const NOT_NEIGHBOUR_DESC = /CHURCH|SCHOOL|COLLEGE|REC AREA|GREENWAY|GOLF COURSE|DAY CARE|NURSING HOME|FIRE DEPARTMENT|OTHER MUNICIPAL|OTHER COUNTY|OTHER FEDERAL|STATE PROP|FLOOD|RIGHT OF WAY|ROADWAY CORRIDOR|EASEMENT|RETENTION POND|WELL LOT|WASTELAND|SUBMERGED|CONSERVATION|AIR RIGHTS|NO LAND INTEREST|MINERAL RIGHTS|CLUB, LODGES|MARINA|WATER FRONTAGE/i;
 export function isNonRes(r){ const c=(r.lusecode||'').trim(), d=r.landuse_description||'';
-  return (NONRES_USE.test(c) || NONRES_CODES.includes(c)) && (BUSINESS_DESC.test(d) || !HOUSING_DESC.test(d)); }
+  return (NONRES_USE.test(c) || NONRES_CODES.includes(c)) && !NOT_NEIGHBOUR_DESC.test(d) && (BUSINESS_DESC.test(d) || !HOUSING_DESC.test(d)); }
 export function isHome(r){ const c=(r.lusecode||'').trim(), d=(r.landuse_description||'');
   return num(r.heatedarea)>0 && (/^R/i.test(c) || (!c && /RESIDENTIAL|TOWN ?HOUSE|CONDO/i.test(d))); }
 // The CAMA row carries each parcel's last sale. A home sale counts when it's market-valid (blank or Z), in the window,
@@ -437,6 +440,48 @@ function profile(rows, since, lots){
   };
 }
 
+// ── v8.47: what's right around the lot (research/13 rubric v2, S2 and S3) ─────────────────────────────────────────────
+// next door: business parcels (isNonRes) whose shape comes within NEXT_DOOR_FT of the lot's point: the neighbours on
+// each side, behind and across the street. A busy road's kind of flag: it turns "in line" into "watch".
+// stores: convenience stores and gas stations within STORE_FT (¼ mile). Shown, never judged (a store is a building,
+// never the people there; Pat makes her own call on it). The county's land use names only 121 stores county-wide, its
+// building records 333 (most stores sit on a "COMMERCIAL" parcel), so the list is both, fetched once per warm instance.
+export const NEXT_DOOR_FT = 300, STORE_FT = 1320;
+const CAMA_TABLES = `${MECK}/CamaDataTables/MapServer`;   // 1 = buildings, 3 = parcels (gis2 = latitude, gis1 = longitude)
+const STORE_BUILDINGS = ['CONVENIENCE STORE', 'MINI MART CONVENIENCE STORE', 'FAST FOOD/CONVENIENCE STORE'];
+const STORE_USES = ['CONVENIENCE STORE', 'CONVIENCE/FAST FOOD STORE', 'SERVICE STATION'];   // the county's spelling
+const STORE_TTL_MS = 12*3600000, AROUND_MS = 8000;
+let _stores = null;   // {at, p}: one fetch shared by concurrent requests; a failed fetch isn't kept
+// Its own deadline, not a caller's signal: one request's abort mustn't fail the fetch every other request is waiting on.
+function storeList(){
+  if(_stores && Date.now()-_stores.at < STORE_TTL_MS) return _stores.p;
+  const fetchSignal = () => AbortSignal.timeout(AROUND_MS);
+  const p = (async ()=>{
+    const b = await allRows(`${CAMA_TABLES}/1`, {where:`buildingtype IN (${STORE_BUILDINGS.map(t=>`'${t}'`).join(',')})`, orderByFields:'objectid'}, 'parcelid', fetchSignal);
+    const pids = [...new Set(b.rows.map(r=>r.parcelid).filter(Boolean))];
+    const where = `landuse_description IN (${STORE_USES.map(t=>`'${sq(t)}'`).join(',')})` + (pids.length ? ` OR parcelid IN (${pids.map(x=>`'${sq(x)}'`).join(',')})` : '');
+    const {rows} = await allRows(`${CAMA_TABLES}/3`, {where, orderByFields:'objectid'}, 'parcelid,yearid,gis1,gis2', fetchSignal);
+    const latest = new Map(); rows.forEach(r=>{ const o = latest.get(r.parcelid); if(!o || (r.yearid||0) > (o.yearid||0)) latest.set(r.parcelid, r); });
+    return [...latest.values()].map(r=>({pid:r.parcelid, lat:num(r.gis2), lng:num(r.gis1)})).filter(x=>x.lat!=null && x.lng!=null);
+  })();
+  _stores = {at:Date.now(), p};
+  p.catch(()=>{ if(_stores && _stores.p===p) _stores = null; });
+  return p;
+}
+// ctx: a copy of the request's camaQuery() state, so a hiccup on this late, parallel read doesn't move the rest of the
+// request (and its note) onto the backup tables. fetchSignal: AROUND_MS, with the caller's when it has one.
+async function aroundLot(pid, lat, lng, ctx, fetchSignal){
+  const sig = () => fetchSignal && AbortSignal.any ? AbortSignal.any([AbortSignal.timeout(AROUND_MS), fetchSignal()]) : AbortSignal.timeout(AROUND_MS);
+  const [nd, stores] = await Promise.all([camaRows({near:{lat, lng, ft:NEXT_DOOR_FT}}, Object.assign({}, ctx), sig), storeList()]);
+  // one per parcel; a parcel needs a land-use description to be named a business (a blank one on a C code is a remnant)
+  const biz = new Map(); nd.rows.forEach(r=>{ if(r.pid!==pid && (r.landuse_description||'').trim() && isNonRes(r)) biz.set(r.pid, r); });
+  const uses = {}; biz.forEach(r=>{ const u=(r.landuse_description||r.lusecode||'').trim(); uses[u]=(uses[u]||0)+1; });
+  const ref = {lat, lng}, near = stores.filter(x=>x.pid!==pid).map(x=>{ const q=toFt(ref, x.lat, x.lng); return Math.round(Math.hypot(q.x, q.y)); })
+    .filter(d=>d<=STORE_FT).sort((a,b)=>a-b);
+  return {next_door_ft:NEXT_DOOR_FT, next_door:biz.size, next_door_uses:Object.entries(uses).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([use,n])=>({use,n})),
+    store_ft:STORE_FT, stores:near.length, nearest_store_ft:near.length ? near[0] : null};
+}
+
 // Street vs area, check by check. 'thin' = too little evidence on either side to say.
 // v8.43: the records rows (records:true) only when there are records (s.cases set); 'more' is the info-only 311 row's
 // "higher than the area" (shown, never counted as weaker). A records row whose area rate is 0 compares as "far above"
@@ -468,6 +513,7 @@ function verdictFor(checks, s, area, flags){
     extra.push(`It's a busy road: ${parts.join(', ')}.`);
   }
   if(f.demolition_orders) extra.push(`${f.demolition_orders} parcel${f.demolition_orders===1?' is':'s are'} on the City's demolition-order list.`);
+  if(f.next_door) extra.push(`${f.next_door} business parcel${f.next_door===1?'':'s'} within ${NEXT_DOOR_FT} ft of the lot (${f.next_door_uses.map(u=>u.use.toLowerCase()).join(', ')}).`);
   const add = t => extra.length ? t+' '+extra.join(' ') : t;
   if(s.homes < 3 && !weak.length) return {level:'thin', text:add(`Only ${s.homes} home${s.homes===1?'':'s'} on this stretch of street, too few to compare. Walk it in Street View.`)};
   if(weak.length >= 2) return {level:'weaker', text:add(`This street looks weaker than ${area} on ${weak.length} of ${judged} checks (${names(weak)}). Walk it before you trust the area's numbers.`)};
@@ -552,7 +598,8 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     checks:[], verdict:null, streetview:null, notes:[], errors:[]};
   // v8.43: the City's records and the traffic count, only in the full answer (not mode=view)
   if(!view){ out.params.record_months = RECORD_MONTHS; out.params.busy_aadt = BUSY_AADT; out.params.trend_months = TREND_MONTHS;
-    out.records = null; out.traffic = null; out.trend = null; }
+    out.records = null; out.traffic = null; out.trend = null;
+    out.params.next_door_ft = NEXT_DOOR_FT; out.params.store_ft = STORE_FT; out.nearby = null; }
   const ctx = {};   // camaQuery()'s state for this request
   let recTimer = null;   // v8.43: the records' deadline, cleared in finally whichever way this ends
   try{
@@ -675,6 +722,9 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     // v8.44: every market sale over the last two TREND_MONTHS windows, for the direction line
     const salesP = stRows && area ? salesTrend(lat, lng, stRows, area.rows, recSignal)
       .catch(e=>{ out.errors.push('trend sales: '+late(e)+' (direction without the price signal)'); return null; }) : Promise.resolve(null);
+    // v8.47: business parcels next door and stores within ¼ mile (county data, so the normal signal, not the City deadline)
+    const aroundP = aroundLot(pid, lat, lng, ctx, fetchSignal)
+      .catch(e=>{ out.errors.push('next door: '+e.message+' (business neighbours and stores not checked)'); return null; });
     const since = Date.now() - SALE_MONTHS*30.44*86400000;
     let lots = new Set();
     const salePids = [...new Set([...(stRows||[]), ...(area?area.rows:[])].filter(r=>isHomeSale(r, since)).map(r=>r.pid))];
@@ -683,8 +733,8 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
     if(stRows) out.street = Object.assign({label:`${label} within ${ft.toLocaleString()} ft`}, profile(stRows, since, lots));
     if(area) out.neighborhood = Object.assign({label:area.label, kind:area.kind}, profile(area.rows, since, lots));
     if(out.street && out.street.lot_sales_left_out) out.notes.push(`${out.street.lot_sales_left_out} lot purchase${out.street.lot_sales_left_out===1?'':'s'} (sold as vacant) left out of the street's sales.`);
-    const [rec, traffic, sales] = await Promise.all([recP, trafficP, salesP]);
-    out.traffic = traffic;
+    const [rec, traffic, sales, around] = await Promise.all([recP, trafficP, salesP, aroundP]);
+    out.traffic = traffic; out.nearby = around;
     if(rec && rec.city === false) out.notes.push('Outside the City of Charlotte’s code-enforcement area, so no City code violations or 311 complaints are counted (the towns keep no open records like these). No records here doesn’t mean a clean street.');
     if(rec && rec.city){
       out.records = rec;
@@ -699,7 +749,8 @@ export async function streetCheck(pid, ft, view, keep, fetchSignal){
       out.checks = compare(out.street, out.neighborhood);
       out.verdict = verdictFor(out.checks, out.street, out.neighborhood.kind==='radius'?'the half mile around it':'its neighbourhood',
         {records:!!out.records, traffic:!!traffic, aadt:traffic&&traffic.aadt, thoroughfare:traffic&&traffic.thoroughfare, busy:!!(traffic&&traffic.busy),
-          demolition_orders:out.records ? out.records.street.demolition_orders : 0});
+          demolition_orders:out.records ? out.records.street.demolition_orders : 0,
+          next_door:around ? around.next_door : 0, next_door_uses:around ? around.next_door_uses : []});
       // v8.44: the street's direction, beside the verdict (it doesn't change the verdict)
       if(sales && sales.truncated) out.notes.push('More county sales in this area than one lookup returns, so the direction\u2019s price signal may be off.');
       const builds = buildsTrend(stRows, area.rows);
