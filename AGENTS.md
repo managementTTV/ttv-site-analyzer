@@ -2,7 +2,9 @@
 
 Shared rulebook for the two agents that touch this repo:
 - **Claude (Cowork)** — *author.* Implements changes, tests headless, opens the PR.
-- **Codex** — *reviewer.* Reviews every PR against the guidelines below, flags P0/P1.
+- **Codex** — *reviewer.* Reviews every PR against the guidelines below, flags P0/P1. **Codex has never
+  reviewed a PR on this repo** (it answers "usage limits"); until it does, the **Claude stopgap review** is the
+  review step (see PR protocol).
 - **Brian** — *merge gate.* Reads Codex's findings + Claude's responses, then merges.
 
 Both agents read this file. Claude follows it while writing; Codex enforces it while
@@ -26,11 +28,12 @@ in the repo, version it with the code.
   `markAllManual()` select `.page input[id]`). Hero tiles and section summaries are display-only,
   filled from `getReportData()` in `updateHero()`.
 - **Architecture:** a **single, fully client-side `index.html`** (UI + all logic + all
-  plan data, ~4,900 lines) + five serverless functions in `api/`: `gis.js` (Charlotte/Meck
+  plan data, ~7,700 lines) + eight serverless functions in `api/`: `gis.js` (Charlotte/Meck
   GIS + county assessor proxy), `comps.js` (county new-build comps), `street.js` (the street check,
   v8.18), `permits.js` (the permitting board's data proxy), `deal-sheet.js` (v8.21, a redirect to the
   New Deal web app; see Deal-sheet hand-off) and `mcp.js` (the "TTV Street Data" MCP connector for
-  claude.ai, 2026-10-01; see Street Data connector) + `plans/` images + `assets/` logos. No framework, no build
+  claude.ai, 2026-10-01; see Street Data connector), plus `accela.js` and `permit-reminders.js` (the permitting board's
+  Accela status sync and reminders; see the permitting board section) + `plans/` images + `assets/` logos. No framework, no build
   step, no database. Everything runs in the browser. Two small static pages sit beside it: `permits.html` (below) and
   `streetview.html` (v8.20, the lot's Street View on its own page; see Street check).
 - **Deploy model — why review matters:** Vercel serves the static files; **every push to
@@ -1112,7 +1115,7 @@ sending it in either request (Vercel never sees the deal); the New Deal page rea
 `google.script.url.getLocation()` and passes it to `createDealFromAnalyzer()`, which copies the V1.1 template into Underwritten, fills the green input cells, ticks the matching
 Upgrades rows, writes the comps, and adds a locked **Analyzer Snapshot** tab (site facts, the analyzer's
 worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules:
-- **`NEW_DEAL_URL` is a Vercel env var only** (Production + Preview), like the permits feed: the repo is public. Flag the
+- **`NEW_DEAL_URL` is a Vercel env var only** (set on Production only, not Preview, so a preview's Send to deal sheet shows the "not set up" page), like the permits feed: the repo is public. Flag the
   /exec link appearing in `index.html` or any committed file. `deal-sheet.js` refuses anything that isn't a
   `script.google.com/.../exec` (or `/dev`) URL and answers 501 with a set-up note when it's missing.
 - **The payload is read through the exporters' readers** (`getReportData()`, `collectModelInputs()`, `moneyIssues()`),
@@ -1204,6 +1207,8 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
+  - **Current reference (v8.42 through v8.44, re-run on a fresh page 2026-10-15 on v8.44): Max land $256,586, hash
+    `54155a16bebc`.** v8.43 and v8.44 (Street Check records and trend) don't move it; the county assessor block reads "Mecklenburg County CAMA".
   - **v8.42 (inner units): Max land $256,586**, hash **`54155a16bebc`** (recorded without opening Compare builds or the
     PDF). 3 × Dayton has 1 inner unit, so Base ARV / unit is $364,315 (0.9933 × $366,760), Base profit / unit $115,320
     ($117,618 before), total $345,960, CoC 46.3%, opening offer $205,000 ($210,000 before), stress profit $50,721. The loan
@@ -1253,10 +1258,14 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
 1. **Claude** branches off `main` (never commits straight to `main`), implements, tests
    headless, and opens a PR whose description states **what changed, why, and the manual
    verification numbers**.
-2. **Codex** auto-reviews against this file and posts P0/P1 findings. Focused passes on
-   request: `@codex review for financing-math regressions`.
+2. **Review.** **Codex** is meant to auto-review against this file and post P0/P1 findings (focused passes on
+   request: `@codex review for financing-math regressions`), but it has never done so on this repo (usage limit). While
+   it is at its limit, the **Claude stopgap review** is the review step: a separate Claude pass over the PR diff against
+   this file, with its findings fixed or answered in the PR before it goes to Brian. Still post `@codex review`
+   (as WolfDens) so Codex catches up when its quota allows.
 3. **Claude** responds to each finding in-thread — fix, or justify why it's a
    non-issue — and pushes follow-up commits.
 4. **Brian** reads the resolved thread + the Vercel preview, then merges → Vercel deploys.
 
-Nothing reaches production without passing through this loop.
+Nothing reaches production without passing through this loop: a review (Codex when it works, the Claude stopgap
+review while it is at its limit), then Brian's merge.
