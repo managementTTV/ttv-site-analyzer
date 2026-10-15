@@ -763,7 +763,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.45 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.46 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -2280,8 +2280,8 @@ let _structDrag = null;
 const $=id=>document.getElementById(id);
 const fmt=n=>(!n&&n!==0)||isNaN(n)?'—':'$'+Math.round(n).toLocaleString();
 const fmtN=n=>isNaN(n)?'—':Math.round(n).toLocaleString();
-// v8.45 (S-F5): money and area boxes are text, so Safari/Firefox keep "11,521"; commas, $ and spaces are dropped here
-// The boxes that were number boxes (v8.45) still refuse letters, as a number box does: "12k" or "abc" is dropped as it's typed
+// v8.46 (S-F5): money and area boxes are text, so Safari/Firefox keep "11,521"; commas, $ and spaces are dropped here
+// The boxes that were number boxes (v8.46) still refuse letters, as a number box does: "12k" or "abc" is dropped as it's typed
 // rather than read as 12 or 0 without a word. Capture phase, so it runs before the box's own oninput.
 const _NUM_TEXT=new Set(['cust-c','tap-water','tap-sewer','septic-cost','survey','appraisal','insurance','custom-plans','demo-rate','row-labor','dirt-rate','grading','site-prep','utilities','framing','culverts','landscaping','sop-band','fin-doc-fee','fin-tax','lot-sf','lot-sf-poly','demo-sqft','cust-sf','buildable-override','bua-hardscape']);
 document.addEventListener('input',e=>{const t=e.target;if(t&&_NUM_TEXT.has(t.id)){const v=t.value.replace(/[^0-9.,$\s-]/g,'');if(v!==t.value)t.value=v;}},true);
@@ -5789,7 +5789,7 @@ function getReportData(){
     date:new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),
     fin,cost,scenarios,psf,terms,arvFactor,innerUnits,
     maxLand:($('max-land-display')||{}).textContent||'—',
-    asking:mv('asking-price')||0,   // v8.45 (N2.3): the PDF's Deal Summary and the workbook's Inputs
+    asking:mv('asking-price')||0,   // v8.46 (N2.3): the PDF's Deal Summary and the workbook's Inputs
     offer:offerCheck(landCost),   // v8.38: opening offer, the profit rule at this land and at asking, the SOP-08 stress
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
     lfItems:((typeof window!=='undefined'&&window._lfItems)||[]).slice(),
@@ -5828,7 +5828,7 @@ function buildReportHTML(canvasDataUrl){
   const baseProfit=base.hasArv?sign(base.profit):'<span style="color:#647a8e">Enter ARV</span>';
   const baseCoc=base.hasArv?signPct(base.coc):'—';
   // v8.8: the same notes as the screen's #lever-warn, so the memo can't quietly run on a misread land or ARV
-  // v8.45 (X-L6): and the profit-rule and loan-term notes (#profit-rule-warn, #term-warn), which the memo left out
+  // v8.46 (X-L6): and the profit-rule and loan-term notes (#profit-rule-warn, #term-warn), which the memo left out
   const inputNotes=[...moneyIssues(),...d.fin.profitRule.issues,...getTerms().issues].map(i=>i.msg).join(' ');
   // v8.38: the asking check and the SOP-08 stress test, as on the screen (green, amber or red line; the stress box only
   // when it fails)
@@ -7094,7 +7094,7 @@ function serializeDeal(){
     gisMismatch:_gisMismatch,   // v8.16: a reopened parcel that isn't this address stays flagged across saves
     sheetHandoff:_sheetHandoff,   // v8.21: sent to its deal sheet
     arvTool:_arvTool,   // v8.41: what the last county pull said about the ARV (vet verdict)
-    // v8.45 (S-F6): what the deal read when it was saved, so a reopen can say when today's plan prices or rules moved it.
+    // v8.46 (S-F6): what the deal read when it was saved, so a reopen can say when today's plan prices or rules moved it.
     // The save file only: the deal-sheet hand-off payload is built elsewhere and doesn't carry it.
     snap:{maxLand:(($('max-land-display')||{}).textContent||'').trim(),planCost:currentPlanCost||0,appV:APP_VERSION}};
 }
@@ -7248,7 +7248,7 @@ function restoreDeal(d){
      renderTaxHint();}
     updateLinks();updateGISLink();   // step 1 built these before the street and ZIP were back
     updateDealPulse();
-    // v8.45 (S-F6): reopening re-prices on today's plan list and rules, so say so when that moved the deal (a saved plan
+    // v8.46 (S-F6): reopening re-prices on today's plan list and rules, so say so when that moved the deal (a saved plan
     // that's gone, its price, or the Max land) instead of leaving it to be noticed
     const moved=[];
     {const sn=d.snap&&typeof d.snap==='object'?d.snap:null,mlNow=(($('max-land-display')||{}).textContent||'').trim();
@@ -7258,7 +7258,7 @@ function restoreDeal(d){
      if(sn&&!moved.some(m=>/any more/.test(m))&&typeof sn.maxLand==='string'&&sn.maxLand&&sn.maxLand!==mlNow)moved.push(`Max land is ${mlNow} now; it was ${sn.maxLand} when saved.`);}
     // the resume bar's offer is stale now: the autosave is about to write this deal into its slot
     dismissResume();
-    _savedSig=dealSig();   // v8.45 (S-F13): what's on screen now is what was saved or loaded
+    _savedSig=dealSig();   // v8.46 (S-F13): what's on screen now is what was saved or loaded
     showToast('Deal restored: '+(d.address||'saved deal')+(moved.length?'. Heads up, it was re-priced on today\u2019s numbers: '+moved.join(' '):''),moved.length?'warn':'ok',moved.length?10000:0);
   }catch(e){
     console.error('restore',e);
@@ -7267,7 +7267,7 @@ function restoreDeal(d){
     showToast('Restore failed: '+e.message+'. The page is only partly loaded: reload it before you carry on.','warn');
   }
 }
-// v8.45 (S-F13): is there a deal on screen that hasn't been saved to a file (or loaded from one) as it stands? Compared
+// v8.46 (S-F13): is there a deal on screen that hasn't been saved to a file (or loaded from one) as it stands? Compared
 // with what the last save or restore left, so a deal nobody has touched, or a blank page, never asks.
 let _savedSig=null;
 const dealSig=()=>{const d=serializeDeal();delete d.ts;return JSON.stringify(d);};
@@ -7293,7 +7293,7 @@ function downloadDealJSON(){
 }
 function loadDealFile(inp){
   const f=inp.files&&inp.files[0];if(!f)return;
-  if(!confirmReplaceDeal('Loading that file')){inp.value='';return;}   // v8.45 (S-F13)
+  if(!confirmReplaceDeal('Loading that file')){inp.value='';return;}   // v8.46 (S-F13)
   const r=new FileReader();
   r.onload=()=>{try{restoreDeal(JSON.parse(r.result));}catch(e){showToast('Couldn\u2019t read that file: '+e.message,'warn');}};
   r.readAsText(f);inp.value='';
@@ -7307,7 +7307,7 @@ function scheduleAutosave(){
     // v8: navigating now triggers recalcs (and so autosaves) before Resume is clicked; a blank form
     // must never overwrite a saved session the resume bar is still offering.
     if(!d.address&&localStorage.getItem(AUTOSAVE_KEY))return;
-    // v8.45 (S-F8): this write replaces the session the resume bar offers, so take the offer down rather than leave a
+    // v8.46 (S-F8): this write replaces the session the resume bar offers, so take the offer down rather than leave a
     // button that would restore something else under that address
     {const rb=$('resume-bar');if(rb&&rb.classList.contains('show'))dismissResume();}
     localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(d));
@@ -7317,13 +7317,13 @@ document.addEventListener('input',scheduleAutosave);
 document.addEventListener('change',scheduleAutosave);
 function resumeAutosave(){
   try{const d=JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null');
-    // v8.45 (S-F8): only the session the bar named; another tab or a newer edit may have replaced it since
+    // v8.46 (S-F8): only the session the bar named; another tab or a newer edit may have replaced it since
     if(d&&_resumeTs&&d.ts!==_resumeTs){dismissResume();showToast('That saved session has been replaced by newer work, so it can\u2019t be resumed.','warn');return;}
-    if(d&&confirmReplaceDeal('Resuming that session'))restoreDeal(d);   // v8.45 (S-F13)
+    if(d&&confirmReplaceDeal('Resuming that session'))restoreDeal(d);   // v8.46 (S-F13)
     else if(d)return;}catch(e){showToast('Couldn\u2019t restore the session.','warn');}
   dismissResume();
 }
-let _resumeTs=0;   // v8.45: the saved session the bar is offering
+let _resumeTs=0;   // v8.46: the saved session the bar is offering
 function dismissResume(){const b=$('resume-bar');if(b)b.classList.remove('show');}
 function checkResumeBanner(){
   try{
@@ -7341,9 +7341,9 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.45', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.46', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
- {v:'8.45',date:'Oct 2026',name:'Exports and reopening a deal',items:[
+ {v:'8.46',date:'Oct 2026',name:'Exports and reopening a deal',items:[
    'The PDF and the Excel workbook now show the asking price (the PDF in Deal Summary beside the land cost used, Excel on Inputs and the Cover).',
    'The PDF cover had a \u201cTotal All-In\u201d that disagreed with the one on the scenario sheet. The cover now shows Total All-In / Unit (the Base figure the profit rule uses) and the project cost under it. The cost build-up\u2019s total is called Total Project Cost, and so is the Deal Pulse bar\u2019s.',
    'The PDF cover now carries the same warnings as the screen: loan-term and profit-rule notes, land above asking, the deal missing the profit rule at its land cost (the stress and asking lines were already there).',

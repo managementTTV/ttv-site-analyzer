@@ -262,7 +262,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   so a switch still due on reopen can still land on default taps. Files from before v8.14 have no
   `tapManual`, and their taps count as defaults, which is how v8.9–v8.13 treated them.
 
-### Exports, money boxes and saved deals (v8.45)
+### Exports, money boxes and saved deals (v8.46)
 - **One "Total All-In".** It means the Base per-unit figure the profit rule uses (land + build + costs + holding + sale
   costs, `scenarios[].totalAllIn`): the PDF cover shows it as "Total All-In / Unit" with the project cost under it.
   Land + all-in ex land is "Total Project Cost" everywhere (PDF cost build-up, Deal Pulse bar, Excel B6). Flag a second
@@ -1225,7 +1225,7 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
-  - **v8.45 (exports + state): Max land $256,586 unchanged**, hash **`d8b21384601c`**: the only change in `getReportData()` is the new
+  - **v8.46 (exports + state): Max land $256,586 unchanged**, hash **`d8b21384601c`**: the only change in `getReportData()` is the new
     top-level `asking` (0 on the check deal); with `asking` deleted it is v8.44's `54155a16bebc`.
   - **v8.42 (inner units): Max land $256,586**, hash **`54155a16bebc`** (recorded without opening Compare builds or the
     PDF). 3 × Dayton has 1 inner unit, so Base ARV / unit is $364,315 (0.9933 × $366,760), Base profit / unit $115,320
