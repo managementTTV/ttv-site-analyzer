@@ -668,7 +668,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     found (`%Compliance%` or "Vehicle Towed"; dismissed, no-violation and open cases don't count), sorted by the section
     they cite (`CASE_KINDS`: overgrowth 10-155, vehicles 10-165/166/167, lawn parking 14-216, junk 10-136/138; section
     number and title, the same rule as `VIOLATIONS` in mcp.js), plus Housing cases whole. The City's "Parking" case type
-    doesn't cite 14-216, so it isn't lawn parking and isn't counted.
+    doesn't cite 14-216, so it isn't lawn parking and isn't counted. The fetch itself asks only for Housing cases and
+    Nuisance cases citing a `CASE_KINDS` section (`casesWhere()`), so the four-year pull stays small; only the last 24
+    months are sorted into kinds (one query per kind per 500 ids), and the 24 before only need a total.
   - **311 condition complaints** (`ServiceRequests311`, CC BY 4.0): the condition request types, then `COMPLAINT_KINDS`
     by type and by keyword in TITLE for the "HNS HEALTH AND SANITATION" catch-all (yard: weeds, grass, trash,
     dumping, debris, junk that isn't a vehicle; vehicles: vehicle, parking, parked; boarded). Shown, never
