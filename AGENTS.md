@@ -444,30 +444,32 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
     when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
     write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.
-  - **City review-step alert email (v4.8, `api/permit-reminders.js`; Brian 2026-10-14 replaced v4.7's board
-    due dates: "it's supposed to alert us when in Accela one of the steps in the review process is overdue by
-    a certain person or department").** Source is Accela only, never the board's `due`: for every City record
-    on the board (`targets()`), each Processing Status step with `state === 'active'` and a `current.cityDue`
-    (the City's own per-step due date) that is tomorrow, today or past in Charlotte's date (`etDate`,
-    America/New_York) — the day before, the day of, and every day after until the City completes the step.
-    Left out: records whose plan review is approved (`deriveStatus().board === 'done'`: their open Urban
-    Forestry inspection is not a late review; Dellinger's reads "due Jul 1") or blocked (denied / withdrawn),
-    and steps the City doesn't hold: `cityHolds(task)` in `api/accela.js` (active, not handed back to us —
-    revisions requested, awaiting payment / plans; "Revisions Received" is the City's again — and not already
-    marked Ok / Approved / Complete). It's the one rule: the parser sets `task.cityHolds`, and the board's red
-    "N days late" on the "Now with" line reads it too. Flag a second copy of that rule. Each line names the step (department), `current.assignedTo`, the City due date and how
-    late. Records Accela didn't answer are named (`unread`). Nothing in the window → no email. Flag a change
-    that brings the board's own due dates back into this email, or alerts on an approved record. The daily
-    cron run in `api/accela.js` does `prepareSync()` (read, look up — one 25 s deadline for all lookups,
-    `lookupAll(refs, {deadlineMs})`, so a slow Accela can't run past `maxDuration` 60 — plan, apply in
-    memory), then `runReminders({state, records, send:true})` **before** `commitSync()` writes (`WRITE_BUDGET_MS`).
-    Flag a change that moves the send after the writes. Subjects carry the date ("Accela Oct 21: …") so
-    Gmail doesn't fold days into one thread; a same-day identical email isn't re-sent from the same instance
-    (re-delivered cron event). One email from management@ to management@ (`REMINDER_TO` overrides).
-    `TITLES` mirrors the `permits.html` CATALOG titles of the steps a City record sits on (context only). Sent through the Gmail API with
-    the send-only token in the Vercel env var `GMAIL_SEND_TOKEN` (JSON `{client_id, client_secret,
-    refresh_token}` for management@ — minted by `~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py`,
-    never committed). Only production sends. The route itself is preview-only (`?k=…[&format=html][&date=…]`):
+  - **Digest + movement alerts (v4.9, `api/permit-reminders.js`; Brian 2026-10-19: "a Monday-Wednesday-Friday
+    email regardless every week, then alert emails on movement on specific items" — every City record, any move).**
+    Source is Accela only, never the board's own `due` (v4.7 used it: wrong per Brian 2026-10-14). On Mon / Wed / Fri
+    (Charlotte's date, `etDate`) the **digest** always goes out: every City record on the board (`targets()`), by
+    bucket from `deriveStatus()` — waiting on us, in City review (each open step: department, `current.assignedTo`,
+    City due date, a late / due-soon badge only where `cityHolds(task)`), approved, closed — with "moved since the
+    last check" on top. Other days a **movement alert** goes out only when something moved; nothing moved → no
+    email. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
+    opening, its City due date moving, a City-held step on a record still in review going overdue, or a record new
+    on the board ("Now tracking"). "Since the last check" = `accela.seen` on the record's block: record status +
+    per step `state|newest status|date|City due`, **no names** (it's in Drive). `plan()` carries `seen` over on
+    every sync; only the cron replaces it, via `applySeen()` with the other writes, and only when `runReminders()`
+    says `advance` (the email went out, or there was nothing to send) — a failed send keeps the old snapshots so
+    tomorrow reports the same moves. The very first run (no record has a snapshot) only takes them. Flag a change
+    that lets a board-load sync replace `seen`, writes a name into it, or alerts on an approved record's leftover
+    inspection. `cityHolds(task)` in `api/accela.js` stays the one "City holds this step" rule (active, not handed
+    back to us, not already Ok / Approved / Complete); the parser sets `task.cityHolds` and the board's red "N days
+    late" reads it. The cron does `prepareSync()` (one 25 s deadline for all lookups, `lookupAll(refs,
+    {deadlineMs})`), then `runReminders({state, records, send:true})` **before** `commitSync()` writes
+    (`WRITE_BUDGET_MS`). Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
+    Mon Oct 19: …", "Accela Oct 22: 2 records moved"); a same-day identical email isn't re-sent from the same
+    instance. One email from management@ to management@ (`REMINDER_TO` overrides). `TITLES` mirrors the
+    `permits.html` CATALOG titles of the steps a City record sits on (context only). Sent through the Gmail API with
+    the send-only token in the Vercel env var `GMAIL_SEND_TOKEN` (JSON `{client_id, client_secret, refresh_token}`
+    for management@ — minted by `~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py`, never
+    committed). Only production sends. The route itself is preview-only (`?k=…[&format=html][&date=…][&kind=digest|alert]`):
     flag any change that lets the public gate hash trigger a send.
   - County building permits (`R-TH-…`) are not in Accela's public search (re-checked 2026-10-13 on
     the `MECKLENBURG` agency); they stay email-driven. Don't add County lookups without a working
