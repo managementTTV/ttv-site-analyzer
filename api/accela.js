@@ -127,7 +127,11 @@ export function parseRelated(html){
 // The record's overall status is NOT the approval signal on its own: an LDIRL stays "In Progress" after
 // its plan review is approved while the Urban Forestry inspection is open (LDIRL-2026-04500: Plan
 // Collection "Approved" 9/21, record "In Progress"). So: a closed/approved record, OR an approved Plan
-// Collection step, means done.
+// Collection step, means done — except a plat whose mylar isn't signed yet. After Plan Collection a plat still
+// has "Awaiting Mylar to be Signed" open with a City planner, and it can't be recorded until that's done
+// (LDPLAT-2026-00562: Plan Collection Approved 10/16, mylar with Madison Peacock, City due 10/23; Brian
+// 2026-10-19: "why is this showing as approved?"). A record whose status says Approved is done either way.
+const RELEASE_STEP = /mylar/i;
 const DEAD = /(denied|disapproved|withdrawn|expired|void|cancel|rejected|abandoned|revoked)/i;
 const DONE = /^(approved|issued|closed|complete|completed|finaled|final|recorded|finalized)\b/i;
 const BACK = /(revisions? received|resubmitted|plans received)/i;   // we answered — the City is reviewing again
@@ -156,7 +160,18 @@ export function deriveStatus(rec){
   const approved = planOk ? { step: plan.name, stepStatus: planOk.status, stepDate: planOk.date } : step;
   if(DEAD.test(s)) return { board: 'blocked', why: `Accela: ${s}`, ...step };
   if(DONE.test(s)) return { board: 'done', why: `Accela: ${s}`, ...approved };
-  if(planOk) return { board: 'done', why: `Plan review approved ${planOk.date || ''} (record still ${s || 'open'} for inspections)`.replace('  ', ' '), ...approved };
+  if(planOk){
+    const mylar = tasks.find(t => RELEASE_STEP.test(t.name) && t.state === 'active');
+    if(mylar){
+      const due = mylar.current && mylar.current.cityDue;
+      const holds = cityHolds(mylar);
+      return { board: holds ? 'submitted' : 'active',
+               why: `Plan review approved ${planOk.date || ''} — ${holds ? 'waiting on the City to sign the mylar' : 'the City needs the mylar from us'}${holds && due ? ` (City due ${due})` : ''}`.replace('  ', ' '),
+               step: mylar.name, stepStatus: (mylar.current && mylar.current.status) || (mylar.latest && mylar.latest.status) || null,
+               stepDate: (mylar.latest && mylar.latest.date) || null };
+    }
+    return { board: 'done', why: `Plan review approved ${planOk.date || ''} (record still ${s || 'open'} for inspections)`.replace('  ', ' '), ...approved };
+  }
   if(BACK.test(s)) return { board: 'submitted', why: `In City review: ${s}`, ...step };
   if(OURS.test(s)){
     const why = /payment/i.test(s) ? 'Fees due — pay in Accela' : /revision|correction|resubmit|returned/i.test(s)

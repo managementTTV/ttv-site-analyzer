@@ -412,7 +412,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   the feed as editor `"Accela"`: `status`, `started` (only when blank) and a compact `accela` block
   `{rec,status,type,opened,asOf,board,why,step,stepStatus,stepDate,owns}`. Rules to enforce:
   - **Approval signal:** done = record status approved/issued/closed/complete…, **or** the
-    `Plan Collection` step's newest-dated entry is Approved/Ok. Record status alone is wrong: an
+    `Plan Collection` step's newest-dated entry is Approved/Ok **and no mylar step is still open**
+    (`RELEASE_STEP`, `/mylar/i`: a plat isn't approved until the City signs the mylar — it can't be recorded
+    before; LDPLAT-2026-00562, Brian 2026-10-19). An open mylar step the City holds reads `submitted`
+    ("waiting on the City to sign the mylar", its City due date), one handed to us `active`. Flag a change that
+    calls a plat done while its mylar step is open. Record status alone is wrong: an
     LDIRL stays "In Progress" after approval while the Urban Forestry inspection is open
     (LDIRL-2026-04500). Same-day history entries come back in no fixed order — compare dates, never
     trust position. Flag a change that derives "done" from record status only.
