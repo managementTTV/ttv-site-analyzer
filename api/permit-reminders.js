@@ -1,30 +1,34 @@
-// api/permit-reminders.js — daily Accela review-step alert  v2 (Brian 2026-10-14)
-// One email to management@ each morning listing every City review step that is still open with a City
-// reviewer and whose CITY due date (Accela's own "Due on" for that step) is tomorrow, today or already past —
-// so the team knows who to ping: the step (department), the reviewer assigned, when it was due and how late.
-// The day before, the day of, and every day after until the City marks the step done. Nothing due → no email.
-// v1 (2026-10-13) used the board's own due dates; Brian: those aren't the City's, the alert is about the City.
+// api/permit-reminders.js — Accela digest + movement alerts  v3 (Brian 2026-10-19)
+// Brian: "I want a Monday-Wednesday-Friday email regardless every week, then alert emails on movement on specific
+// items" — specific items = every City record on the board, any move (his pick, 2026-10-19).
+//   - Mon / Wed / Fri (Charlotte's date): the DIGEST, sent every time. Every City record on the board, by where it
+//     stands — waiting on us, in City review (each open step: department, reviewer, City due date, late / due
+//     soon), approved — with what moved since the last check at the top.
+//   - Other days: a MOVEMENT ALERT, only when something moved on a record since the last check: a record status
+//     change, a step's newest entry (Ok, Revisions, Fees Assessed…), a step opening with a reviewer, a City due
+//     date moving, a City-held step going overdue, a record newly on the board. Nothing moved → no email.
+// v1 (10/13) used the board's own due dates; v2 (10/14) emailed only steps due or late. Both are replaced.
 //
-// Which steps: every City record on the board (the refs the Accela sync reads), each Processing Status step
-// that is active with an open assignment and a City due date. Left out: records whose plan review is already
-// approved (what stays open — e.g. the Urban Forestry inspection before the CO — isn't a late review), and
-// steps the City has handed back to us (revisions requested, fees due, plans awaited: our move, not theirs).
-// Records Accela didn't answer this run are named in the email.
+// "Since the last check": each record's Accela block in Drive carries `seen`, a snapshot of its record status
+// and each step's state / newest entry / City due date, with no names. The cron sends first, then writes the new
+// snapshots with its other saves (api/accela.js); a failed send leaves them, so tomorrow reports the same moves.
+// The very first run (no record has a snapshot yet) only takes them — no flood of "moves".
 //
-// Sending: the daily cron in api/accela.js calls runReminders({send:true}) right after its Accela look-up and
-// before the writes. Gmail API as management@ with a send-only token in the Vercel env var GMAIL_SEND_TOKEN
-// ({client_id, client_secret, refresh_token} JSON, minted by
+// Sending: the daily cron in api/accela.js calls runReminders({state, records, send:true}) after its Accela
+// look-up and before the writes. Gmail API as management@ with a send-only token in the Vercel env var
+// GMAIL_SEND_TOKEN ({client_id, client_secret, refresh_token} JSON, minted by
 // ~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py). Only production sends.
-// GET ?k=<gate hash>[&format=html][&date=YYYY-MM-DD] — preview only (never sends): what the email would say
-// today, or on another ET date.
+// GET ?k=<gate hash>[&format=html][&date=YYYY-MM-DD][&kind=digest|alert] — preview only (never sends, never saves).
 import { GATE_HASH, loadPermitState } from './permits.js';
 import { lookupAll, recordUrl, deriveStatus, targets, cityHolds } from './accela.js';
 
 const FROM = 'management@tidetimberventures.com';
 const TO = process.env.REMINDER_TO || FROM;
 const BOARD = 'https://ttv-site-analyzer.vercel.app/permits.html';
+const DIGEST_DAYS = [1, 3, 5];                 // Mon, Wed, Fri
+const SOON_DAYS = 3;                           // the digest flags a City step due within this many days
 // Brand (ttv-branding; same values as ttv-meetings/meeting_mailer/email_html.py)
-const NAVY = '#102538', SLATE = '#5E8095', CREAM = '#F5F0E7', WHITE = '#FFFFFF', AMBER = '#C98A1B', RED = '#B23A3A';
+const NAVY = '#102538', SLATE = '#5E8095', PINE = '#648370', CREAM = '#F5F0E7', WHITE = '#FFFFFF', AMBER = '#C98A1B', RED = '#B23A3A';
 const FONT = "Montserrat,'Helvetica Neue',Helvetica,Arial,sans-serif";
 
 // Board step titles for context ("Sublot plat — City approval") — a mirror of permits.html CATALOG (id → t)
@@ -35,6 +39,9 @@ const TITLES = {
   'plat-app': 'Sublot plat — City approval', 'plat-rec': 'Sublot plat RECORDED — per-unit PIDs',
   'hist': 'Historic review / COA (if applicable)'
 };
+// How a step's newest entry reads for us: good news, our move, or neutral.
+const GOOD = /^(ok|approved|complete|completed|issued|passed|fees paid|finaled)\b/i;
+const OURS = /(revision(s)?$|revisions required|^revisions\b|awaiting (revisions?|payment|plans|info|information|applicant|corrections?)|fees assessed|payment due|fees due|incomplete|on hold)/i;
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 // a real calendar day (2026-02-30 is not)
@@ -43,101 +50,184 @@ const isDay = s => { if(!ISO.test(s || '')) return false; const [y, m, d] = s.sp
 // "Today" is Charlotte's date, not the server's (UTC).
 export const etDate = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 const dayNum = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+const dow = s => new Date(dayNum(s) * 86400000).getUTCDay();
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const nice = s => { if(!s || !ISO.test(s)) return s || ''; const [, m, d] = s.split('-').map(Number); return `${MON[m - 1]} ${d}`; };
 const longDay = s => { const [y, m, d] = s.split('-').map(Number); return `${DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${MON[m - 1]} ${d}, ${y}`; };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const when = n => n === 1 ? 'due tomorrow' : n === 0 ? 'due today' : `${-n} day${n === -1 ? '' : 's'} overdue`;
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const dueText = n => n == null ? '' : n < 0 ? `${-n} day${n === -1 ? '' : 's'} late` : n === 0 ? 'due today' : n === 1 ? 'due tomorrow' : `due in ${n} days`;
+const short = a => String(a || '').split(' (')[0];
 
-// Every open City review step due tomorrow, today or earlier (ET), most overdue first; plus the records
-// Accela didn't answer.
-export function lateSteps(state, records, today){
-  const steps = [], unread = [], seen = new Set();
-  for(const t of targets(state)){
-    if(seen.has(t.ref)) continue;
-    seen.add(t.ref);
-    const rec = records[t.ref];
-    if(!rec || !rec.ok){ unread.push({ ref: t.ref, addr: t.addr, error: rec ? rec.error : 'not looked up' }); continue; }
-    const board = deriveStatus(rec).board;
-    if(board === 'done' || board === 'blocked') continue;     // approved, or denied / withdrawn: nothing to chase
-    for(const k of rec.tasks || []){
-      const c = k.current;
-      if(!cityHolds(k) || !isDay(c.cityDue)) continue;
-      const days = dayNum(c.cityDue) - dayNum(today);
-      if(days > 1) continue;
-      steps.push({ ref: rec.ref, url: recordUrl(rec.ref), type: rec.type, recordStatus: rec.status, addr: t.addr,
-                   milestoneId: t.milestoneId, title: Object.hasOwn(TITLES, t.milestoneId) ? TITLES[t.milestoneId] : null,
-                   step: k.name, assignedTo: c.assignedTo || null, cityDue: c.cityDue, days,
-                   stepStatus: c.status || (k.latest && k.latest.status) || null, since: (k.latest && k.latest.date) || null });
+// ── the snapshot ("seen") and what moved ─────────────────────────────────────────────────────────────
+// One entry per step: state | newest status | its date | City due. No reviewer names: it is saved to Drive.
+export function snapshot(rec, today){
+  const steps = {};
+  (rec.tasks || []).forEach(k => {
+    let name = k.name, i = 2;
+    while(Object.hasOwn(steps, name)) name = `${k.name} #${i++}`;
+    steps[name] = [k.state || '', (k.latest && k.latest.status) || '', (k.latest && k.latest.date) || '', (k.current && k.current.cityDue) || ''].join('|');
+  });
+  return { at: today, status: rec.status || null, steps };
+}
+const tone = st => GOOD.test(st || '') ? 'good' : OURS.test(st || '') ? 'ours' : 'info';
+// Same record status and same steps (key by key — a republished file may reorder them)?
+const sameSnap = (a, b) => !!a && !!b && (a.status || null) === (b.status || null) && !!a.steps && !!b.steps &&
+  Object.keys(a.steps).length === Object.keys(b.steps).length && Object.keys(b.steps).every(k => a.steps[k] === b.steps[k]);
+
+export function moves(prev, rec, today, stillOpen){
+  const out = [], cur = snapshot(rec, today).steps;
+  if((prev.status || null) !== (rec.status || null))
+    out.push({ tone: tone(rec.status), text: `Record status: ${prev.status || '—'} → ${rec.status || '—'}` });
+  const tasks = rec.tasks || [];
+  let i = 0;
+  for(const [name, val] of Object.entries(cur)){
+    const k = tasks[i++] || {};
+    const [state, st, date, due] = val.split('|');
+    const was = prev.steps && Object.hasOwn(prev.steps, name) ? prev.steps[name].split('|') : null;
+    const who = k.current && k.current.assignedTo;
+    const holds = cityHolds(k);
+    if(!was){
+      if(state === 'active') out.push({ tone: 'info', text: `New step: ${name}${who ? ` — ${who}` : ''}${due ? `, City due ${nice(due)}` : ''}` });
+      continue;
     }
+    const [wState, wSt, wDate, wDue] = was;
+    if(st && (st !== wSt || date !== wDate))
+      out.push({ tone: tone(st), text: `${name}: ${st}${date ? ` (${nice(date)})` : ''}${who && holds ? ` — with ${who}` : ''}` });
+    else if(state === 'active' && wState !== 'active')
+      out.push({ tone: 'info', text: `${name} is now open${who ? ` with ${who}` : ''}${due ? `, City due ${nice(due)}` : ''}` });
+    if(due && wDue && due !== wDue)
+      out.push({ tone: 'info', text: `${name}: City due date moved ${nice(wDue)} → ${nice(due)}` });
+    // went late since the last check (a City-held step on a record still in review)
+    if(stillOpen && holds && isDay(due) && isDay(prev.at) && dayNum(due) < dayNum(today) && dayNum(due) >= dayNum(prev.at))
+      out.push({ tone: 'late', text: `${name}${who ? ` — ${who}` : ''} is now overdue (City due ${nice(due)})` });
   }
-  steps.sort((a, b) => a.days - b.days || String(a.addr).localeCompare(b.addr) || a.step.localeCompare(b.step));
-  return { steps, unread };
+  return out;
 }
 
-export function render(steps, unread, today){
-  const over = steps.filter(s => s.days < 0), now = steps.filter(s => s.days === 0), next = steps.filter(s => s.days === 1);
-  const parts = [];
-  if(over.length) parts.push(`${plural(over.length, 'review step')} overdue`);
-  if(now.length) parts.push(`${over.length ? now.length : plural(now.length, 'review step')} due today`);
-  if(next.length) parts.push(`${over.length || now.length ? next.length : plural(next.length, 'review step')} due tomorrow`);
-  const subject = `Accela ${nice(today)}: ${parts.join(' · ')}`;   // dated, so each day is its own Gmail thread
-  const groups = [['The City is late — ping the reviewer', over, RED], ['Due today', now, AMBER], ['Due tomorrow', next, SLATE]];
-  // within a group, one block per record
-  const byRecord = list => { const m = new Map(); list.forEach(s => { if(!m.has(s.ref)) m.set(s.ref, []); m.get(s.ref).push(s); }); return [...m.values()]; };
-  const stepLine = s => `${s.step} — ${s.assignedTo || 'no reviewer assigned'} · City due ${nice(s.cityDue)} (${when(s.days)})${s.stepStatus ? ` · ${s.stepStatus}${s.since ? ' ' + nice(s.since) : ''}` : ''}`;
-  const where = u => `${u.ref} (${String(u.addr).split(' (')[0]})`;
-  const missing = unread.filter(u => /not found/i.test(u.error || '')), slow = unread.filter(u => !/not found/i.test(u.error || ''));
-  const unreadLine = [
-    slow.length ? `Couldn't read ${slow.map(where).join(', ')} in Accela this run — checked again tomorrow.` : '',
-    missing.length ? `${missing.map(where).join(', ')} isn't in Accela's public search — check the record number on the board.` : ''
-  ].filter(Boolean).join(' ');
-
-  const text = [`Accela review steps to chase — ${longDay(today)}`, ''];
-  groups.forEach(([head, list]) => {
-    if(!list.length) return;
-    text.push(head.toUpperCase());
-    byRecord(list).forEach(rs => {
-      const r = rs[0];
-      text.push(`• ${r.addr}${r.title ? ` — ${r.title}` : ''}`, `  ${r.ref}${r.type ? ` (${r.type})` : ''} · Accela: ${r.recordStatus || 'no status'} · ${r.url}`);
-      rs.forEach(s => text.push(`  - ${stepLine(s)}`));
-      text.push('');
+// Every City record on the board with where it stands, its open steps and what moved since its snapshot.
+export function board(state, records, today){
+  const out = [], unread = [], done = new Set();
+  for(const t of targets(state)){
+    if(done.has(t.ref)) continue;
+    done.add(t.ref);
+    const c = (state.projects.find(p => p.id === t.projectId) || { state: {} }).state[t.milestoneId] || {};
+    const rec = records[t.ref];
+    if(!rec || !rec.ok){ unread.push({ ref: t.ref, addr: t.addr, error: rec ? rec.error : 'not looked up' }); continue; }
+    const d = deriveStatus(rec);
+    const bucket = d.board === 'done' ? 'approved' : d.board === 'active' ? 'ours' : d.board === 'blocked' ? 'closed' : 'city';
+    const open = (rec.tasks || []).filter(k => k.state === 'active' && k.current).map(k => {
+      const due = isDay(k.current.cityDue) ? k.current.cityDue : null;
+      return { step: k.name, assignedTo: k.current.assignedTo || null, cityDue: due, holds: cityHolds(k),
+               status: k.current.status || (k.latest && k.latest.status) || null, days: due ? dayNum(due) - dayNum(today) : null };
     });
-  });
-  if(unreadLine) text.push(unreadLine, '');
-  text.push(`Permit board: ${BOARD}`, '', 'Sent each morning while a City review step is due tomorrow, due today or overdue. Steps, reviewers and due dates are the City\'s own, from Accela.');
+    const prev = c.accela && c.accela.seen && typeof c.accela.seen === 'object' ? c.accela.seen : null;
+    const snap = snapshot(rec, today);
+    const mv = prev ? moves(prev, rec, today, bucket === 'city' || bucket === 'ours') : [];
+    out.push({ ref: rec.ref, url: recordUrl(rec.ref), type: rec.type, status: rec.status, why: d.why, bucket, addr: t.addr,
+               projectId: t.projectId, milestoneId: t.milestoneId,
+               title: Object.hasOwn(TITLES, t.milestoneId) ? TITLES[t.milestoneId] : null, open,
+               moves: mv, seenBefore: !!prev, seen: snap,
+               // save a new snapshot only when something changed or moved — a quiet record keeps its old one, whose
+               // date is what "went overdue since the last check" is measured from (no daily re-alert, no daily write)
+               saveSeen: !prev || mv.length > 0 || !sameSnap(prev, snap) });
+  }
+  // a record newly on the board (others already have snapshots) is itself a move; the very first run is quiet
+  const firstRun = out.length > 0 && out.every(r => !r.seenBefore);
+  if(!firstRun) out.filter(r => !r.seenBefore).forEach(r => r.moves.push({ tone: 'info', text: `Now tracking ${r.ref} — Accela: ${r.status || 'no status'}` }));
+  return { records: out, unread, firstRun };
+}
 
-  const block = rs => {
-    const r = rs[0];
-    const rows = rs.map(s => `<tr><td style="padding:3px 0;font-family:${FONT};font-size:13px;line-height:1.45;color:${NAVY};">
-<b>${esc(s.step)}</b> — ${s.assignedTo ? esc(s.assignedTo) : '<i>no reviewer assigned</i>'}
-<span style="display:inline-block;background:${s.days < 0 ? RED : s.days === 0 ? AMBER : SLATE};color:${WHITE};font-size:11px;font-weight:700;border-radius:3px;padding:0 6px;margin-left:4px;">${esc(when(s.days))}</span>
-<div style="font-size:12px;color:${SLATE};">City due ${esc(nice(s.cityDue))}${s.stepStatus ? ` · ${esc(s.stepStatus)}${s.since ? ' ' + esc(nice(s.since)) : ''}` : ''}</div></td></tr>`).join('');
-    return `<tr><td style="padding:14px 0;border-top:1px solid ${CREAM};font-family:${FONT};">
-<div style="font-size:15px;line-height:1.35;font-weight:700;color:${NAVY};">${esc(r.addr)}${r.title ? ` — ${esc(r.title)}` : ''}</div>
-<div style="font-size:12px;line-height:1.5;color:${NAVY};padding:2px 0 6px;"><a href="${esc(r.url)}" style="color:${NAVY};font-weight:700;">${esc(r.ref)}</a>${r.type ? ` · ${esc(r.type)}` : ''} · Accela: ${esc(r.recordStatus || 'no status')}</div>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0">${rows}</table></td></tr>`;
-  };
-  const sections = groups.filter(([, l]) => l.length).map(([head, list, color]) =>
-    `<tr><td style="padding:18px 0 4px;font-family:${FONT};font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${color};">${esc(head)}</td></tr>${byRecord(list).map(block).join('')}`).join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+// ── rendering ───────────────────────────────────────────────────────────────────────────────────────
+const TONE = { good: PINE, ours: AMBER, late: RED, info: SLATE };
+const BADGE = n => n == null ? null : n < 0 ? RED : n <= 1 ? AMBER : n <= SOON_DAYS ? SLATE : null;
+const recHead = r => `${short(r.addr)}${r.title ? ` — ${r.title}` : ''}`;
+const recSub = r => `${r.ref}${r.type ? ` · ${r.type}` : ''} · Accela: ${r.status || 'no status'}`;
+const stepLine = o => `${o.step} — ${o.assignedTo || 'no reviewer assigned'}${o.cityDue ? ` · City due ${nice(o.cityDue)}` : ''}${o.holds && o.days != null ? ` (${dueText(o.days)})` : ''}${!o.holds && o.status ? ` · with us: ${o.status}` : ''}`;
+const unreadLine = unread => {
+  const where = u => `${u.ref} (${short(u.addr)})`;
+  const missing = unread.filter(u => /not found/i.test(u.error || '')), slow = unread.filter(u => !/not found/i.test(u.error || ''));
+  return [slow.length ? `Couldn't read ${slow.map(where).join(', ')} in Accela this run — checked again tomorrow.` : '',
+          missing.length ? `${missing.map(where).join(', ')} isn't in Accela's public search — check the record number on the board.` : ''].filter(Boolean).join(' ');
+};
+
+function shell(eyebrow, heading, sectionsHtml, foot, today, preheader){
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:${CREAM};">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${CREAM};font-size:1px;line-height:1px;">${esc(steps.map(s => `${s.step} (${s.assignedTo || 'unassigned'}): ${when(s.days)}`).join(' · '))}</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${CREAM};font-size:1px;line-height:1px;">${esc(preheader)}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${CREAM}" style="background:${CREAM};"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;">
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};border-top:3px solid ${NAVY};padding:24px 28px 8px;font-family:${FONT};">
-<div style="font-size:11px;line-height:1.4;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${SLATE};">Tide &amp; Timber Ventures · Accela review steps · ${esc(longDay(today))}</div>
-<div style="font-size:22px;line-height:1.25;font-weight:700;color:${NAVY};padding-top:8px;">${esc(parts.join(', ').replace(/^./, c => c.toUpperCase()))}</div>
+<div style="font-size:11px;line-height:1.4;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${SLATE};">Tide &amp; Timber Ventures · ${esc(eyebrow)} · ${esc(longDay(today))}</div>
+<div style="font-size:22px;line-height:1.25;font-weight:700;color:${NAVY};padding-top:8px;">${esc(heading)}</div>
 </td></tr>
-<tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:0 28px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${sections}</table></td></tr>
+<tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:0 28px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${sectionsHtml}</table></td></tr>
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:14px 28px 24px;font-family:${FONT};">
-${unreadLine ? `<div style="font-size:12px;line-height:1.5;color:${AMBER};padding-bottom:12px;">${esc(unreadLine)}</div>` : ''}
+${foot.warn ? `<div style="font-size:12px;line-height:1.5;color:${AMBER};padding-bottom:12px;">${esc(foot.warn)}</div>` : ''}
 <a href="${BOARD}" style="display:inline-block;background:${NAVY};color:${CREAM};font-weight:700;font-size:13px;text-decoration:none;border-radius:6px;padding:9px 16px;">Open the permit board</a>
-<div style="font-size:11px;line-height:1.5;color:${SLATE};padding-top:12px;">Sent each morning while a City review step is due tomorrow, due today or overdue. Steps, reviewers and due dates are the City's own, from Accela.</div>
+<div style="font-size:11px;line-height:1.5;color:${SLATE};padding-top:12px;">${esc(foot.note)}</div>
 </td></tr></table></td></tr></table></body></html>`;
-  return { subject, text: text.join('\n'), html };
+}
+const sectionHead = (label, color) => `<tr><td style="padding:18px 0 4px;font-family:${FONT};font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${color};">${esc(label)}</td></tr>`;
+const recordHtml = (r, body) => `<tr><td style="padding:12px 0;border-top:1px solid ${CREAM};font-family:${FONT};">
+<div style="font-size:15px;line-height:1.35;font-weight:700;color:${NAVY};">${esc(recHead(r))}</div>
+<div style="font-size:12px;line-height:1.5;color:${NAVY};padding:2px 0 4px;"><a href="${esc(r.url)}" style="color:${NAVY};font-weight:700;">${esc(r.ref)}</a>${r.type ? ` · ${esc(r.type)}` : ''} · Accela: ${esc(r.status || 'no status')}</div>${body}</td></tr>`;
+const lineHtml = (text, color, badge) => `<div style="font-family:${FONT};font-size:13px;line-height:1.5;color:${NAVY};padding:1px 0;"><span style="color:${color};font-weight:700;">●</span> ${esc(text)}${badge ? ` <span style="display:inline-block;background:${badge.color};color:${WHITE};font-size:11px;font-weight:700;border-radius:3px;padding:0 6px;">${esc(badge.text)}</span>` : ''}</div>`;
+const openHtml = o => lineHtml(`${o.step} — ${o.assignedTo || 'no reviewer assigned'}${o.cityDue ? ` · City due ${nice(o.cityDue)}` : ''}${!o.holds && o.status ? ` · with us: ${o.status}` : ''}`,
+  o.holds ? SLATE : AMBER, o.holds && BADGE(o.days) ? { color: BADGE(o.days), text: dueText(o.days) } : null);
+
+function movedPart(moved){
+  const text = ['MOVED SINCE THE LAST CHECK'];
+  moved.forEach(r => { text.push(`• ${recHead(r)}`, `  ${recSub(r)} · ${r.url}`); r.moves.forEach(m => text.push(`  - ${m.text}`)); text.push(''); });
+  const html = sectionHead('Moved since the last check', NAVY) + moved.map(r => recordHtml(r, r.moves.map(m => lineHtml(m.text, TONE[m.tone])).join(''))).join('');
+  return { text, html };
+}
+
+export function renderDigest(view, today){
+  const R = view.records, moved = R.filter(r => r.moves.length);
+  const city = R.filter(r => r.bucket === 'city'), ours = R.filter(r => r.bucket === 'ours'), appr = R.filter(r => r.bucket === 'approved'), closed = R.filter(r => r.bucket === 'closed');
+  const late = R.flatMap(r => r.bucket === 'city' || r.bucket === 'ours' ? r.open.filter(o => o.holds && o.days != null && o.days < 0) : []);
+  const parts = [`${city.length} in City review`];
+  if(late.length) parts.push(`${plural(late.length, 'step')} late`);
+  if(ours.length) parts.push(`${ours.length} waiting on us`);
+  if(moved.length) parts.push(`${moved.length} moved`);
+  const subject = `Permit digest ${DOW[dow(today)]} ${nice(today)}: ${parts.join(' · ')}`;
+  const text = [`Permit digest — ${longDay(today)}`, ''];
+  let html = '';
+  if(moved.length){ const m = movedPart(moved); text.push(...m.text); html += m.html; }
+  const block = (label, color, list, body, bodyText) => {
+    if(!list.length) return;
+    text.push(label.toUpperCase());
+    list.forEach(r => { text.push(`• ${recHead(r)}`, `  ${recSub(r)} · ${r.url}`); bodyText(r).forEach(l => text.push(`  - ${l}`)); text.push(''); });
+    html += sectionHead(label, color) + list.map(r => recordHtml(r, body(r))).join('');
+  };
+  block('Waiting on us', AMBER, ours, r => lineHtml(r.why, AMBER) + r.open.map(openHtml).join(''), r => [r.why, ...r.open.map(stepLine)]);
+  block('In City review', SLATE, city, r => r.open.length ? r.open.map(openHtml).join('') : lineHtml('No step open with a reviewer right now', SLATE),
+        r => r.open.length ? r.open.map(stepLine) : ['No step open with a reviewer right now']);
+  if(appr.length){
+    text.push('APPROVED', ...appr.map(r => `• ${recHead(r)} — ${r.ref}: ${r.why}`), '');
+    html += sectionHead('Approved', PINE) + appr.map(r => `<tr><td style="padding:4px 0;font-family:${FONT};font-size:13px;line-height:1.45;color:${NAVY};"><b>${esc(recHead(r))}</b> — <a href="${esc(r.url)}" style="color:${NAVY};">${esc(r.ref)}</a>: ${esc(r.why)}</td></tr>`).join('');
+  }
+  block('Closed in Accela', SLATE, closed, r => lineHtml(r.why, SLATE), r => [r.why]);
+  const warn = unreadLine(view.unread);
+  if(warn) text.push(warn, '');
+  const note = 'The digest comes every Monday, Wednesday and Friday. On other days an email comes only when something moves in Accela. Steps, reviewers and due dates are the City\'s own.';
+  text.push(`Permit board: ${BOARD}`, '', note);
+  return { subject, text: text.join('\n'), html: shell('Permit digest', parts.join(', ').replace(/^./, c => c.toUpperCase()), html, { warn, note }, today,
+    moved.length ? moved.map(r => `${short(r.addr)}: ${r.moves[0].text}`).join(' · ') : `${city.length} in City review` ) };
+}
+
+export function renderAlert(view, today){
+  const moved = view.records.filter(r => r.moves.length);
+  const lateNew = moved.reduce((n, r) => n + r.moves.filter(m => m.tone === 'late').length, 0);
+  const subject = `Accela ${nice(today)}: ${moved.length === 1 ? `${short(moved[0].addr)} moved` : `${moved.length} records moved`}${lateNew ? ` · ${lateNew} now overdue` : ''}`;
+  const m = movedPart(moved);
+  const warn = unreadLine(view.unread);
+  const note = 'Sent when something moves in Accela on a City record on the board. The full picture comes in the Monday / Wednesday / Friday digest.';
+  const text = [`Accela movement — ${longDay(today)}`, '', ...m.text, ...(warn ? [warn, ''] : []), `Permit board: ${BOARD}`, '', note];
+  return { subject, text: text.join('\n'), html: shell('Accela movement', moved.length === 1 ? `${short(moved[0].addr)} moved` : `${moved.length} records moved`, m.html, { warn, note }, today,
+    moved.map(r => `${short(r.addr)}: ${r.moves[0].text}`).join(' · ')) };
 }
 
 // RFC 2047 encoded words are capped at 75 chars: split on character boundaries into <= 45-byte chunks.
@@ -178,29 +268,36 @@ async function gmailSend({ to, subject, text, html }){
   return j.id;
 }
 
-// Same day + same content already sent from this instance → don't send it again (a re-delivered cron event
-// usually lands on the warm instance). A changed list the same day still goes out. Per instance only.
+// Same day + same email already sent from this instance → don't send it again (a re-delivered cron event
+// usually lands on the warm instance). Per instance only.
 let lastSent = null;
 
 // state/records: pass the cron's freshly looked-up copies; otherwise they're read here.
-export async function runReminders({ state, records, send = false, today } = {}){
+// Returns `seen`: the snapshots to save, and `advance`: true when the cron should save them (the email went
+// out, or there was nothing to send). The preview never saves.
+export async function runReminders({ state, records, send = false, today, kind } = {}){
   today = today && isDay(today) ? today : etDate(new Date());
   state = state || await loadPermitState();
   if(!records){
     const refs = [...new Set(targets(state).map(t => t.ref))];
     records = refs.length ? await lookupAll(refs, { deadlineMs: 25 * 1000 }) : {};
   }
-  const { steps, unread } = lateSteps(state, records, today);
-  const base = { ok: true, today, count: steps.length, unread, to: TO, sent: false, steps };
-  if(!steps.length) return { ...base, note: 'no City review step due tomorrow, today or overdue' + (unread.length ? ` (${unread.length} record(s) unread)` : '') };
-  const mail = render(steps, unread, today);
+  const view = board(state, records, today);
+  kind = kind === 'digest' || kind === 'alert' ? kind : DIGEST_DAYS.includes(dow(today)) ? 'digest' : 'alert';
+  const seen = view.records.filter(r => r.saveSeen).map(r => ({ projectId: r.projectId, milestoneId: r.milestoneId, seen: r.seen }));
+  const movedCount = view.records.filter(r => r.moves.length).length;
+  const base = { ok: true, today, kind, to: TO, sent: false, firstRun: view.firstRun, moved: movedCount, unread: view.unread,
+                 records: view.records.map(({ seen: _s, saveSeen: _v, ...r }) => r), seen, advance: false };
+  if(kind === 'alert' && !movedCount) return { ...base, advance: !!send, note: view.firstRun ? 'first run — snapshots taken, nothing to compare yet' : 'nothing moved in Accela' };
+  if(!view.records.length && !view.unread.length) return { ...base, note: 'no City records on the board' };
+  const mail = kind === 'digest' ? renderDigest(view, today) : renderAlert(view, today);
   const out = { ...base, subject: mail.subject };
   if(!send) return { ...out, text: mail.text, html: mail.html };
   const env = process.env.VERCEL_ENV;
   if(env && env !== 'production'){ out.note = `${env} deployment — only production sends`; return out; }
-  const key = `${today}|${steps.map(s => `${s.ref}/${s.step}/${s.assignedTo}/${s.cityDue}`).join('|')}`;
-  if(lastSent === key){ out.note = 'same email already sent today from this instance'; return out; }
-  try{ out.id = await gmailSend({ to: TO, ...mail }); out.sent = true; lastSent = key; }
+  const key = `${today}|${kind}|${mail.text.replace(/^Couldn't read.*$|^.*isn't in Accela's public search.*$/gm, '')}`;
+  if(lastSent === key){ out.note = 'same email already sent today from this instance'; out.advance = true; return out; }
+  try{ out.id = await gmailSend({ to: TO, ...mail }); out.sent = true; out.advance = true; lastSent = key; }
   catch(e){ out.ok = false; out.error = String(e && e.message || e); }
   return out;
 }
@@ -212,13 +309,13 @@ export default async function handler(req, res){
   if((q.k || '') !== GATE_HASH){ res.status(401).json({ ok: false, error: 'unauthorized' }); return; }
   res.setHeader('Cache-Control', 'no-store');
   try{
-    const r = await runReminders({ send: false, today: q.date });
+    const r = await runReminders({ send: false, today: q.date, kind: q.kind });
     if(q.format === 'html'){
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.status(200).end(r.html || `<p style="font-family:sans-serif">No email on ${esc(r.today)} — ${esc(r.note || '')}</p>`);
+      res.status(200).end(r.html || `<p style="font-family:sans-serif">No email on ${esc(r.today)} (${esc(r.kind)}) — ${esc(r.note || '')}</p>`);
       return;
     }
-    const { html, ...rest } = r;
+    const { html, seen, ...rest } = r;
     res.status(200).json(rest);
   }catch(e){
     res.status(502).json({ ok: false, error: String(e && e.message || e) });
