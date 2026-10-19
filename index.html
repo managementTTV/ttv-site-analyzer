@@ -766,7 +766,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.48 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.49 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -6359,30 +6359,54 @@ let _sheetHandoff=null;   // {ts, street, city}: this deal was sent; street = ad
 // The payload, read through the exporters' own readers (getReportData, collectModelInputs) so the sheet starts from the
 // numbers on screen. Per-site figures (land, lot factor, survey, appraisal, insurance) go as site totals; the sheet
 // divides them by Units for its per-unit model.
+// v8.49 (Chat 11): payload v2. Adds what the locked sheet now has: the loan's % of the project, doc fee and property tax
+// (fin, as before), custom plans (soft.customPlans), heritage-tree timing (lf.herRate, as before), the SOP band line and
+// the $30k house minimum (lf.sopBand / lf.houseMin, both already inside lotFactor), the offer lines (results.offer),
+// cash at closing / through the hold (results.cash), the ARV check (arvCheck, for the sheet's ARV reasons log) and the
+// zone's town (zoneTown, the sheet's Zoning Database column A). The Apps Script reads v1 and v2.
+const HANDOFF_V=2;
 function sheetHandoffPayload(){
   const d=getReportData(),M=collectModelInputs(d),g=d.gis||{};
   const f=id=>(($(id)||{}).value||'').trim();
   const planVal=f('plan-sel'),po=planVal&&planVal!=='__CUSTOM__'?PLANS.find(p=>p.n===planNameFromVal(planVal)):null;
   const fp=planVal==='__CUSTOM__'?{w:pv('cust-w'),d:pv('cust-d')}:po?{w:po.w,d:po.d}:{w:0,d:0};
   const none=v=>v==='\u2014'?'':v;
-  return {v:1,app:APP_VERSION,
+  const oc=d.offer||null, n0=v=>isFinite(v)?Math.round(v*100)/100:0;
+  return {v:HANDOFF_V,app:APP_VERSION,
     addr:{street:f('addr-street'),city:f('addr-city'),state:f('addr-state'),zip:f('addr-zip')},
     county:f('county-sel'),zone:none(d.zone),corner:!!($('corner-lot')||{}).checked,
+    zoneTown:f('zone-sel').indexOf('|')>0?f('zone-sel').split('|')[0]:'',   // v8.49: "Huntersville|NR" -> the sheet's K5
     lot:{mode:d.lotMode,w:d.lotW,d:d.lotD,buildable:d.buildable_sf},
     plan:{name:none(d.plan),custom:M.customBuild,sf:M.sf,build:M.buildUnit,base:M.baseUnit,feePct:Math.round(M.gcFeePct*1000)/10,fpW:fp.w,fpD:fp.d},
-    units:M.units,land:M.land||0,asking:mv('asking-price')||0,lotFactor:M.lotFactor,lf:M.lf,
+    units:M.units,land:M.land||0,asking:mv('asking-price')||0,lotFactor:M.lotFactor,
+    lf:Object.assign({},M.lf,{sopBand:M.lfSopBand,houseMin:M.lf.demoSqft>0?M.lfHouseMin:0}),   // v8.49: both already inside lotFactor
     taps:{total:M.tapTotal,waterU:M.tapWaterU,sewerU:M.tapSewerU,septic:M.septicLot},
-    soft:{survey:M.survey,appraisal:M.appraisal,insurance:M.insurance},
+    soft:{survey:M.survey,appraisal:M.appraisal,insurance:M.insurance,customPlans:M.customPlans||0},
+    upgFeePct:gcFeePct(),   // v8.49: the analyzer prices upgrades at menu + this GC fee; the sheet adds 14%
     upgrades:Array.from(selectedUpgrades).map(id=>UPGRADES.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,name:x.name,cost:x.cost})),
     fin:{ltc:d.fin.ltc,rate:d.fin.rate,points:d.fin.points,docFee:d.fin.docFee,tax:d.fin.annualTax,salePct:d.fin.salePct,
       profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct},
     terms:{w:d.terms.w,b:d.terms.b,best:d.terms.best},arv:{w:d.psf.w,b:d.psf.b,best:d.psf.best},
-    results:{maxLand:none(d.maxLand),scenarios:d.scenarios.map(s=>({k:s.key,arvPSF:s.arvPSF,arv:s.arv,hold:s.holdPerUnit,
+    results:{maxLand:none(d.maxLand),
+      offer:oc?{maxLand:n0(oc.maxLand),opening:oc.opening,status:oc.status,askStatus:oc.askStatus,
+        stress:{profit:n0(oc.stress.profit),term:oc.stress.term,warn:!!oc.stress.warn}}:null,
+      cash:{closing:n0(d.fin.cash),hold:n0(d.fin.cashHold),loan:n0(d.fin.loan)},
+      scenarios:d.scenarios.map(s=>({k:s.key,arvPSF:s.arvPSF,arv:s.arv,hold:s.holdPerUnit,
       sale:s.saleCost,totalAllIn:s.totalAllIn,profit:s.profit,total:s.total}))},
     gis:{pid:g.pid||'',nc_pin:g.nc_pin||'',area_sf:g.area_sf||0,zoning:g.zoning||'',watershed:g.watershed||'',
       swim:g.swim?!!g.swim.i:null,historic:g.historic&&g.historic.i?(g.historic.n||'Yes'):'',bua:g.bua||''},
+    arvCheck:arvCheckPayload(),
     comps:M.comps.map(c=>({addr:c.addr,url:c.url,sqft:c.sqft,sold:c.sold,adj:c.adj,date:c.date,dist:c.dist,mom:c.mom,notes:c.notes})),
     notes:moneyIssues().map(i=>i.msg).concat(M.compNotes||[]).concat(arvCheckNotes()).concat(innerUnitNotes(d))};   // v8.41: the ARV verdict + reason; v8.42: inner units
+}
+// v8.49: the ARV check for the sheet's ARV reasons log (sessions/16-notes-for-chat-11.md). null without a county pull
+// for the deal's parcel. The notes[] lines (arvCheckNotes) still go too, for the Snapshot tab.
+function arvCheckPayload(){
+  const t=arvToolForDeal();if(!t)return null;
+  const o=arvOverride(),base=mv('arv-b')||0;
+  return {pid:t.pid||'',toolPsf:t.psf>0?t.psf:null,level:t.level||'',newBuilds:t.newBuilds!=null?t.newBuilds:null,
+    vet:!!(t.vet&&t.vet.check),vetReasons:(t.vet&&t.vet.reasons)||[],stale:arvToolStale(t),
+    basePsf:base,changed:!!o,reason:o?o.code:'',note:o?o.note:''};
 }
 // v8.42: the locked sheet prices every unit at $/sf × sf; the analyzer takes 2% off the inner ones, so its ARV / unit is lower
 function innerUnitNotes(d){
@@ -6446,7 +6470,7 @@ function collectModelInputs(d){
         dirtLoads:pv('dirt-loads'),dirtRate:pv('dirt-rate'),
         grading:pv('grading'),sitePrep:pv('site-prep'),utilities:pv('utilities'),
         framing:pv('framing'),culverts:pv('culverts'),landscaping:pv('landscaping')},
-    // v8.39: outside `lf`, which the deal-sheet hand-off sends as is (payload v1 unchanged; the sheet side is Chat 11's)
+    // v8.39: outside `lf` (Excel reads them as their own cells); v8.49: the deal-sheet payload adds them to its lf copy
     lfSopBand:pv('sop-band'),lfHouseMin:houseMinOn()?LF_HOUSE_MIN:0,
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
@@ -7538,8 +7562,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.48', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.49', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.49',date:'Oct 2026',name:'Deal sheet gets the partner rules',items:[
+   'Send to deal sheet now carries everything the updated deal sheet has: the loan\u2019s % of the project, doc fee, property tax, custom plans, heritage-tree timing, the profit rule, max land and opening offer, the SOP-08 stress check and cash at closing. The sheet\u2019s Analyzer Snapshot tab lists each figure next to the sheet\u2019s own and flags any that differ.',
+   'A zone picked under a town (Huntersville, Concord and the rest) now lands in the sheet\u2019s town and zone boxes, so its setbacks fill in.',
+   'The ARV check (the tool\u2019s $/sf, confidence, Pat\u2019s why) is also logged in one \u201cARV reasons log\u201d sheet, so later sale prices can be matched to it.',
+ ]},
  {v:'8.48',date:'Oct 2026',name:'Town zoning from the sheet',items:[
    'A new Zoning Code picker next to the County lists the towns in the deal sheet\u2019s zoning table: Huntersville, Cornelius, Davidson, Matthews, Mint Hill, Pineville, Belmont, Gastonia, Concord, Mooresville, Statesville, Indian Trail, Stallings, Waxhaw and Greenville SC. Kannapolis and Monroe already had their own County option; they now use the same checked rows. It follows the City you type (or the town County GIS finds), and you can pick another.',
    'Picking a town\u2019s zone fills the setbacks and minimum lot width with the sheet\u2019s numbers, under the sheet\u2019s own names (\u201cNR \u00b7 townhomes\u201d), with a link to that part of the town\u2019s code.',
