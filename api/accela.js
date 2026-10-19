@@ -305,6 +305,8 @@ export function plan(state, records){
     const item = { ...t, from: c.status || null, to: c.status || null, accela: c.accela || null, change: false, note: null };
     if(!rec || !rec.ok){ item.note = rec ? rec.error : 'not looked up'; return item; }
     const acc = { ...summary(rec), owns: t.owns };   // owns: this record sets the step's status (the board locks it)
+    // the email's "since the last check" snapshot rides in the block; only the morning run replaces it
+    if(c.accela && c.accela.seen) acc.seen = c.accela.seen;
     const upd = {};
     if(t.owns && acc.board && acc.board !== c.status) upd.status = acc.board;
     if(t.owns && acc.board && !c.started && acc.opened) upd.started = acc.opened;
@@ -347,6 +349,20 @@ async function prepareSync(){
     if(c) Object.assign(c, it.upd);
   });
   return { t0, state, records, items };
+}
+
+// Put each record's new snapshot on its Accela block, in memory and as a write for commitSync().
+function applySeen(prep, list){
+  for(const { projectId, milestoneId, seen } of list){
+    const it = prep.items.find(i => i.projectId === projectId && i.milestoneId === milestoneId && !i.cleared);
+    const c = prep.state.projects.find(p => p.id === projectId)?.state[milestoneId];
+    if(!it || !c || !c.accela) continue;
+    const block = { ...c.accela, seen };
+    c.accela = block;
+    it.upd = { ...(it.upd || {}), accela: block };
+    it.accela = block;
+    it.change = true;
+  }
 }
 
 async function commitSync({ t0, state, records, items }, { dry, budgetMs = WRITE_BUDGET_MS }){
@@ -404,6 +420,10 @@ export default async function handler(req, res){
         const { runReminders } = await import('./permit-reminders.js');
         reminders = await runReminders({ state: prep.state, records: prep.records, send: true });
       }catch(e){ reminders = { ok: false, error: String(e && e.message || e) }; }
+      // The email went out (or had nothing to say): save each record's new "since the last check" snapshot
+      // with the other writes. A failed send keeps the old ones, so tomorrow reports the same moves.
+      if(reminders && reminders.advance && Array.isArray(reminders.seen)) applySeen(prep, reminders.seen);
+      if(reminders) delete reminders.seen;
       const result = await commitSync(prep, { dry: false });
       result.reminders = reminders;
       res.status(200).json(result);
