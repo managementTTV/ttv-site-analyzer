@@ -1853,17 +1853,23 @@ function buildPlanDropdown(){
     sel.appendChild(og);
   });
 }
+// v8.49 (Brian, 2026-10-19): the prices are the locked deal sheet's Upgrades tab (the list the team uses), so a deal
+// sent to the sheet carries no upgrade gap. `psf` items are priced per finished sq ft, like the tab's "Per SF" rows:
+// upgCost() = psf x the plan's sf. Before v8.49 the floors were flat ($2,899 LVP, $13,519 hardwood) and several items
+// differed (quartz $688, fireplace $6,884, Hardie $5,695...).
 const UPGRADES=[
-  {id:'lvp',name:'LVP Throughout',cost:2899},{id:'hw',name:'Engineered Hardwoods',cost:13519},
-  {id:'quartz',name:'Quartz Countertops',cost:688},{id:'wfall-qtz',name:'Waterfall Quartz',cost:1530},
-  {id:'frameless',name:'Frameless Shower Door',cost:800},{id:'tile-shower',name:'Tile Primary Shower/Tub',cost:2800},
-  {id:'front-door',name:'Craftsman Wood Door',cost:1800},{id:'deadbolt',name:'Electronic Deadbolt',cost:250},
+  {id:'lvp',name:'LVP Throughout',psf:1.72},{id:'hw',name:'Engineered Hardwoods',psf:2.13},
+  {id:'quartz',name:'Quartz Countertops',cost:1150},{id:'wfall-qtz',name:'Waterfall Quartz',cost:1200},
+  {id:'frameless',name:'Frameless Shower Door',cost:900},{id:'tile-shower',name:'Tile Primary Shower/Tub',cost:2800},
+  {id:'front-door',name:'Craftsman Wood Door',cost:1200},{id:'deadbolt',name:'Electronic Deadbolt',cost:250},
   {id:'corbels',name:'Cedar Corbels',cost:1105},{id:'columns',name:'Cedar Wrapped Columns',cost:500},
-  {id:'hardie',name:'Color Plus Hardie Exterior',cost:5695},{id:'open-rail',name:'Open Rail Staircase',cost:2221},
-  {id:'fireplace',name:'Gas Fireplace',cost:6884},{id:'fans',name:'4 Additional Ceiling Fans',cost:1780},
-  {id:'blinds',name:'Faux Wood Blinds',cost:600},{id:'brushed-ni',name:'Brushed Nickel Hardware',cost:622},
-  {id:'matte-blk',name:'Matte Black Hardware',cost:823},{id:'shiplap',name:'Shiplap Kitchen Island',cost:455},
+  {id:'hardie',name:'Color Plus Hardie Exterior',cost:4500},{id:'open-rail',name:'Open Rail Staircase',cost:2221},
+  {id:'fireplace',name:'Gas Fireplace',cost:5000},{id:'fans',name:'4 Additional Ceiling Fans',cost:1780},
+  {id:'blinds',name:'Faux Wood Blinds',cost:600},{id:'brushed-ni',name:'Brushed Nickel Hardware',cost:850},
+  {id:'matte-blk',name:'Matte Black Hardware',cost:850},{id:'shiplap',name:'Shiplap Kitchen Island',cost:455},
 ];
+// one upgrade's menu price per unit for a plan of `sf` finished sq ft (the deal's plan when sf is left out)
+function upgCost(u,sf){return u?(u.psf?u.psf*(sf==null?sfPerUnit:sf):u.cost||0):0;}
 // v8.33 (audit M11): pairs that replace each other (one floor, one hardware finish). Ticking one unticks the other, so the
 // cost isn't counted twice.
 const UPGRADE_EXCLUSIVE=[['lvp','hw'],['brushed-ni','matte-blk']];
@@ -5790,7 +5796,7 @@ function renderUpgrades(){
   grid.innerHTML=UPGRADES.map(u=>`
     <div class="upg-item${selectedUpgrades.has(u.id)?' on':''}" data-id="${u.id}">
       <div class="upg-chk"><svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3l2.5 2.5L8 1" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg></div>
-      <span class="upg-name">${u.name}</span><span class="upg-cost">$${u.cost.toLocaleString()}</span>
+      <span class="upg-name">${u.name}</span><span class="upg-cost">${u.psf?'$'+u.psf.toFixed(2)+'/sf':'$'+u.cost.toLocaleString()}</span>
     </div>`).join('');
   grid.querySelectorAll('.upg-item').forEach(el=>{
     el.addEventListener('click',()=>{
@@ -5806,8 +5812,8 @@ function renderUpgrades(){
 // v8.36 (partner decision 2026-10-09; reverses Brian's 2026-09-22 flat-menu-price rule): upgrades carry the Slate GC fee,
 // the same % as the build (gcFeePct(), the GC fee box: 14% by default, also on a custom build), as the team sheet does
 // (B16 = build + upgrades × 1.14). The screen, the plan comparison, the report and the Excel model all price them here.
-function upgradeMenuPerUnit(){return Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);}
-function upgradesPerUnit(){return upgradeMenuPerUnit()*(1+gcFeePct()/100);}
+function upgradeMenuPerUnit(sf){return Array.from(selectedUpgrades).reduce((s,id)=>s+upgCost(UPGRADES.find(x=>x.id===id),sf),0);}
+function upgradesPerUnit(sf){return upgradeMenuPerUnit(sf)*(1+gcFeePct()/100);}
 // A deal saved before v8.33 can hold both of a pair: it opens as saved (both counted), and this says to untick one
 function renderUpgradeNote(){
   const n=$('upg-note');if(!n)return;
@@ -6383,7 +6389,7 @@ function sheetHandoffPayload(){
     taps:{total:M.tapTotal,waterU:M.tapWaterU,sewerU:M.tapSewerU,septic:M.septicLot},
     soft:{survey:M.survey,appraisal:M.appraisal,insurance:M.insurance,customPlans:M.customPlans||0},
     upgFeePct:gcFeePct(),   // v8.49: the analyzer prices upgrades at menu + this GC fee; the sheet adds 14%
-    upgrades:Array.from(selectedUpgrades).map(id=>UPGRADES.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,name:x.name,cost:x.cost})),
+    upgrades:Array.from(selectedUpgrades).map(id=>UPGRADES.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,name:x.name,cost:Math.round(upgCost(x)*100)/100})),
     fin:{ltc:d.fin.ltc,rate:d.fin.rate,points:d.fin.points,docFee:d.fin.docFee,tax:d.fin.annualTax,salePct:d.fin.salePct,
       profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct},
     terms:{w:d.terms.w,b:d.terms.b,best:d.terms.best},arv:{w:d.psf.w,b:d.psf.b,best:d.psf.best},
@@ -6413,7 +6419,7 @@ function innerUnitNotes(d){
   if(!d.innerUnits||!(d.arvFactor<1))return [];
   // the analyzer's figure is the scenario's own ARV; the sheet's is unitArv() without the factor (v8.45: no second formula)
   const b=(d.scenarios||[]).find(s=>s.key==='b'), full=b?unitArv(b.arvPSF,d.sf):0;
-  return [`Inner units: ${d.innerUnits} of the ${d.units} units ${d.innerUnits===1?'is an inner unit':'are inner units'}, priced 2% under the end units, so the analyzer's Base ARV / unit is ${((1-d.arvFactor)*100).toFixed(1)}% under $/sf \u00d7 sf`+(full&&b.arv>0?` (${fmt(b.arv)} vs ${fmt(full)}). The sheet prices every unit at $/sf \u00d7 sf, so its ARV is ${fmt(full-b.arv)} higher per unit.`:'.')];
+  return [`Inner units: ${d.innerUnits} of the ${d.units} units ${d.innerUnits===1?'is an inner unit':'are inner units'}, priced 2% under the end units, so the analyzer's Base ARV / unit is ${((1-d.arvFactor)*100).toFixed(1)}% under $/sf \u00d7 sf`+(full&&b.arv>0?` (${fmt(b.arv)} vs ${fmt(full)}). The deal sheet\u2019s Base $/sf is set to this average ($${(b.arv/d.sf).toFixed(2)}/sf) so its ARV matches.`:'.')];   // v8.49: Code.gs v3.4 sets B27 from the Base ARV / unit
 }
 function b64url(str){
   const b=new TextEncoder().encode(str);let s='';
@@ -6948,7 +6954,7 @@ function dealForPlan(plan,psf,U){
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
   const tapWaterU=pv('tap-water'),tapSewerU=pv('tap-sewer'),septicLot=pv('septic-cost');
-  const upgPerUnit=upgradesPerUnit();   // v8.36: with the GC fee
+  const upgPerUnit=upgradesPerUnit(plan.sf);   // v8.36: with the GC fee; v8.49: per-sf floors at this plan's sf
   // v8.40 (audit X-F2): the deal's Units, as the fit grid tests every plan (unitsForPlan()); it was the catalogue plan.u, so
   // 3 Daytons were priced as 1 townhome and every house as one house
   // (the deal's own plan keeps the deal's Units exactly, so its column matches the page)
@@ -7567,6 +7573,7 @@ const RELEASE_NOTES=[
  {v:'8.49',date:'Oct 2026',name:'Deal sheet gets the partner rules',items:[
    'Send to deal sheet now carries everything the updated deal sheet has: the loan\u2019s % of the project, doc fee, property tax, custom plans, heritage-tree timing, the profit rule, max land and opening offer, the SOP-08 stress check and cash at closing. The sheet\u2019s Analyzer Snapshot tab lists each figure next to the sheet\u2019s own and flags any that differ.',
    'A zone picked under a town (Huntersville, Concord and the rest) now lands in the sheet\u2019s town and zone boxes, so its setbacks fill in.',
+   'Upgrade prices now match the deal sheet\u2019s Upgrades tab: LVP and hardwood are priced per square foot ($1.72 and $2.13), quartz $1,150, gas fireplace $5,000, Hardie $4,500 and so on. A saved deal with upgrades reopens at the new prices.',
    'The ARV check (the tool\u2019s $/sf, confidence, Pat\u2019s why) is also logged in one \u201cARV reasons log\u201d sheet, so later sale prices can be matched to it.',
  ]},
  {v:'8.48',date:'Oct 2026',name:'Town zoning from the sheet',items:[

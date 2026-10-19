@@ -70,6 +70,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   × (1 + fee)); `upgradeMenuPerUnit()` is the menu total, for labels and the Excel input. The Excel model holds the menu
   price and "GC Fee % on Upgrades" as inputs and derives `upgU`. Flag a path that adds upgrades at menu price, or that
   takes the fee from `planCostSplit()` (0% on a custom build).
+- **Upgrade prices = the deal sheet's Upgrades tab (v8.49, Brian 2026-10-19).** `UPGRADES` copies the template's
+  Upgrades tab (column G, "Fixed" or "Per SF"); per-sf items carry `psf` and are priced by `upgCost(u, sf)` = psf × the
+  plan's sf (the deal's plan by default; `dealForPlan()` passes each plan's own sf). Change a price in both places
+  together, or a sent deal shows an upgrade gap on the sheet's Snapshot tab. Flag a reader that uses `u.cost` directly.
 - **Inner units sell ~2% less per sf (v8.42, research/12 Q3, Brian 2026-10-12).** ARV / unit = $/sf × sf ×
   `innerUnitFactor(plan, units)` = 1 − 0.02 × inner ÷ units. A townhome row (`t:'th'`) has units − 2 inner units; the
   Arcadia triplex (`t:'mf'`) one per full 3-unit building; a duet, a house or a custom footprint none. So a row of 3 is
