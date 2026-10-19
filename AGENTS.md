@@ -451,11 +451,16 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **Digest + movement alerts (v4.9, `api/permit-reminders.js`; Brian 2026-10-19: "a Monday-Wednesday-Friday
     email regardless every week, then alert emails on movement on specific items" — every City record, any move).**
     Source is Accela only, never the board's own `due` (v4.7 used it: wrong per Brian 2026-10-14). On Mon / Wed / Fri
-    (Charlotte's date, `etDate`) the **digest** always goes out: every City record on the board (`targets()`), by
-    bucket from `deriveStatus()` — waiting on us, in City review (each open step: department, `current.assignedTo`,
-    City due date, a late / due-soon badge only where `cityHolds(task)`), approved, closed — with "moved since the
-    last check" on top. Other days a **movement alert** goes out only when something moved; nothing moved → no
-    email. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
+    (Charlotte's date, `etDate`) the **digest** always goes out: **one section per project on the board, by address,
+    in the board's order** (v4.11, Brian 2026-10-19: "always broken down by project … a section for each open project
+    address", not grouped by approved / in progress across projects). Each section has a one-line place for the
+    project (`projectStand()`: a late City step, waiting on us, in City review, couldn't read, no City records yet,
+    approved) and its City records (`targets()`), open ones first, each with where it stands (`deriveStatus()`), each
+    open step (department, `current.assignedTo`, City due date, a late / due-soon badge only where `cityHolds(task)`)
+    and what moved since the last check. A project with no City record still gets its section; a record Accela
+    didn't answer for shows in its own project. Other days a **movement alert** goes out only when something moved;
+    nothing moved → no email. It's grouped by project too, with only the projects and records that moved. Flag a
+    change that groups records across projects. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
     opening, its City due date moving, a City-held step on a record still in review going overdue, or a record new
     on the board ("Now tracking"). "Since the last check" = `accela.seen` on the record's block: record status +
     per step `state|newest status|date|City due`, **no names** (it's in Drive), versioned (`SNAP_V`: bump it when a
@@ -472,7 +477,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     {deadlineMs})`), then `runReminders({state, records, send:true})` **before** `commitSync()` writes
     (`WRITE_BUDGET_MS`). Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
     Mon Oct 19: …", "Accela Oct 22: 2 records moved"); a same-day identical email isn't re-sent from the same
-    instance. One email from management@ to management@ (`REMINDER_TO` overrides). `TITLES` mirrors the
+    instance. One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
+    body opens by naming Adam and Wendell (`TAG`; no CC, since management@ already reaches them). `TITLES` mirrors the
     `permits.html` CATALOG titles of the steps a City record sits on (context only). Sent through the Gmail API with
     the send-only token in the Vercel env var `GMAIL_SEND_TOKEN` (JSON `{client_id, client_secret, refresh_token}`
     for management@ — minted by `~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py`, never
