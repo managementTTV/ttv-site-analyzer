@@ -412,7 +412,11 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   the feed as editor `"Accela"`: `status`, `started` (only when blank) and a compact `accela` block
   `{rec,status,type,opened,asOf,board,why,step,stepStatus,stepDate,owns}`. Rules to enforce:
   - **Approval signal:** done = record status approved/issued/closed/complete…, **or** the
-    `Plan Collection` step's newest-dated entry is Approved/Ok. Record status alone is wrong: an
+    `Plan Collection` step's newest-dated entry is Approved/Ok **and no mylar step is still open**
+    (`RELEASE_STEP`, `/mylar/i`: a plat isn't approved until the City signs the mylar — it can't be recorded
+    before; LDPLAT-2026-00562, Brian 2026-10-19). An open mylar step the City holds reads `submitted`
+    ("waiting on the City to sign the mylar", its City due date), one handed to us `active`. Flag a change that
+    calls a plat done while its mylar step is open. Record status alone is wrong: an
     LDIRL stays "In Progress" after approval while the Urban Forestry inspection is open
     (LDIRL-2026-04500). Same-day history entries come back in no fixed order — compare dates, never
     trust position. Flag a change that derives "done" from record status only.
@@ -454,7 +458,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     email. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
     opening, its City due date moving, a City-held step on a record still in review going overdue, or a record new
     on the board ("Now tracking"). "Since the last check" = `accela.seen` on the record's block: record status +
-    per step `state|newest status|date|City due`, **no names** (it's in Drive). `plan()` carries `seen` over on
+    per step `state|newest status|date|City due`, **no names** (it's in Drive), versioned (`SNAP_V`: bump it when a
+    snapshot's meaning changes, so old ones re-baseline quietly instead of reading as moves). Same-day history
+    entries are read in workflow order (`stepRank`: requested → received → done), never Accela's response order,
+    for a step's current and latest entry alike. A City due date moving is a move only on an open step. `plan()` carries `seen` over on
     every sync; only the cron replaces it, via `applySeen()` with the other writes, and only when `runReminders()`
     says `advance` (the email went out, or there was nothing to send) — a failed send keeps the old snapshots so
     tomorrow reports the same moves. The very first run (no record has a snapshot) only takes them. Flag a change

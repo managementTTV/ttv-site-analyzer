@@ -62,6 +62,9 @@ const short = a => String(a || '').split(' (')[0];
 
 // ── the snapshot ("seen") and what moved ─────────────────────────────────────────────────────────────
 // One entry per step: state | newest status | its date | City due. No reviewer names: it is saved to Drive.
+// SNAP_V: bump when what a snapshot holds changes meaning (v2, 2026-10-19: same-day entries read in workflow order),
+// so older snapshots re-baseline quietly instead of reading as moves.
+const SNAP_V = 2;
 export function snapshot(rec, today){
   const steps = {};
   (rec.tasks || []).forEach(k => {
@@ -69,7 +72,7 @@ export function snapshot(rec, today){
     while(Object.hasOwn(steps, name)) name = `${k.name} #${i++}`;
     steps[name] = [k.state || '', (k.latest && k.latest.status) || '', (k.latest && k.latest.date) || '', (k.current && k.current.cityDue) || ''].join('|');
   });
-  return { at: today, status: rec.status || null, steps };
+  return { v: SNAP_V, at: today, status: rec.status || null, steps };
 }
 const tone = st => GOOD.test(st || '') ? 'good' : OURS.test(st || '') ? 'ours' : 'info';
 // Same record status and same steps (key by key — a republished file may reorder them)?
@@ -97,7 +100,7 @@ export function moves(prev, rec, today, stillOpen){
       out.push({ tone: tone(st), text: `${name}: ${st}${date ? ` (${nice(date)})` : ''}${who && holds ? ` — with ${who}` : ''}` });
     else if(state === 'active' && wState !== 'active')
       out.push({ tone: 'info', text: `${name} is now open${who ? ` with ${who}` : ''}${due ? `, City due ${nice(due)}` : ''}` });
-    if(due && wDue && due !== wDue)
+    if(due && wDue && due !== wDue && state === 'active' && wState === 'active')   // a finished step's date isn't a move
       out.push({ tone: 'info', text: `${name}: City due date moved ${nice(wDue)} → ${nice(due)}` });
     // went late since the last check (a City-held step on a record still in review)
     if(stillOpen && holds && isDay(due) && isDay(prev.at) && dayNum(due) < dayNum(today) && dayNum(due) >= dayNum(prev.at))
@@ -122,7 +125,7 @@ export function board(state, records, today){
       return { step: k.name, assignedTo: k.current.assignedTo || null, cityDue: due, holds: cityHolds(k),
                status: k.current.status || (k.latest && k.latest.status) || null, days: due ? dayNum(due) - dayNum(today) : null };
     });
-    const prev = c.accela && c.accela.seen && typeof c.accela.seen === 'object' ? c.accela.seen : null;
+    const prev = c.accela && c.accela.seen && typeof c.accela.seen === 'object' && c.accela.seen.v === SNAP_V ? c.accela.seen : null;
     const snap = snapshot(rec, today);
     const mv = prev ? moves(prev, rec, today, bucket === 'city' || bucket === 'ours') : [];
     out.push({ ref: rec.ref, url: recordUrl(rec.ref), type: rec.type, status: rec.status, why: d.why, bucket, addr: t.addr,
