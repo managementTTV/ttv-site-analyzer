@@ -1,12 +1,15 @@
-// api/permit-reminders.js — Accela digest + movement alerts  v3 (Brian 2026-10-19)
+// api/permit-reminders.js — Accela digest + movement alerts  v3.1 (Brian 2026-10-19: by project)
 // Brian: "I want a Monday-Wednesday-Friday email regardless every week, then alert emails on movement on specific
 // items" — specific items = every City record on the board, any move (his pick, 2026-10-19).
-//   - Mon / Wed / Fri (Charlotte's date): the DIGEST, sent every time. Every City record on the board, by where it
-//     stands — waiting on us, in City review (each open step: department, reviewer, City due date, late / due
-//     soon), approved — with what moved since the last check at the top.
+//   - Mon / Wed / Fri (Charlotte's date): the DIGEST, sent every time. One section per project on the board, by
+//     address (Brian 2026-10-19: "always broken down by project … a section for each open project address"), each
+//     with its City records: where it stands, each open step (department, reviewer, City due date, late / due
+//     soon) and what moved since the last check. A project with no City record yet still gets its section.
 //   - Other days: a MOVEMENT ALERT, only when something moved on a record since the last check: a record status
 //     change, a step's newest entry (Ok, Revisions, Fees Assessed…), a step opening with a reviewer, a City due
-//     date moving, a City-held step going overdue, a record newly on the board. Nothing moved → no email.
+//     date moving, a City-held step going overdue, a record newly on the board. Nothing moved → no email. Grouped
+//     by project too, showing only the projects and records that moved.
+// To management@, which reaches Brian, Adam and Wendell; the email names Adam and Wendell at the top (Brian 2026-10-19).
 // v1 (10/13) used the board's own due dates; v2 (10/14) emailed only steps due or late. Both are replaced.
 //
 // "Since the last check": each record's Accela block in Drive carries `seen`, a snapshot of its record status
@@ -117,7 +120,7 @@ export function board(state, records, today){
     done.add(t.ref);
     const c = (state.projects.find(p => p.id === t.projectId) || { state: {} }).state[t.milestoneId] || {};
     const rec = records[t.ref];
-    if(!rec || !rec.ok){ unread.push({ ref: t.ref, addr: t.addr, error: rec ? rec.error : 'not looked up' }); continue; }
+    if(!rec || !rec.ok){ unread.push({ ref: t.ref, addr: t.addr, projectId: t.projectId, error: rec ? rec.error : 'not looked up' }); continue; }
     const d = deriveStatus(rec);
     const bucket = d.board === 'done' ? 'approved' : d.board === 'active' ? 'ours' : d.board === 'blocked' ? 'closed' : 'city';
     const open = (rec.tasks || []).filter(k => k.state === 'active' && k.current).map(k => {
@@ -139,23 +142,52 @@ export function board(state, records, today){
   // a record newly on the board (others already have snapshots) is itself a move; the very first run is quiet
   const firstRun = out.length > 0 && out.every(r => !r.seenBefore);
   if(!firstRun) out.filter(r => !r.seenBefore).forEach(r => r.moves.push({ tone: 'info', text: `Now tracking ${r.ref} — Accela: ${r.status || 'no status'}` }));
-  return { records: out, unread, firstRun };
+  const projects = ((state && state.projects) || []).map(p => ({ id: p.id, addr: p.addr }));
+  return { records: out, unread, firstRun, projects };
 }
 
 // ── rendering ───────────────────────────────────────────────────────────────────────────────────────
+// By project, in the board's own order — never by approved / in progress across projects.
+const TAG = 'Adam, Wendell';
 const TONE = { good: PINE, ours: AMBER, late: RED, info: SLATE };
 const BADGE = n => n == null ? null : n < 0 ? RED : n <= 1 ? AMBER : n <= SOON_DAYS ? SLATE : null;
-const recHead = r => `${short(r.addr)}${r.title ? ` — ${r.title}` : ''}`;
-const recSub = r => `${r.ref}${r.type ? ` · ${r.type}` : ''} · Accela: ${r.status || 'no status'}`;
+const STAND = { ours: ['Waiting on us', AMBER], city: ['In City review', SLATE], closed: ['Closed in Accela', SLATE], approved: ['Approved', PINE] };
+const ORDER = { ours: 0, city: 1, closed: 2, approved: 3 };      // inside a project: open records first
+const lateSteps = r => r.bucket === 'city' || r.bucket === 'ours' ? r.open.filter(o => o.holds && o.days != null && o.days < 0) : [];
 const stepLine = o => `${o.step} — ${o.assignedTo || 'no reviewer assigned'}${o.cityDue ? ` · City due ${nice(o.cityDue)}` : ''}${o.holds && o.days != null ? ` (${dueText(o.days)})` : ''}${!o.holds && o.status ? ` · with us: ${o.status}` : ''}`;
-const unreadLine = unread => {
-  const where = u => `${u.ref} (${short(u.addr)})`;
-  const missing = unread.filter(u => /not found/i.test(u.error || '')), slow = unread.filter(u => !/not found/i.test(u.error || ''));
-  return [slow.length ? `Couldn't read ${slow.map(where).join(', ')} in Accela this run — checked again tomorrow.` : '',
-          missing.length ? `${missing.map(where).join(', ')} isn't in Accela's public search — check the record number on the board.` : ''].filter(Boolean).join(' ');
-};
+// deriveStatus()'s reason without what the line already says (its "In City review: " lead-in, "Accela: <status>" when
+// the status is shown just above), with dates as "Oct 16"
+function standLine(r){
+  const [label] = STAND[r.bucket];
+  let why = String(r.why || '').replace(/^(In City review|Waiting on us): /, '');
+  if(why === `Accela: ${r.status}` || why === r.status) why = '';
+  return why ? `${label}: ${why.replace(/\b\d{4}-\d{2}-\d{2}\b/g, nice)}` : label;
+}
+const unreadText = u => /not found/i.test(u.error || '') ? `${u.ref} isn't in Accela's public search — check the record number on the board.`
+  : `Couldn't read ${u.ref} in Accela this run — checked again tomorrow.`;
 
-function shell(eyebrow, heading, sectionsHtml, foot, today, preheader){
+// The board's projects in its order, each with its City records and the ones Accela didn't answer for.
+// A record whose project isn't in the list (it can't be: targets() reads the same list) still gets a section.
+function byProject(view){
+  const groups = (view.projects || []).map(p => ({ id: p.id, addr: p.addr, recs: [], unread: [] }));
+  const find = (id, addr) => groups.find(g => g.id === id) || groups[groups.push({ id, addr, recs: [], unread: [] }) - 1];
+  view.records.forEach(r => find(r.projectId, r.addr).recs.push(r));
+  view.unread.forEach(u => find(u.projectId, u.addr).unread.push(u));
+  groups.forEach(g => g.recs.sort((x, y) => ORDER[x.bucket] - ORDER[y.bucket]));
+  return groups;
+}
+// A project's one-word place: the most urgent of its records.
+function projectStand(g){
+  const late = g.recs.reduce((n, r) => n + lateSteps(r).length, 0);
+  if(late) return [`${plural(late, 'City step')} late`, RED];
+  if(g.recs.some(r => r.bucket === 'ours')) return ['Waiting on us', AMBER];
+  if(g.recs.some(r => r.bucket === 'city')) return ['In City review', SLATE];
+  if(g.unread.length) return ["Couldn't read Accela", AMBER];
+  if(!g.recs.length) return ['No City records yet', SLATE];
+  return g.recs.some(r => r.bucket === 'approved') ? ['City records approved', PINE] : ['Closed in Accela', SLATE];
+}
+
+function shell(eyebrow, heading, intro, sectionsHtml, foot, today, preheader){
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:${CREAM};">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${CREAM};font-size:1px;line-height:1px;">${esc(preheader)}</div>
@@ -164,6 +196,7 @@ function shell(eyebrow, heading, sectionsHtml, foot, today, preheader){
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};border-top:3px solid ${NAVY};padding:24px 28px 8px;font-family:${FONT};">
 <div style="font-size:11px;line-height:1.4;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${SLATE};">Tide &amp; Timber Ventures · ${esc(eyebrow)} · ${esc(longDay(today))}</div>
 <div style="font-size:22px;line-height:1.25;font-weight:700;color:${NAVY};padding-top:8px;">${esc(heading)}</div>
+<div style="font-size:14px;line-height:1.5;color:${NAVY};padding-top:10px;">${esc(intro)}</div>
 </td></tr>
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:0 28px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${sectionsHtml}</table></td></tr>
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:14px 28px 24px;font-family:${FONT};">
@@ -172,64 +205,82 @@ ${foot.warn ? `<div style="font-size:12px;line-height:1.5;color:${AMBER};padding
 <div style="font-size:11px;line-height:1.5;color:${SLATE};padding-top:12px;">${esc(foot.note)}</div>
 </td></tr></table></td></tr></table></body></html>`;
 }
-const sectionHead = (label, color) => `<tr><td style="padding:18px 0 4px;font-family:${FONT};font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${color};">${esc(label)}</td></tr>`;
-const recordHtml = (r, body) => `<tr><td style="padding:12px 0;border-top:1px solid ${CREAM};font-family:${FONT};">
-<div style="font-size:15px;line-height:1.35;font-weight:700;color:${NAVY};">${esc(recHead(r))}</div>
-<div style="font-size:12px;line-height:1.5;color:${NAVY};padding:2px 0 4px;"><a href="${esc(r.url)}" style="color:${NAVY};font-weight:700;">${esc(r.ref)}</a>${r.type ? ` · ${esc(r.type)}` : ''} · Accela: ${esc(r.status || 'no status')}</div>${body}</td></tr>`;
 const lineHtml = (text, color, badge) => `<div style="font-family:${FONT};font-size:13px;line-height:1.5;color:${NAVY};padding:1px 0;"><span style="color:${color};font-weight:700;">●</span> ${esc(text)}${badge ? ` <span style="display:inline-block;background:${badge.color};color:${WHITE};font-size:11px;font-weight:700;border-radius:3px;padding:0 6px;">${esc(badge.text)}</span>` : ''}</div>`;
 const openHtml = o => lineHtml(`${o.step} — ${o.assignedTo || 'no reviewer assigned'}${o.cityDue ? ` · City due ${nice(o.cityDue)}` : ''}${!o.holds && o.status ? ` · with us: ${o.status}` : ''}`,
   o.holds ? SLATE : AMBER, o.holds && BADGE(o.days) ? { color: BADGE(o.days), text: dueText(o.days) } : null);
 
-function movedPart(moved){
-  const text = ['MOVED SINCE THE LAST CHECK'];
-  moved.forEach(r => { text.push(`• ${recHead(r)}`, `  ${recSub(r)} · ${r.url}`); r.moves.forEach(m => text.push(`  - ${m.text}`)); text.push(''); });
-  const html = sectionHead('Moved since the last check', NAVY) + moved.map(r => recordHtml(r, r.moves.map(m => lineHtml(m.text, TONE[m.tone])).join(''))).join('');
+// One City record inside its project: what it is, where it stands, its open steps (digest only) and what moved.
+function recordPart(r, withSteps){
+  const color = STAND[r.bucket][1];
+  const name = r.title || r.type || 'City record';
+  const sub = `${r.ref}${r.type && r.title ? ` · ${r.type}` : ''} · Accela: ${r.status || 'no status'}`;
+  const text = [`  ${name}`, `  ${sub} · ${r.url}`, `    ${standLine(r)}`];
+  let body = lineHtml(standLine(r), color);
+  if(withSteps && (r.bucket === 'city' || r.bucket === 'ours')){
+    if(r.open.length){ body += r.open.map(openHtml).join(''); text.push(...r.open.map(o => `    - ${stepLine(o)}`)); }
+    else if(r.bucket === 'city'){ body += lineHtml('No step open with a reviewer right now', SLATE); text.push('    - No step open with a reviewer right now'); }
+  }
+  if(r.moves.length){
+    body += `<div style="font-family:${FONT};font-size:11px;line-height:1.4;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:${NAVY};padding:6px 0 1px;">Moved since the last check</div>`
+         + r.moves.map(m => lineHtml(m.text, TONE[m.tone])).join('');
+    text.push('    Moved since the last check:', ...r.moves.map(m => `    - ${m.text}`));
+  }
+  const html = `<div style="padding:10px 0 4px;font-family:${FONT};">
+<div style="font-size:13px;line-height:1.4;font-weight:700;color:${NAVY};">${esc(name)}</div>
+<div style="font-size:12px;line-height:1.5;color:${NAVY};padding:1px 0 3px;"><a href="${esc(r.url)}" style="color:${NAVY};font-weight:700;">${esc(r.ref)}</a>${esc(sub.slice(r.ref.length))}</div>${body}</div>`;
+  return { text, html };
+}
+// A project's section: its address and place, then its records (all of them, or only the ones that moved).
+function projectPart(g, withSteps, recs){
+  const [stand, color] = projectStand(g);
+  const text = [`${g.addr} — ${stand}`];
+  let inner = '';
+  recs.forEach(r => { const p = recordPart(r, withSteps); text.push(...p.text); inner += p.html; });
+  if(!g.recs.length && !g.unread.length){
+    const t = 'No City record on the board yet — once the email listener adds its number, Accela takes over its status.';
+    text.push(`  ${t}`); inner += `<div style="padding:8px 0 2px;">${lineHtml(t, SLATE)}</div>`;
+  }
+  if(g.unread.length){ g.unread.forEach(u => text.push(`  ! ${unreadText(u)}`)); inner += `<div style="padding:8px 0 2px;">${g.unread.map(u => lineHtml(unreadText(u), AMBER)).join('')}</div>`; }
+  const html = `<tr><td style="padding:18px 0 10px;border-top:2px solid ${CREAM};font-family:${FONT};">
+<div style="font-size:16px;line-height:1.35;font-weight:700;color:${NAVY};">${esc(g.addr)} <span style="display:inline-block;vertical-align:2px;background:${color};color:${WHITE};font-size:11px;font-weight:700;letter-spacing:0.02em;border-radius:3px;padding:1px 7px;">${esc(stand)}</span></div>${inner}</td></tr>`;
   return { text, html };
 }
 
 export function renderDigest(view, today){
-  const R = view.records, moved = R.filter(r => r.moves.length);
-  const city = R.filter(r => r.bucket === 'city'), ours = R.filter(r => r.bucket === 'ours'), appr = R.filter(r => r.bucket === 'approved'), closed = R.filter(r => r.bucket === 'closed');
-  const late = R.flatMap(r => r.bucket === 'city' || r.bucket === 'ours' ? r.open.filter(o => o.holds && o.days != null && o.days < 0) : []);
-  const parts = [`${city.length} in City review`];
-  if(late.length) parts.push(`${plural(late.length, 'step')} late`);
-  if(ours.length) parts.push(`${ours.length} waiting on us`);
+  const R = view.records, groups = byProject(view);
+  const city = R.filter(r => r.bucket === 'city').length, ours = R.filter(r => r.bucket === 'ours').length;
+  const moved = R.filter(r => r.moves.length), late = R.reduce((n, r) => n + lateSteps(r).length, 0);
+  const parts = [plural(groups.length, 'project'), `${city} in City review`];
+  if(late) parts.push(`${plural(late, 'step')} late`);
+  if(ours) parts.push(`${ours} waiting on us`);
   if(moved.length) parts.push(`${moved.length} moved`);
   const subject = `Permit digest ${DOW[dow(today)]} ${nice(today)}: ${parts.join(' · ')}`;
-  const text = [`Permit digest — ${longDay(today)}`, ''];
+  const intro = `${TAG} — here's where each project stands with the City in Accela.`;
+  const text = [`Permit digest — ${longDay(today)}`, '', intro, ''];
   let html = '';
-  if(moved.length){ const m = movedPart(moved); text.push(...m.text); html += m.html; }
-  const block = (label, color, list, body, bodyText) => {
-    if(!list.length) return;
-    text.push(label.toUpperCase());
-    list.forEach(r => { text.push(`• ${recHead(r)}`, `  ${recSub(r)} · ${r.url}`); bodyText(r).forEach(l => text.push(`  - ${l}`)); text.push(''); });
-    html += sectionHead(label, color) + list.map(r => recordHtml(r, body(r))).join('');
-  };
-  block('Waiting on us', AMBER, ours, r => lineHtml(r.why, AMBER) + r.open.map(openHtml).join(''), r => [r.why, ...r.open.map(stepLine)]);
-  block('In City review', SLATE, city, r => r.open.length ? r.open.map(openHtml).join('') : lineHtml('No step open with a reviewer right now', SLATE),
-        r => r.open.length ? r.open.map(stepLine) : ['No step open with a reviewer right now']);
-  if(appr.length){
-    text.push('APPROVED', ...appr.map(r => `• ${recHead(r)} — ${r.ref}: ${r.why}`), '');
-    html += sectionHead('Approved', PINE) + appr.map(r => `<tr><td style="padding:4px 0;font-family:${FONT};font-size:13px;line-height:1.45;color:${NAVY};"><b>${esc(recHead(r))}</b> — <a href="${esc(r.url)}" style="color:${NAVY};">${esc(r.ref)}</a>: ${esc(r.why)}</td></tr>`).join('');
-  }
-  block('Closed in Accela', SLATE, closed, r => lineHtml(r.why, SLATE), r => [r.why]);
-  const warn = unreadLine(view.unread);
-  if(warn) text.push(warn, '');
+  groups.forEach(g => { const p = projectPart(g, true, g.recs); text.push(...p.text, ''); html += p.html; });
   const note = 'The digest comes every Monday, Wednesday and Friday. On other days an email comes only when something moves in Accela. Steps, reviewers and due dates are the City\'s own.';
   text.push(`Permit board: ${BOARD}`, '', note);
-  return { subject, text: text.join('\n'), html: shell('Permit digest', parts.join(', ').replace(/^./, c => c.toUpperCase()), html, { warn, note }, today,
-    moved.length ? moved.map(r => `${short(r.addr)}: ${r.moves[0].text}`).join(' · ') : `${city.length} in City review` ) };
+  return { subject, text: text.join('\n'), html: shell('Permit digest', parts.join(', ').replace(/^./, c => c.toUpperCase()), intro, html, { note }, today,
+    moved.length ? moved.map(r => `${short(r.addr)}: ${r.moves[0].text}`).join(' · ') : parts.join(' · ')) };
 }
 
 export function renderAlert(view, today){
   const moved = view.records.filter(r => r.moves.length);
   const lateNew = moved.reduce((n, r) => n + r.moves.filter(m => m.tone === 'late').length, 0);
-  const subject = `Accela ${nice(today)}: ${moved.length === 1 ? `${short(moved[0].addr)} moved` : `${moved.length} records moved`}${lateNew ? ` · ${lateNew} now overdue` : ''}`;
-  const m = movedPart(moved);
-  const warn = unreadLine(view.unread);
-  const note = 'Sent when something moves in Accela on a City record on the board. The full picture comes in the Monday / Wednesday / Friday digest.';
-  const text = [`Accela movement — ${longDay(today)}`, '', ...m.text, ...(warn ? [warn, ''] : []), `Permit board: ${BOARD}`, '', note];
-  return { subject, text: text.join('\n'), html: shell('Accela movement', moved.length === 1 ? `${short(moved[0].addr)} moved` : `${moved.length} records moved`, m.html, { warn, note }, today,
+  const groups = byProject(view).filter(g => g.recs.some(r => r.moves.length));
+  const what = moved.length === 1 ? `${short(moved[0].addr)} moved` : groups.length === 1 ? `${moved.length} records moved at ${short(groups[0].addr)}` : `${moved.length} records moved`;
+  const subject = `Accela ${nice(today)}: ${what}${lateNew ? ` · ${lateNew} now overdue` : ''}`;
+  const intro = `${TAG} — here's what moved in Accela since the last check.`;
+  const text = [`Accela movement — ${longDay(today)}`, '', intro, ''];
+  let html = '';
+  groups.forEach(g => { const p = projectPart(g, false, g.recs.filter(r => r.moves.length)); text.push(...p.text, ''); html += p.html; });
+  // a record Accela didn't answer for, on a project with nothing else moving, goes in the footer
+  const shown = new Set(groups.map(g => g.id));
+  const warn = view.unread.filter(u => !shown.has(u.projectId)).map(u => `${short(u.addr)}: ${unreadText(u)}`).join(' ');
+  const note = 'Sent when something moves in Accela on a City record on the board. Every project\'s full picture comes in the Monday / Wednesday / Friday digest.';
+  text.push(...(warn ? [warn, ''] : []), `Permit board: ${BOARD}`, '', note);
+  return { subject, text: text.join('\n'), html: shell('Accela movement', what.replace(/^./, c => c.toUpperCase()), intro, html, { warn, note }, today,
     moved.map(r => `${short(r.addr)}: ${r.moves[0].text}`).join(' · ')) };
 }
 
@@ -298,7 +349,7 @@ export async function runReminders({ state, records, send = false, today, kind }
   if(!send) return { ...out, text: mail.text, html: mail.html };
   const env = process.env.VERCEL_ENV;
   if(env && env !== 'production'){ out.note = `${env} deployment — only production sends`; return out; }
-  const key = `${today}|${kind}|${mail.text.replace(/^Couldn't read.*$|^.*isn't in Accela's public search.*$/gm, '')}`;
+  const key = `${today}|${kind}|${mail.text.replace(/^.*(Couldn't read|isn't in Accela's public search).*$/gm, '')}`;
   if(lastSent === key){ out.note = 'same email already sent today from this instance'; out.advance = true; return out; }
   try{ out.id = await gmailSend({ to: TO, ...mail }); out.sent = true; out.advance = true; lastSent = key; }
   catch(e){ out.ok = false; out.error = String(e && e.message || e); }
