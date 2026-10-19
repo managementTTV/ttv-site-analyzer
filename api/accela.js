@@ -66,9 +66,12 @@ export function parseRecordPage(page, ref){
 // Does the City hold this step right now? Open (active) with an assignment, not handed back to us
 // (revisions requested, fees or plans awaited — "Revisions Received" is the City's again) and not already
 // marked done (an active icon can lag an "Ok"). The reminder email and the board's late flag both read this.
-const STEP_OURS = /(revision|awaiting (revisions?|payment|plans|info|information|applicant|corrections?|resubmittal)|payment due|fees due|incomplete|on hold|pending applicant|returned|correction)/i;
+const STEP_OURS = /(revision|awaiting (revisions?|payment|plans|info|information|applicant|corrections?|resubmittal|mylar(?! to be signed))|payment due|fees due|incomplete|on hold|pending applicant|returned|correction)/i;
 const STEP_BACK = /(revisions? received|resubmitted|plans received)/i;
 const STEP_DONE = /^(ok|approved|complete|completed|issued|passed|finaled|final)\b/i;
+// Same-day entries come back in no fixed order, so one day is read in the order things happen: requested
+// (our move) → received / in review → done. Used for a step's current and latest entry alike.
+const stepRank = st => STEP_DONE.test(st || '') ? 3 : STEP_BACK.test(st || '') ? 2 : STEP_OURS.test(st || '') ? 1 : 2;
 export function cityHolds(t){
   if(!t || t.state !== 'active' || !t.current) return false;
   const st = t.current.status || '';
@@ -102,7 +105,8 @@ export function parseProcessing(html){
     // who has it now: the open (not yet marked, "TBD") entry; otherwise the newest-dated one — position is
     // unreliable for same-day entries
     const open = entries.filter(e => !e.status);
-    const dated = entries.filter(e => e.date).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    // newest day in workflow order (stepRank), so the same history always picks the same entry
+    const dated = entries.filter(e => e.date).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : stepRank(a.status) - stepRank(b.status));
     const pick = open.length ? open[open.length - 1] : dated.length ? dated[dated.length - 1] : entries[entries.length - 1];
     const current = pick ? { status: pick.status, assignedTo: pick.assignedTo, cityDue: pick.cityDue } : null;
     const c = /Comment:\s*(?:<\/[^>]+>\s*)*(.*?)(?:Additional Information:|<\/table>)/s.exec(body);
@@ -145,8 +149,8 @@ const PLAN_OK = /^(approved|ok)\b/i;
 const newest = t => { const ds = t ? t.history.map(h => h.date).filter(Boolean).sort() : []; return ds.length ? ds[ds.length - 1] : null; };
 const last = t => {
   if(!t || !t.history.length) return null;
-  const d = newest(t), day = t.history.filter(h => h.date === d);
-  return d ? day[day.length - 1] : t.history[t.history.length - 1];
+  const d = newest(t), day = d ? t.history.filter(h => h.date === d) : t.history;
+  return day.reduce((best, h) => !best || stepRank(h.status) >= stepRank(best.status) ? h : best, null);
 };
 
 export function deriveStatus(rec){
@@ -161,14 +165,16 @@ export function deriveStatus(rec){
   if(DEAD.test(s)) return { board: 'blocked', why: `Accela: ${s}`, ...step };
   if(DONE.test(s)) return { board: 'done', why: `Accela: ${s}`, ...approved };
   if(planOk){
-    const mylar = tasks.find(t => RELEASE_STEP.test(t.name) && t.state === 'active');
+    const mStatus = t => (t.current && t.current.status) || (t.latest && t.latest.status) || '';
+    // not signed yet: the step isn't complete and its newest entry isn't a completion (an active icon can lag an Ok);
+    // a step not yet started counts too — the plat still can't be recorded
+    const mylar = tasks.find(t => RELEASE_STEP.test(t.name) && t.state !== 'complete' && !STEP_DONE.test(mStatus(t)));
     if(mylar){
       const due = mylar.current && mylar.current.cityDue;
-      const holds = cityHolds(mylar);
+      const holds = mylar.state !== 'active' || cityHolds(mylar);
       return { board: holds ? 'submitted' : 'active',
-               why: `Plan review approved ${planOk.date || ''} — ${holds ? 'waiting on the City to sign the mylar' : 'the City needs the mylar from us'}${holds && due ? ` (City due ${due})` : ''}`.replace('  ', ' '),
-               step: mylar.name, stepStatus: (mylar.current && mylar.current.status) || (mylar.latest && mylar.latest.status) || null,
-               stepDate: (mylar.latest && mylar.latest.date) || null };
+               why: `Plan review approved ${planOk.date || ''} — ${holds ? 'waiting on the City to sign the mylar' : `the mylar is back with us (${mStatus(mylar)})`}${holds && due ? ` (City due ${due})` : ''}`.replace('  ', ' '),
+               step: mylar.name, stepStatus: mStatus(mylar) || null, stepDate: (mylar.latest && mylar.latest.date) || null };
     }
     return { board: 'done', why: `Plan review approved ${planOk.date || ''} (record still ${s || 'open'} for inspections)`.replace('  ', ' '), ...approved };
   }

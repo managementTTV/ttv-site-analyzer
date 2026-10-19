@@ -458,7 +458,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     email. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
     opening, its City due date moving, a City-held step on a record still in review going overdue, or a record new
     on the board ("Now tracking"). "Since the last check" = `accela.seen` on the record's block: record status +
-    per step `state|newest status|date|City due`, **no names** (it's in Drive). `plan()` carries `seen` over on
+    per step `state|newest status|date|City due`, **no names** (it's in Drive), versioned (`SNAP_V`: bump it when a
+    snapshot's meaning changes, so old ones re-baseline quietly instead of reading as moves). Same-day history
+    entries are read in workflow order (`stepRank`: requested → received → done), never Accela's response order,
+    for a step's current and latest entry alike. A City due date moving is a move only on an open step. `plan()` carries `seen` over on
     every sync; only the cron replaces it, via `applySeen()` with the other writes, and only when `runReminders()`
     says `advance` (the email went out, or there was nothing to send) — a failed send keeps the old snapshots so
     tomorrow reports the same moves. The very first run (no record has a snapshot) only takes them. Flag a change
