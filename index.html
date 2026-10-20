@@ -248,6 +248,11 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
 .upg-chk{width:14px;height:14px;border-radius:3px;border:1px solid var(--border-bright);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
 .upg-item.on .upg-chk{background:var(--teal);border-color:var(--teal)}
 .upg-chk svg{display:none}.upg-item.on .upg-chk svg{display:block}
+.upg-cat{grid-column:1/-1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:0 8px}
+.upg-cat>summary{cursor:pointer;padding:7px 0;font-size:12px;color:var(--text-mid);display:flex;justify-content:space-between;gap:8px}
+.upg-cat-n{font-size:11px;color:var(--text-dim)}
+.upg-cat[open]>summary .upg-cat-n{color:var(--teal-light)}
+.upg-cat-items{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-bottom:8px}
 .upg-name{font-size:11px;color:var(--text-mid);flex:1;line-height:1.3}
 .upg-item.on .upg-name{color:var(--text)}
 .upg-cost{font-family:var(--f-num);font-size:10px;color:var(--text-dim)}
@@ -372,7 +377,7 @@ body[data-step]:not([data-step="1"]) .bg-art::before{opacity:0.45}
   .hdr-logo{width:36px;height:36px}
   .step-btn{flex:0 0 auto;min-width:92px;padding:10px 10px;font-size:10px}
   .fr3,.fr4{grid-template-columns:1fr 1fr}
-  .sc-grid,.scenario-holding-grid,.upg-grid,.cmp-pickers{grid-template-columns:1fr}
+  .sc-grid,.scenario-holding-grid,.upg-grid,.upg-cat-items,.cmp-pickers{grid-template-columns:1fr}
   .area-big{font-size:32px}
   .profit-val{font-size:21px}
   .card{padding:16px 14px}
@@ -766,7 +771,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.49 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.50 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1287,15 +1292,20 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="card-title"><span class="dot"></span>Other Soft Costs</div>
         <div class="fr3">
           <div class="field"><label>Survey</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="survey" value="1500" oninput="markManual(this);calcAll()"></div></div>
-          <div class="field"><label>Appraisal</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="appraisal" value="725" oninput="calcAll()"></div></div>
-          <div class="field"><label>Insurance (build period)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="insurance" value="1400" oninput="calcAll()"></div></div>
+          <div class="field"><label>Appraisal / unit</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="appraisal" value="800" oninput="calcAll()"></div></div>
+          <div class="field"><label>Insurance / unit (build period)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="insurance" value="1400" oninput="calcAll()"></div></div>
         </div>
-        <p class="note" style="margin-top:4px">Survey is the front-end survey, once per project: $1,500 for one house on one lot, $3,000 when the project is split into lots (townhomes, a duet, the triplex, or more than one unit). Phoenix Land Surveying&rsquo;s 9/2/26 quote, rounded. The per-house stakeout is in Slate&rsquo;s build.</p>
+        <p class="note" style="margin-top:4px">Survey is the front-end survey, once per project: $1,500 for one house on one lot, $3,000 when the project is split into lots (townhomes, a duet, the triplex, or more than one unit). Phoenix Land Surveying&rsquo;s 9/2/26 quote, rounded. The per-house stakeout is in Slate&rsquo;s build. Appraisal ($800) and insurance ($1,400) are per unit, &times; Units, as on the deal sheet.</p>
         <div class="field" style="margin-top:10px"><label for="custom-plans">Custom plans (architect / engineer)</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="custom-plans" value="0" min="0" oninput="markManual(this);calcAll()"></div><p class="note">Only when an architect or engineer has to draw new plans. Once per deal, financed with the other costs.</p></div>
       </div>
       <div class="card">
         <div class="card-title"><span class="dot"></span>Upgrades (per unit)</div>
         <div class="upg-grid" id="upg-grid"></div>
+        <div class="fr2" style="margin-top:8px">
+          <div class="field"><label for="upg-custom-name">Custom upgrade (not on the list)</label><input type="text" id="upg-custom-name" maxlength="80" placeholder="e.g. high end finishes" oninput="calcAll()"></div>
+          <div class="field"><label for="upg-custom-cost">Custom $ / unit</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="upg-custom-cost" value="0" oninput="calcAll()"></div></div>
+        </div>
+        <p class="note" style="margin-top:4px">The deal sheet&rsquo;s Upgrades tab, item for item, with its Custom row. Per unit, at menu price; the GC fee goes on top.</p>
         <p class="warn" id="upg-note" style="display:none;margin-top:6px"></p>
         <div class="upg-total-bar"><span style="font-size:11px;color:var(--text-mid)" id="upg-total-lbl">Selected Upgrades Total</span><span style="font-family:var(--f-num);font-size:14px;color:var(--amber)" id="upg-total">$0</span></div>
         <button class="btn btn-ghost" style="margin-top:12px;width:100%" onclick="openInclusions()">View standard build inclusions</button>
@@ -1787,11 +1797,17 @@ const PLANS=[
   {n:'Winchester Duet (per side)',sf:1480,c:154902,base:135879,u:2,w:40,d:42.25,t:'duet',g:'Duets — Per Side'},
   {n:'Ashland Duet (Modern, per side)',sf:1747,c:293674,base:257609,u:2,w:40,d:56,t:'duet',fg:true,g:'Duets — Per Side'},
   {n:'Polaris Duet (Modern, per side)',sf:2227,c:330797,base:290173,u:2,w:40,d:68,t:'duet',fg:true,g:'Duets — Per Side'},
+  // v8.50: Pat's custom duet, as her sheets' Build Plans row "CUSTOM DUET (SARAH DR)" has it (2,754 sf a side at $157.50/sf
+  // = $433,755 with the 14% fee; the whole building's footprint 65 W x 62 D, like the other duets; no garage listed)
+  {n:'Sarah Dr Custom Duet (per side)',sf:2754,c:433755,base:380487,u:2,w:65,d:62,t:'duet',g:'Duets — Per Side'},
   {n:'Arcadia Triplex (per unit · 3-plex)',sf:1278,c:138869,base:121815,u:3,w:66,d:33.7,t:'mf',g:'Triplex — All 3 Units'}, // priced PER UNIT (all-3 $416,608 ÷ 3) so Units×3 scales build/taps correctly; sf/unit=3834÷3; footprint=whole 3-unit building
   {n:'Dayton Townhomes (1 unit)',sf:1384,c:157579,base:138227,u:1,w:21.67,d:40,t:'th',fg:true,g:'Multifamily & Mini'},
   {n:'Franklin Townhomes (1 unit)',sf:1549,c:161530,base:141693,u:1,w:20,d:42.5,t:'th',g:'Multifamily & Mini'},
   {n:'Troy Townhomes (1 unit)',sf:1892,c:190896,base:167453,u:1,w:22.75,d:55,t:'th',g:'Multifamily & Mini'},
   {n:'Wheatley Townhomes (1 unit)',sf:1637,c:197138,base:172928,u:1,w:17.75,d:35,t:'th',g:'Multifamily & Mini'},
+  // v8.50: from the deal sheet's Build Plans tab (Cost Plus 14 $185,916 each, front 1-car garage; footprint W x D 19 x 36 / 18 x 36)
+  {n:'Lancaster Townhome A (1 unit)',sf:1615,c:185916,base:163084,u:1,w:19,d:36,t:'th',fg:true,g:'Multifamily & Mini'},
+  {n:'Lancaster Townhome B (1 unit)',sf:1608,c:185916,base:163084,u:1,w:18,d:36,t:'th',fg:true,g:'Multifamily & Mini'},
   {n:'Dunkirk (mini home)',sf:702,c:103555,base:90838,u:1,w:27,d:34,t:'sfh',g:'Multifamily & Mini'},
   {n:'Yarmouth (mini home)',sf:361,c:85117,base:74664,u:1,w:19,d:19,t:'sfh',g:'Multifamily & Mini'},
 ];
@@ -1857,22 +1873,60 @@ function buildPlanDropdown(){
 // sent to the sheet carries no upgrade gap. `psf` items are priced per finished sq ft, like the tab's "Per SF" rows:
 // upgCost() = psf x the plan's sf. Before v8.49 the floors were flat ($2,899 LVP, $13,519 hardwood) and several items
 // differed (quartz $688, fireplace $6,884, Hardie $5,695...).
+// v8.50: the deal sheet's Upgrades tab, item for item (44 items in its 19 categories, same names, same prices; the sheet wins,
+// Brian 10/19), plus its Custom row (upg-custom-name / upg-custom-cost below). Per unit, at menu price: the GC fee goes on top
+// in upgradesPerUnit(). The ids from before v8.50 are kept so saved deals reopen with their ticks; 'matte-blk' was a second
+// id for the sheet's one hardware line and now reopens as 'brushed-ni' (UPGRADE_ALIAS).
 const UPGRADES=[
-  {id:'lvp',name:'LVP Throughout',psf:1.72},{id:'hw',name:'Engineered Hardwoods',psf:2.13},
-  {id:'quartz',name:'Quartz Countertops',cost:1150},{id:'wfall-qtz',name:'Waterfall Quartz',cost:1200},
-  {id:'frameless',name:'Frameless Shower Door',cost:900},{id:'tile-shower',name:'Tile Primary Shower/Tub',cost:2800},
-  {id:'front-door',name:'Craftsman Wood Door',cost:1200},{id:'deadbolt',name:'Electronic Deadbolt',cost:250},
-  {id:'corbels',name:'Cedar Corbels',cost:1105},{id:'columns',name:'Cedar Wrapped Columns',cost:500},
-  {id:'hardie',name:'Color Plus Hardie Exterior',cost:4500},{id:'open-rail',name:'Open Rail Staircase',cost:2221},
-  {id:'fireplace',name:'Gas Fireplace',cost:5000},{id:'fans',name:'4 Additional Ceiling Fans',cost:1780},
-  {id:'blinds',name:'Faux Wood Blinds',cost:600},{id:'brushed-ni',name:'Brushed Nickel Hardware',cost:850},
-  {id:'matte-blk',name:'Matte Black Hardware',cost:850},{id:'shiplap',name:'Shiplap Kitchen Island',cost:455},
+  {id:'fridge',cat:'Appliances',name:'Counter-Depth Fridge',cost:1780},{id:'wine',cat:'Appliances',name:'Wine Cooler Add-On',cost:4434},
+  {id:'cab-accent',cat:'Cabinets',name:'Cabinet Accent Color Change, Island/Perimeter',cost:1500},
+  {id:'glass-uppers',cat:'Cabinets',name:'Glass Upper Cabinet Doors',cost:1200},
+  {id:'cab-color',cat:'Cabinets',name:'Full Kitchen Cabinet Color Change, All Cabinets',cost:2400},
+  {id:'fans',cat:'Ceiling Fans',name:'Additional Ceiling Fans',cost:1780},
+  {id:'quartz',cat:'Countertops',name:'Quartz Upgrade',cost:1150},{id:'wfall-qtz',cat:'Countertops',name:'Waterfall Island Edge Add-On',cost:1200},
+  {id:'drop-zone',cat:'Drop Zone / Mudroom Built-In',name:'Drop Zone Built-In',cost:1200},
+  {id:'fence',cat:'Fence',name:'Wooden Privacy Fence, Stained',cost:7500},
+  {id:'elec-fireplace',cat:'Fireplace',name:'Electric Fireplace w/ Cedar Mantel',cost:2100},
+  {id:'fireplace',cat:'Fireplace',name:'Gas Fireplace w/ Stone Surround',cost:5000},
+  {id:'lvp',cat:'Flooring',name:'Click LVP Throughout, No Carpet',psf:1.72},{id:'hw',cat:'Flooring',name:'Engineered Hardwood Throughout',psf:2.13},
+  {id:'front-door',cat:'Front Door Upgrade',name:'Craftstyle Wood-Stain Door Upgrade',cost:1200},
+  {id:'deadbolt',cat:'Front Door Upgrade',name:'Electronic Deadbolt Add-On',cost:250},
+  {id:'garage-color',cat:'Garage Doors',name:'Woodgrain/Stained Color Upgrade',cost:375},
+  {id:'brushed-ni',cat:'Hardware',name:'Hardware Upgrade - Matte Black/Brushed Nickel',cost:850},
+  {id:'framed-mirror',cat:'Mirrors/Shower Doors',name:'Framed Mirror Upgrade',cost:700},
+  {id:'frameless',cat:'Mirrors/Shower Doors',name:'Frameless Primary Shower Door Upgrade',cost:900},
+  {id:'framed-shower',cat:'Mirrors/Shower Doors',name:'Primary Framed Shower Door Upgrade',cost:500},
+  {id:'mirror-finish',cat:'Mirrors/Shower Doors',name:'Premium Mirror Finish Upgrade',cost:500},
+  {id:'mantel-stain',cat:'Painting',name:'Fireplace Mantel Staining Add-On',cost:150},
+  {id:'shelving',cat:'Shelving',name:'Laminate Shelving Throughout',cost:3468},
+  {id:'columns',cat:'Siding & Boxing',name:'Cedar Wrapped Columns',cost:500},
+  {id:'corbels',cat:'Siding & Boxing',name:'Cedar Corbels on Front Elevation',cost:1105},
+  {id:'cedar-shutters',cat:'Siding & Boxing',name:'Cedar Shutters on Front Elevation',cost:1200},
+  {id:'shutters',cat:'Siding & Boxing',name:'Shutters on Front Elevation (Non-Cedar)',cost:800},
+  {id:'corbels-std',cat:'Siding & Boxing',name:'Corbels on Front Elevation (Non-Cedar)',cost:800},
+  {id:'hardie',cat:'Siding & Boxing',name:'Hardie Fiber Cement Siding Upgrade, Vinyl to Hardie',cost:4500},
+  {id:'stone',cat:'Siding & Boxing',name:'Stone Veneer Package Add-On',cost:6395},
+  {id:'treads-lvp',cat:'Stairs',name:'Treads Adapted for LVP',cost:225},{id:'oak-treads',cat:'Stairs',name:'White Oak Wood Treads',cost:900},
+  {id:'open-rail',cat:'Stairs',name:'Open Rail Staircase Upgrade',cost:2221},
+  {id:'herringbone',cat:'Tile',name:'Herringbone Backsplash Pattern Upgrade',cost:350},
+  {id:'tile-shower',cat:'Tile',name:'Primary Bath Shower/Tub Wall Tile Upgrade',cost:2800},
+  {id:'tile-shower-2',cat:'Tile',name:'Secondary Bath Shower/Tub Wall Tile Upgrade',cost:1850},
+  {id:'bath-floor',cat:'Tile',name:'Full Bath Floor Tile Upgrade',cost:1300},
+  {id:'laundry-tile',cat:'Tile',name:'Laundry Room Floor Tile Upgrade',cost:1850},
+  {id:'shiplap-wall',cat:'Trim Interior',name:'Vertical Shiplap Accent Feature',cost:1200},
+  {id:'shiplap',cat:'Trim Interior',name:'Shiplap on Kitchen Island',cost:455},
+  {id:'attic-stairs',cat:'Trim Interior',name:'Attic Pull-Down Stairs Added',cost:400},
+  {id:'crown',cat:'Trim Interior',name:'Expanded Crown Molding to Additional Rooms',cost:600},
+  {id:'blinds',cat:'Window Treatments',name:'Faux Wood Blinds, Whole-Home (Varies per Unit)',cost:600},
 ];
+const UPGRADE_ALIAS={'matte-blk':'brushed-ni'};   // v8.50: an id from before v8.50 -> the item it is now
 // one upgrade's menu price per unit for a plan of `sf` finished sq ft (the deal's plan when sf is left out)
 function upgCost(u,sf){return u?(u.psf?u.psf*(sf==null?sfPerUnit:sf):u.cost||0):0;}
 // v8.33 (audit M11): pairs that replace each other (one floor, one hardware finish). Ticking one unticks the other, so the
 // cost isn't counted twice.
-const UPGRADE_EXCLUSIVE=[['lvp','hw'],['brushed-ni','matte-blk']];
+// v8.50: the sheet's one hardware line replaced the brushed-nickel / matte-black pair; its two shower doors, two fireplaces,
+// cedar and plain corbels, cedar and plain shutters are each one or the other too.
+const UPGRADE_EXCLUSIVE=[['lvp','hw'],['frameless','framed-shower'],['elec-fireplace','fireplace'],['corbels','corbels-std'],['cedar-shutters','shutters']];
 const upgradeRival=id=>{const p=UPGRADE_EXCLUSIVE.find(x=>x.includes(id));return p?p.find(x=>x!==id):null;};
 
 // ═══════════════════ STATE ═══════════════════
@@ -2359,7 +2413,7 @@ const fmtN=n=>isNaN(n)?'—':Math.round(n).toLocaleString();
 // v8.46 (S-F5): money and area boxes are text, so Safari/Firefox keep "11,521"; commas, $ and spaces are dropped here
 // The boxes that were number boxes (v8.46) still refuse letters, as a number box does: "12k" or "abc" is dropped as it's typed
 // rather than read as 12 or 0 without a word. Capture phase, so it runs before the box's own oninput.
-const _NUM_TEXT=new Set(['cust-c','tap-water','tap-sewer','septic-cost','survey','appraisal','insurance','custom-plans','demo-rate','row-labor','dirt-rate','grading','site-prep','utilities','framing','culverts','landscaping','sop-band','fin-doc-fee','fin-tax','lot-sf','lot-sf-poly','demo-sqft','cust-sf','buildable-override','bua-hardscape']);
+const _NUM_TEXT=new Set(['cust-c','upg-custom-cost','tap-water','tap-sewer','septic-cost','survey','appraisal','insurance','custom-plans','demo-rate','row-labor','dirt-rate','grading','site-prep','utilities','framing','culverts','landscaping','sop-band','fin-doc-fee','fin-tax','lot-sf','lot-sf-poly','demo-sqft','cust-sf','buildable-override','bua-hardscape']);
 document.addEventListener('input',e=>{const t=e.target;if(t&&_NUM_TEXT.has(t.id)){const v=t.value.replace(/[^0-9.,$\s-]/g,'');if(v!==t.value)t.value=v;}},true);
 const pv=id=>{const e=$(id);if(!e)return 0;const v=parseFloat((e.value||'').replace(/[$,\s]/g,''));return isNaN(v)?0:v;};
 // v8.8 MONEY TEXT FIELDS. Land cost, asking price and the three ARV $/sf fields are type="text", so "$185,000"
@@ -5390,7 +5444,7 @@ function calcAll(){
   const tapSewerTot=skipS?0:tapSewerU*units;
   const septicTot=skipS?septicLot:0;   // per lot, replaces sewer when going septic
   tapTotal=tapWaterTot+tapSewerTot+septicTot;
-  const softFixed=pv('survey')+pv('appraisal')+pv('insurance');
+  const softFixed=softCostsTotal(units);
   const customPlans=pv('custom-plans');   // v8.36: once per deal, financed like the other costs
   // allInExLand = everything except land and financing
   allInExLand=buildTotal+upgTotal+lotFactor+tapTotal+softFixed+customPlans;
@@ -5400,7 +5454,7 @@ function calcAll(){
     const items=[
       {l:'Build Cost (all units)',v:buildTotal},{l:`Upgrades (all units, + ${fmtRulePct(gcFeePct())} GC fee)`,v:upgTotal},
       {l:'Lot Factor',v:lotFactor},{l:'Water Tap',v:tapWaterTot},{l:'Sewer Tap',v:tapSewerTot},{l:'Septic Install',v:septicTot},
-      {l:'Survey',v:pv('survey')},{l:'Appraisal',v:pv('appraisal')},{l:'Insurance',v:pv('insurance')},
+      {l:'Survey',v:pv('survey')},{l:'Appraisal'+(units>1?' ('+units+' units)':''),v:pv('appraisal')*units},{l:'Insurance'+(units>1?' ('+units+' units)':''),v:pv('insurance')*units},
       {l:'Custom Plans (architect / engineer)',v:customPlans},
     ].filter(i=>i.v>0);
     cs.innerHTML=items.map(i=>`<div class="sb-stat"><span class="sb-stat-lbl">${i.l}</span><span class="sb-stat-val">${fmt(i.v)}</span></div>`).join('');
@@ -5793,17 +5847,22 @@ function updateSummaryBar(){
 // ═══════════════════ UPGRADES ═══════════════════
 function renderUpgrades(){
   const grid=$('upg-grid');if(!grid)return;
-  grid.innerHTML=UPGRADES.map(u=>`
+  // v8.50: grouped by the sheet's categories, each folded like the sheet's until opened (open when something in it is ticked)
+  const cats=[];UPGRADES.forEach(u=>{if(!cats.includes(u.cat))cats.push(u.cat);});
+  grid.innerHTML=cats.map(c=>{const items=UPGRADES.filter(u=>u.cat===c),n=items.filter(u=>selectedUpgrades.has(u.id)).length;
+    return `<details class="upg-cat"${n?' open':''}><summary>${c}<span class="upg-cat-n">${n?n+' ticked':items.length+' item'+(items.length===1?'':'s')}</span></summary><div class="upg-cat-items">`+items.map(u=>`
     <div class="upg-item${selectedUpgrades.has(u.id)?' on':''}" data-id="${u.id}">
       <div class="upg-chk"><svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3l2.5 2.5L8 1" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg></div>
       <span class="upg-name">${u.name}</span><span class="upg-cost">${u.psf?'$'+u.psf.toFixed(2)+'/sf':'$'+u.cost.toLocaleString()}</span>
-    </div>`).join('');
+    </div>`).join('')+'</div></details>';}).join('');
   grid.querySelectorAll('.upg-item').forEach(el=>{
     el.addEventListener('click',()=>{
       const id=el.dataset.id;
       if(selectedUpgrades.has(id))selectedUpgrades.delete(id);
       else{selectedUpgrades.add(id);const r=upgradeRival(id);if(r)selectedUpgrades.delete(r);}   // v8.33 (M11)
       grid.querySelectorAll('.upg-item').forEach(x=>x.classList.toggle('on',selectedUpgrades.has(x.dataset.id)));
+      grid.querySelectorAll('.upg-cat').forEach(d=>{const n=d.querySelectorAll('.upg-item.on').length,t=d.querySelectorAll('.upg-item').length;
+        d.querySelector('.upg-cat-n').textContent=n?n+' ticked':t+' item'+(t===1?'':'s');});
       renderUpgradeNote();calcAll();
     });
   });
@@ -5812,8 +5871,13 @@ function renderUpgrades(){
 // v8.36 (partner decision 2026-10-09; reverses Brian's 2026-09-22 flat-menu-price rule): upgrades carry the Slate GC fee,
 // the same % as the build (gcFeePct(), the GC fee box: 14% by default, also on a custom build), as the team sheet does
 // (B16 = build + upgrades × 1.14). The screen, the plan comparison, the report and the Excel model all price them here.
-function upgradeMenuPerUnit(sf){return Array.from(selectedUpgrades).reduce((s,id)=>s+upgCost(UPGRADES.find(x=>x.id===id),sf),0);}
+// v8.50: plus the sheet's Custom row (one name, one $ per unit), like Upgrades!H89 inside the sheet's total
+function upgradeMenuPerUnit(sf){return Array.from(selectedUpgrades).reduce((s,id)=>s+upgCost(UPGRADES.find(x=>x.id===id),sf),0)+upgCustomCost();}
+function upgCustomCost(){return Math.max(0,pv('upg-custom-cost'));}
 function upgradesPerUnit(sf){return upgradeMenuPerUnit(sf)*(1+gcFeePct()/100);}
+// v8.50 (Brian 2026-10-20, the side-by-side test): appraisal and insurance are PER UNIT, as on the deal sheet (Calc B10 / B11,
+// $800 / $1,400); the survey stays once per project. They were once per deal ($725 / $1,400) before v8.50.
+function softCostsTotal(u){return pv('survey')+(pv('appraisal')+pv('insurance'))*Math.max(1,u||1);}
 // A deal saved before v8.33 can hold both of a pair: it opens as saved (both counted), and this says to untick one
 function renderUpgradeNote(){
   const n=$('upg-note');if(!n)return;
@@ -5941,7 +6005,7 @@ function getReportData(){
     cashHold:Math.max(0,cashThroughHold(lb,terms.b))};
 
   // Cost build-up
-  const softFixed=(pv('survey')||0)+(pv('appraisal')||0)+(pv('insurance')||0);
+  const softFixed=softCostsTotal(u);
   // v8.36: upgrades with the GC fee (upgradesMenu = the menu prices); custom plans once per deal
   const cost={land:landCost,lotFactor:lotFactor||0,tap:tapTotal||0,
     buildTotal:(currentPlanCost||0)*u,upgrades:upgradesPerUnit()*u,upgradesMenu:upgradeMenuPerUnit()*u,upgFeePct:gcFeePct(),
@@ -6387,9 +6451,13 @@ function sheetHandoffPayload(){
     units:M.units,land:M.land||0,asking:mv('asking-price')||0,lotFactor:M.lotFactor,
     lf:Object.assign({},M.lf,{sopBand:M.lfSopBand,houseMin:M.lf.demoSqft>0?M.lfHouseMin:0}),   // v8.49: both already inside lotFactor
     taps:{total:M.tapTotal,waterU:M.tapWaterU,sewerU:M.tapSewerU,septic:M.septicLot},
-    soft:{survey:M.survey,appraisal:M.appraisal,insurance:M.insurance,customPlans:M.customPlans||0},
+    // v8.50: appraisal and insurance are per unit on screen; sent as site totals (x Units), as before, so the sheet's
+    // divide-by-Units lands $800 / $1,400 in B10 / B11. The payload's shape and HANDOFF_V don't change.
+    soft:{survey:M.survey,appraisal:M.appraisal*M.units,insurance:M.insurance*M.units,customPlans:M.customPlans||0},
     upgFeePct:gcFeePct(),   // v8.49: the analyzer prices upgrades at menu + this GC fee; the sheet adds 14%
-    upgrades:Array.from(selectedUpgrades).map(id=>UPGRADES.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,name:x.name,cost:Math.round(upgCost(x)*100)/100})),
+    upgrades:Array.from(selectedUpgrades).map(id=>UPGRADES.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,name:x.name,cost:Math.round(upgCost(x)*100)/100}))
+      // v8.50: the Custom row goes as one more item; no id matches it, so the Apps Script puts it in the sheet's Custom row
+      .concat(upgCustomCost()>0?[{id:'custom',name:(($('upg-custom-name')||{}).value||'').trim().slice(0,80)||'Custom upgrade',cost:Math.round(upgCustomCost()*100)/100}]:[]),
     fin:{ltc:d.fin.ltc,rate:d.fin.rate,points:d.fin.points,docFee:d.fin.docFee,tax:d.fin.annualTax,salePct:d.fin.salePct,
       profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct},
     terms:{w:d.terms.w,b:d.terms.b,best:d.terms.best},arv:{w:d.psf.w,b:d.psf.b,best:d.psf.best},
@@ -6564,7 +6632,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   sec('OTHER COSTS'); inp('upg','Upgrades / Unit (menu price)',M.upgUnit,MONEY);
   inp('upgfee','GC Fee % on Upgrades'+(M.customBuild?'':' (= the build\u2019s)'),M.customBuild?M.upgFeePct:{formula:IN['gcfee']},PCT);
   der('upgU','\u2514 Upgrades / Unit (with GC fee)',`${IN['upg']}*(1+${IN['upgfee']})`,MONEY);
-  inp('survey','Survey (once per project)',M.survey,MONEY); inp('appr','Appraisal',M.appraisal,MONEY); inp('ins','Insurance (carry)',M.insurance,MONEY);
+  inp('survey','Survey (once per project)',M.survey,MONEY); inp('appr','Appraisal / Unit',M.appraisal,MONEY); inp('ins','Insurance (carry) / Unit',M.insurance,MONEY);
   inp('plans','Custom Plans (architect / engineer)',M.customPlans,MONEY);
   sec('FINANCING'); inp('ltc','Loan % of Project Cost',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
   sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('ask','Asking Price (reference; 0 = not entered)',M.asking,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
@@ -6602,7 +6670,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   titleBar(ws,1,'E','SCENARIO ANALYSIS — live formulas');
   band(ws,3,'E','DERIVED');
   const F=(addr,formula,fmt,bold,colorLink)=>{const c=ws.getCell(addr);c.value={formula};if(fmt)c.numFmt=fmt;c.font={name:'Arial',bold:!!bold,color:{argb:colorLink?LINK:'FF000000'}};};
-  ws.getCell('A4').value='All-In ex Land'; F('B4',`${I('build')}*${I('units')}+${I('upgU')}*${I('units')}+${I('lot')}+${I('tap')}+${I('survey')}+${I('appr')}+${I('ins')}+${I('plans')}`,MONEY,false,true);
+  ws.getCell('A4').value='All-In ex Land'; F('B4',`${I('build')}*${I('units')}+${I('upgU')}*${I('units')}+${I('lot')}+${I('tap')}+${I('survey')}+(${I('appr')}+${I('ins')})*${I('units')}+${I('plans')}`,MONEY,false,true);
   ws.getCell('A5').value='Land'; F('B5',`${I('land')}`,MONEY,false,true);
   ws.getCell('A6').value='Project Cost (land + all-in)'; F('B6','B5+B4',MONEY);
   ws.getCell('A7').value='Loan % of Project'; F('B7',`${I('ltc')}`,PCT,false,true);
@@ -6737,7 +6805,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   const wcb=wb.addWorksheet('Cost Build-Up'); wcb.getColumn(1).width=30; wcb.getColumn(2).width=16;
   titleBar(wcb,1,'B','COST BUILD-UP');
   let cr=2; const li=(label,formula,bold,fmtfill)=>{cr++;wcb.getCell('A'+cr).value=label;if(bold)wcb.getCell('A'+cr).font={bold:true,name:'Arial'};const c=wcb.getCell('B'+cr);c.value={formula};c.numFmt=MONEY;c.font={name:'Arial',bold:!!bold};if(fmtfill){c.fill=fill(CREAM);}};
-  li('Land',`${I('land')}`); li('Lot Factor',`${I('lot')}`); li('Tap Fees',`${I('tap')}`); li('Survey',`${I('survey')}`); li('Appraisal',`${I('appr')}`); li('Insurance',`${I('ins')}`);
+  li('Land',`${I('land')}`); li('Lot Factor',`${I('lot')}`); li('Tap Fees',`${I('tap')}`); li('Survey',`${I('survey')}`); li('Appraisal (all units)',`${I('appr')}*${I('units')}`); li('Insurance (all units)',`${I('ins')}*${I('units')}`);
   li('Custom Plans',`${I('plans')}`);
   li('Build Cost (all units)',`${I('build')}*${I('units')}`); li('Upgrades (all units, with GC fee)',`${I('upgU')}*${I('units')}`);
   li('Grand Total (incl. Land)','Scenarios!B4+Scenarios!B5',true,true);
@@ -6950,7 +7018,7 @@ function fitStatus(fpW,fpD,garage){
 // (loan %, rate, points, doc fee, tax, term) constant; loan SIZE and ARV vary by plan.
 function dealForPlan(plan,psf,U){
   const landCost=mv('land-cost');
-  const softFixed=pv('survey')+pv('appraisal')+pv('insurance')+pv('custom-plans');
+  const softFixed=pv('custom-plans');   // v8.50: + survey, appraisal and insurance at this plan's units, below
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
   const tapWaterU=pv('tap-water'),tapSewerU=pv('tap-sewer'),septicLot=pv('septic-cost');
@@ -6961,7 +7029,7 @@ function dealForPlan(plan,psf,U){
   const u=plan.n===dealPlanName()?Math.max(1,pv('units')):unitsForPlan(plan,U==null?pv('units'):U);
   const buildTotal=plan.c*u, upgTotal=upgPerUnit*u;
   const tapTot=(skipW?0:tapWaterU*u)+(skipS?0:tapSewerU*u)+(skipS?septicLot:0);
-  const allInExL=buildTotal+upgTotal+lotFactor+tapTot+softFixed;
+  const allInExL=buildTotal+upgTotal+lotFactor+tapTot+softFixed+softCostsTotal(u);
   const loan=pv('ltc-pct')/100*(landCost+allInExL);   // v8.36: % of project, as calcLoanBase
   const purchaseClosing=loan*0.01;
   const salePct=pv('sale-cost-pct')/100;
@@ -7312,6 +7380,7 @@ function serializeDeal(){
     autoManual:Object.fromEntries(AUTO_FILL_FIELDS.map(id=>[id,isManual(id)])),   // v8.36: and so do the county / survey fills
     landManual:isManual('land-cost'),   // v8.38: an untyped land cost keeps following the asking price on reopen
     upgrades:Array.from(selectedUpgrades),
+    softPerUnit:true,   // v8.50: appraisal / insurance are per unit in this file (deal totals before)
     structures:extraStructures.map(st=>({name:st.name,w:st.w,d:st.d,rot:st.rot||0,x:st.x,y:st.y,xFt:st.xFt,yFt:st.yFt})),   // v8.26
     comps:COMPS.map(c=>Object.assign({},c)),
     gis:(typeof window!=='undefined'&&window._lastGis)||null,
@@ -7433,7 +7502,7 @@ function restoreDeal(d){
     // The Underwrite on entry while a plan picked after it stays. A file from before v8.9 takes a restored plan as
     // the analyst's choice. No plan restored: leave the ranking open so it can pick one.
     _rankSig=!$('plan-sel').value?null:('rankSig' in d)?d.rankSig:rankSig();
-    selectedUpgrades.clear();(d.upgrades||[]).forEach(u=>selectedUpgrades.add(u));
+    selectedUpgrades.clear();(d.upgrades||[]).forEach(u=>selectedUpgrades.add(UPGRADE_ALIAS[u]||u));   // v8.50: old ids
     extraStructures=(d.structures||[]).filter(st=>+st.w>0&&+st.d>0).map(st=>({id:newStructId(),   // v8.26: ids are this page's, never the file's
       name:String(st.name||'Structure').slice(0,24),w:+st.w,d:+st.d,rot:(((+st.rot||0)%360)+360)%360,
       x:+st.x||0,y:+st.y||0,xFt:+st.xFt||0,yFt:+st.yFt||0,placed:isFinite(+st.x)&&isFinite(+st.y)&&(st.x!=null)}));
@@ -7458,6 +7527,15 @@ function restoreDeal(d){
     // onPlanChange() resets the overlay rotation to 0, and sets units to the plan default when the plan differs
     // from the one Units last followed (v8.14): re-apply the saved values
     setV('units');updateAttachedBuild();syncUnitsUI();
+    // v8.50: a file from before v8.50 holds appraisal and insurance as deal totals. Untouched old defaults ($725 / $1,400)
+    // take today's per-unit rule ($800 / $1,400 a unit); a typed quote keeps its deal total, spread over the saved Units.
+    let softMoved=false;
+    if(!d.softPerUnit){const n=Math.max(1,pv('units'));
+      [['appraisal','725','800'],['insurance','1400','1400']].forEach(([id,oldDef,newDef])=>{const e=$(id);if(!e)return;
+        const was=(e.value||'').replace(/[$,\s]/g,'');
+        const now=was===oldDef?newDef:(n>1&&pv(id)>0?String(Math.round(pv(id)/n*100)/100):e.value);
+        if(now!==e.value){e.value=now;softMoved=true;}});
+      if(n>1&&!softMoved)softMoved=true;}   // the defaults now count once per unit
     setV('front-garage');   // v8.39: a deal saved before it has none and keeps its plan's tag
     {const r=vals['rot-slider'];if(r&&r.v!=null)setRotation(parseFloat(r.v)||0);}
     if($('skip-sewer'))onSewerSkip();
@@ -7479,6 +7557,7 @@ function restoreDeal(d){
     // that's gone, its price, or the Max land) instead of leaving it to be noticed
     const moved=[];
     {const sn=d.snap&&typeof d.snap==='object'?d.snap:null,mlNow=(($('max-land-display')||{}).textContent||'').trim();
+     if(softMoved)moved.push('Appraisal and insurance are per unit now ($800 and $1,400 a unit, as on the deal sheet).');
      if(d.plan&&planNameFromVal($('plan-sel').value)!==d.plan)moved.push(`${d.plan} isn\u2019t in the plan list any more, so no plan is picked. Pick one.`);
      else if(sn&&+sn.planCost>0&&Math.abs((currentPlanCost||0)-sn.planCost)>=1)
        moved.push(`${d.plan} now costs ${fmt(currentPlanCost||0)} a unit; it was ${fmt(sn.planCost)} when saved.`);
@@ -7568,8 +7647,14 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.49', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.50', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.50',date:'Oct 2026',name:'Same menu and costs as the deal sheet',items:[
+   'Appraisal and insurance are per unit now, like the deal sheet: $800 and $1,400 a unit (they were $725 and $1,400 once per deal). A 3-unit row now carries $6,600 for them, not $2,125, so Max land drops a little on multi-unit deals. The survey is still once per project.',
+   'The upgrade menu is the deal sheet\u2019s Upgrades tab, item for item: 44 items in the same 19 groups, same names and prices, plus a Custom line (a name and a $ per unit) for anything not listed. Open a group to tick its items.',
+   'New plans from the deal sheet: Lancaster Townhome A and B, and Pat\u2019s Sarah Dr custom duet.',
+   'A deal saved before this reopens with appraisal and insurance per unit: the old $725 / $1,400 defaults become $800 / $1,400 a unit, and a typed amount is split over the units.',
+ ]},
  {v:'8.49',date:'Oct 2026',name:'Deal sheet gets the partner rules',items:[
    'Send to deal sheet now carries everything the updated deal sheet has: the loan\u2019s % of the project, doc fee, property tax, custom plans, heritage-tree timing, the profit rule, max land and opening offer, the SOP-08 stress check and cash at closing. The sheet\u2019s Analyzer Snapshot tab lists each figure next to the sheet\u2019s own and flags any that differ.',
    'A zone picked under a town (Huntersville, Concord and the rest) now lands in the sheet\u2019s town and zone boxes, so its setbacks fill in.',
