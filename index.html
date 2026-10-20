@@ -766,7 +766,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.48 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.49 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1853,17 +1853,23 @@ function buildPlanDropdown(){
     sel.appendChild(og);
   });
 }
+// v8.49 (Brian, 2026-10-19): the prices are the locked deal sheet's Upgrades tab (the list the team uses), so a deal
+// sent to the sheet carries no upgrade gap. `psf` items are priced per finished sq ft, like the tab's "Per SF" rows:
+// upgCost() = psf x the plan's sf. Before v8.49 the floors were flat ($2,899 LVP, $13,519 hardwood) and several items
+// differed (quartz $688, fireplace $6,884, Hardie $5,695...).
 const UPGRADES=[
-  {id:'lvp',name:'LVP Throughout',cost:2899},{id:'hw',name:'Engineered Hardwoods',cost:13519},
-  {id:'quartz',name:'Quartz Countertops',cost:688},{id:'wfall-qtz',name:'Waterfall Quartz',cost:1530},
-  {id:'frameless',name:'Frameless Shower Door',cost:800},{id:'tile-shower',name:'Tile Primary Shower/Tub',cost:2800},
-  {id:'front-door',name:'Craftsman Wood Door',cost:1800},{id:'deadbolt',name:'Electronic Deadbolt',cost:250},
+  {id:'lvp',name:'LVP Throughout',psf:1.72},{id:'hw',name:'Engineered Hardwoods',psf:2.13},
+  {id:'quartz',name:'Quartz Countertops',cost:1150},{id:'wfall-qtz',name:'Waterfall Quartz',cost:1200},
+  {id:'frameless',name:'Frameless Shower Door',cost:900},{id:'tile-shower',name:'Tile Primary Shower/Tub',cost:2800},
+  {id:'front-door',name:'Craftsman Wood Door',cost:1200},{id:'deadbolt',name:'Electronic Deadbolt',cost:250},
   {id:'corbels',name:'Cedar Corbels',cost:1105},{id:'columns',name:'Cedar Wrapped Columns',cost:500},
-  {id:'hardie',name:'Color Plus Hardie Exterior',cost:5695},{id:'open-rail',name:'Open Rail Staircase',cost:2221},
-  {id:'fireplace',name:'Gas Fireplace',cost:6884},{id:'fans',name:'4 Additional Ceiling Fans',cost:1780},
-  {id:'blinds',name:'Faux Wood Blinds',cost:600},{id:'brushed-ni',name:'Brushed Nickel Hardware',cost:622},
-  {id:'matte-blk',name:'Matte Black Hardware',cost:823},{id:'shiplap',name:'Shiplap Kitchen Island',cost:455},
+  {id:'hardie',name:'Color Plus Hardie Exterior',cost:4500},{id:'open-rail',name:'Open Rail Staircase',cost:2221},
+  {id:'fireplace',name:'Gas Fireplace',cost:5000},{id:'fans',name:'4 Additional Ceiling Fans',cost:1780},
+  {id:'blinds',name:'Faux Wood Blinds',cost:600},{id:'brushed-ni',name:'Brushed Nickel Hardware',cost:850},
+  {id:'matte-blk',name:'Matte Black Hardware',cost:850},{id:'shiplap',name:'Shiplap Kitchen Island',cost:455},
 ];
+// one upgrade's menu price per unit for a plan of `sf` finished sq ft (the deal's plan when sf is left out)
+function upgCost(u,sf){return u?(u.psf?u.psf*(sf==null?sfPerUnit:sf):u.cost||0):0;}
 // v8.33 (audit M11): pairs that replace each other (one floor, one hardware finish). Ticking one unticks the other, so the
 // cost isn't counted twice.
 const UPGRADE_EXCLUSIVE=[['lvp','hw'],['brushed-ni','matte-blk']];
@@ -5790,7 +5796,7 @@ function renderUpgrades(){
   grid.innerHTML=UPGRADES.map(u=>`
     <div class="upg-item${selectedUpgrades.has(u.id)?' on':''}" data-id="${u.id}">
       <div class="upg-chk"><svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3l2.5 2.5L8 1" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg></div>
-      <span class="upg-name">${u.name}</span><span class="upg-cost">$${u.cost.toLocaleString()}</span>
+      <span class="upg-name">${u.name}</span><span class="upg-cost">${u.psf?'$'+u.psf.toFixed(2)+'/sf':'$'+u.cost.toLocaleString()}</span>
     </div>`).join('');
   grid.querySelectorAll('.upg-item').forEach(el=>{
     el.addEventListener('click',()=>{
@@ -5806,8 +5812,8 @@ function renderUpgrades(){
 // v8.36 (partner decision 2026-10-09; reverses Brian's 2026-09-22 flat-menu-price rule): upgrades carry the Slate GC fee,
 // the same % as the build (gcFeePct(), the GC fee box: 14% by default, also on a custom build), as the team sheet does
 // (B16 = build + upgrades × 1.14). The screen, the plan comparison, the report and the Excel model all price them here.
-function upgradeMenuPerUnit(){return Array.from(selectedUpgrades).reduce((s,id)=>{const u=UPGRADES.find(x=>x.id===id);return s+(u?u.cost:0);},0);}
-function upgradesPerUnit(){return upgradeMenuPerUnit()*(1+gcFeePct()/100);}
+function upgradeMenuPerUnit(sf){return Array.from(selectedUpgrades).reduce((s,id)=>s+upgCost(UPGRADES.find(x=>x.id===id),sf),0);}
+function upgradesPerUnit(sf){return upgradeMenuPerUnit(sf)*(1+gcFeePct()/100);}
 // A deal saved before v8.33 can hold both of a pair: it opens as saved (both counted), and this says to untick one
 function renderUpgradeNote(){
   const n=$('upg-note');if(!n)return;
@@ -6359,37 +6365,61 @@ let _sheetHandoff=null;   // {ts, street, city}: this deal was sent; street = ad
 // The payload, read through the exporters' own readers (getReportData, collectModelInputs) so the sheet starts from the
 // numbers on screen. Per-site figures (land, lot factor, survey, appraisal, insurance) go as site totals; the sheet
 // divides them by Units for its per-unit model.
+// v8.49 (Chat 11): payload v2. Adds what the locked sheet now has: the loan's % of the project, doc fee and property tax
+// (fin, as before), custom plans (soft.customPlans), heritage-tree timing (lf.herRate, as before), the SOP band line and
+// the $30k house minimum (lf.sopBand / lf.houseMin, both already inside lotFactor), the offer lines (results.offer),
+// cash at closing / through the hold (results.cash), the ARV check (arvCheck, for the sheet's ARV reasons log) and the
+// zone's town (zoneTown, the sheet's Zoning Database column A). The Apps Script reads v1 and v2.
+const HANDOFF_V=2;
 function sheetHandoffPayload(){
   const d=getReportData(),M=collectModelInputs(d),g=d.gis||{};
   const f=id=>(($(id)||{}).value||'').trim();
   const planVal=f('plan-sel'),po=planVal&&planVal!=='__CUSTOM__'?PLANS.find(p=>p.n===planNameFromVal(planVal)):null;
   const fp=planVal==='__CUSTOM__'?{w:pv('cust-w'),d:pv('cust-d')}:po?{w:po.w,d:po.d}:{w:0,d:0};
   const none=v=>v==='\u2014'?'':v;
-  return {v:1,app:APP_VERSION,
+  const oc=d.offer||null, n0=v=>isFinite(v)?Math.round(v*100)/100:0;
+  return {v:HANDOFF_V,app:APP_VERSION,
     addr:{street:f('addr-street'),city:f('addr-city'),state:f('addr-state'),zip:f('addr-zip')},
     county:f('county-sel'),zone:none(d.zone),corner:!!($('corner-lot')||{}).checked,
+    zoneTown:f('zone-sel').indexOf('|')>0?f('zone-sel').split('|')[0]:'',   // v8.49: "Huntersville|NR" -> the sheet's K5
     lot:{mode:d.lotMode,w:d.lotW,d:d.lotD,buildable:d.buildable_sf},
     plan:{name:none(d.plan),custom:M.customBuild,sf:M.sf,build:M.buildUnit,base:M.baseUnit,feePct:Math.round(M.gcFeePct*1000)/10,fpW:fp.w,fpD:fp.d},
-    units:M.units,land:M.land||0,asking:mv('asking-price')||0,lotFactor:M.lotFactor,lf:M.lf,
+    units:M.units,land:M.land||0,asking:mv('asking-price')||0,lotFactor:M.lotFactor,
+    lf:Object.assign({},M.lf,{sopBand:M.lfSopBand,houseMin:M.lf.demoSqft>0?M.lfHouseMin:0}),   // v8.49: both already inside lotFactor
     taps:{total:M.tapTotal,waterU:M.tapWaterU,sewerU:M.tapSewerU,septic:M.septicLot},
-    soft:{survey:M.survey,appraisal:M.appraisal,insurance:M.insurance},
-    upgrades:Array.from(selectedUpgrades).map(id=>UPGRADES.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,name:x.name,cost:x.cost})),
+    soft:{survey:M.survey,appraisal:M.appraisal,insurance:M.insurance,customPlans:M.customPlans||0},
+    upgFeePct:gcFeePct(),   // v8.49: the analyzer prices upgrades at menu + this GC fee; the sheet adds 14%
+    upgrades:Array.from(selectedUpgrades).map(id=>UPGRADES.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,name:x.name,cost:Math.round(upgCost(x)*100)/100})),
     fin:{ltc:d.fin.ltc,rate:d.fin.rate,points:d.fin.points,docFee:d.fin.docFee,tax:d.fin.annualTax,salePct:d.fin.salePct,
       profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct},
     terms:{w:d.terms.w,b:d.terms.b,best:d.terms.best},arv:{w:d.psf.w,b:d.psf.b,best:d.psf.best},
-    results:{maxLand:none(d.maxLand),scenarios:d.scenarios.map(s=>({k:s.key,arvPSF:s.arvPSF,arv:s.arv,hold:s.holdPerUnit,
+    results:{maxLand:none(d.maxLand),
+      offer:oc?{maxLand:n0(oc.maxLand),opening:oc.opening,status:oc.status,askStatus:oc.askStatus,
+        stress:{profit:n0(oc.stress.profit),term:oc.stress.term,warn:!!oc.stress.warn}}:null,
+      cash:{closing:n0(d.fin.cash),hold:n0(d.fin.cashHold),loan:n0(d.fin.loan)},
+      scenarios:d.scenarios.map(s=>({k:s.key,arvPSF:s.arvPSF,arv:s.arv,hold:s.holdPerUnit,
       sale:s.saleCost,totalAllIn:s.totalAllIn,profit:s.profit,total:s.total}))},
     gis:{pid:g.pid||'',nc_pin:g.nc_pin||'',area_sf:g.area_sf||0,zoning:g.zoning||'',watershed:g.watershed||'',
       swim:g.swim?!!g.swim.i:null,historic:g.historic&&g.historic.i?(g.historic.n||'Yes'):'',bua:g.bua||''},
+    arvCheck:arvCheckPayload(),
     comps:M.comps.map(c=>({addr:c.addr,url:c.url,sqft:c.sqft,sold:c.sold,adj:c.adj,date:c.date,dist:c.dist,mom:c.mom,notes:c.notes})),
     notes:moneyIssues().map(i=>i.msg).concat(M.compNotes||[]).concat(arvCheckNotes()).concat(innerUnitNotes(d))};   // v8.41: the ARV verdict + reason; v8.42: inner units
+}
+// v8.49: the ARV check for the sheet's ARV reasons log (sessions/16-notes-for-chat-11.md). null without a county pull
+// for the deal's parcel. The notes[] lines (arvCheckNotes) still go too, for the Snapshot tab.
+function arvCheckPayload(){
+  const t=arvToolForDeal();if(!t)return null;
+  const o=arvOverride(),base=mv('arv-b')||0;
+  return {pid:t.pid||'',toolPsf:t.psf>0?t.psf:null,level:t.level||'',newBuilds:t.newBuilds!=null?t.newBuilds:null,
+    vet:!!(t.vet&&t.vet.check),vetReasons:(t.vet&&t.vet.reasons)||[],stale:arvToolStale(t),
+    basePsf:base,changed:!!o,reason:o?o.code:'',note:o?o.note:''};
 }
 // v8.42: the locked sheet prices every unit at $/sf × sf; the analyzer takes 2% off the inner ones, so its ARV / unit is lower
 function innerUnitNotes(d){
   if(!d.innerUnits||!(d.arvFactor<1))return [];
   // the analyzer's figure is the scenario's own ARV; the sheet's is unitArv() without the factor (v8.45: no second formula)
   const b=(d.scenarios||[]).find(s=>s.key==='b'), full=b?unitArv(b.arvPSF,d.sf):0;
-  return [`Inner units: ${d.innerUnits} of the ${d.units} units ${d.innerUnits===1?'is an inner unit':'are inner units'}, priced 2% under the end units, so the analyzer's Base ARV / unit is ${((1-d.arvFactor)*100).toFixed(1)}% under $/sf \u00d7 sf`+(full&&b.arv>0?` (${fmt(b.arv)} vs ${fmt(full)}). The sheet prices every unit at $/sf \u00d7 sf, so its ARV is ${fmt(full-b.arv)} higher per unit.`:'.')];
+  return [`Inner units: ${d.innerUnits} of the ${d.units} units ${d.innerUnits===1?'is an inner unit':'are inner units'}, priced 2% under the end units, so the analyzer's Base ARV / unit is ${((1-d.arvFactor)*100).toFixed(1)}% under $/sf \u00d7 sf`+(full&&b.arv>0?` (${fmt(b.arv)} vs ${fmt(full)}). The deal sheet\u2019s Base $/sf is set to this average ($${(b.arv/d.sf).toFixed(2)}/sf) so its ARV matches.`:'.')];   // v8.49: Code.gs v3.4 sets B27 from the Base ARV / unit
 }
 function b64url(str){
   const b=new TextEncoder().encode(str);let s='';
@@ -6446,7 +6476,7 @@ function collectModelInputs(d){
         dirtLoads:pv('dirt-loads'),dirtRate:pv('dirt-rate'),
         grading:pv('grading'),sitePrep:pv('site-prep'),utilities:pv('utilities'),
         framing:pv('framing'),culverts:pv('culverts'),landscaping:pv('landscaping')},
-    // v8.39: outside `lf`, which the deal-sheet hand-off sends as is (payload v1 unchanged; the sheet side is Chat 11's)
+    // v8.39: outside `lf` (Excel reads them as their own cells); v8.49: the deal-sheet payload adds them to its lf copy
     lfSopBand:pv('sop-band'),lfHouseMin:houseMinOn()?LF_HOUSE_MIN:0,
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
@@ -6924,7 +6954,7 @@ function dealForPlan(plan,psf,U){
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
   const tapWaterU=pv('tap-water'),tapSewerU=pv('tap-sewer'),septicLot=pv('septic-cost');
-  const upgPerUnit=upgradesPerUnit();   // v8.36: with the GC fee
+  const upgPerUnit=upgradesPerUnit(plan.sf);   // v8.36: with the GC fee; v8.49: per-sf floors at this plan's sf
   // v8.40 (audit X-F2): the deal's Units, as the fit grid tests every plan (unitsForPlan()); it was the catalogue plan.u, so
   // 3 Daytons were priced as 1 townhome and every house as one house
   // (the deal's own plan keeps the deal's Units exactly, so its column matches the page)
@@ -7538,8 +7568,14 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.48', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.49', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.49',date:'Oct 2026',name:'Deal sheet gets the partner rules',items:[
+   'Send to deal sheet now carries everything the updated deal sheet has: the loan\u2019s % of the project, doc fee, property tax, custom plans, heritage-tree timing, the profit rule, max land and opening offer, the SOP-08 stress check and cash at closing. The sheet\u2019s Analyzer Snapshot tab lists each figure next to the sheet\u2019s own and flags any that differ.',
+   'A zone picked under a town (Huntersville, Concord and the rest) now lands in the sheet\u2019s town and zone boxes, so its setbacks fill in.',
+   'Upgrade prices now match the deal sheet\u2019s Upgrades tab: LVP and hardwood are priced per square foot ($1.72 and $2.13), quartz $1,150, gas fireplace $5,000, Hardie $4,500 and so on. A saved deal with upgrades reopens at the new prices.',
+   'The ARV check (the tool\u2019s $/sf, confidence, Pat\u2019s why) is also logged in one \u201cARV reasons log\u201d sheet, so later sale prices can be matched to it.',
+ ]},
  {v:'8.48',date:'Oct 2026',name:'Town zoning from the sheet',items:[
    'A new Zoning Code picker next to the County lists the towns in the deal sheet\u2019s zoning table: Huntersville, Cornelius, Davidson, Matthews, Mint Hill, Pineville, Belmont, Gastonia, Concord, Mooresville, Statesville, Indian Trail, Stallings, Waxhaw and Greenville SC. Kannapolis and Monroe already had their own County option; they now use the same checked rows. It follows the City you type (or the town County GIS finds), and you can pick another.',
    'Picking a town\u2019s zone fills the setbacks and minimum lot width with the sheet\u2019s numbers, under the sheet\u2019s own names (\u201cNR \u00b7 townhomes\u201d), with a link to that part of the town\u2019s code.',

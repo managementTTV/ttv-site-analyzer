@@ -70,6 +70,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   × (1 + fee)); `upgradeMenuPerUnit()` is the menu total, for labels and the Excel input. The Excel model holds the menu
   price and "GC Fee % on Upgrades" as inputs and derives `upgU`. Flag a path that adds upgrades at menu price, or that
   takes the fee from `planCostSplit()` (0% on a custom build).
+- **Upgrade prices = the deal sheet's Upgrades tab (v8.49, Brian 2026-10-19).** `UPGRADES` copies the template's
+  Upgrades tab (column G, "Fixed" or "Per SF"); per-sf items carry `psf` and are priced by `upgCost(u, sf)` = psf × the
+  plan's sf (the deal's plan by default; `dealForPlan()` passes each plan's own sf). Change a price in both places
+  together, or a sent deal shows an upgrade gap on the sheet's Snapshot tab. Flag a reader that uses `u.cost` directly.
 - **Inner units sell ~2% less per sf (v8.42, research/12 Q3, Brian 2026-10-12).** ARV / unit = $/sf × sf ×
   `innerUnitFactor(plan, units)` = 1 − 0.02 × inner ÷ units. A townhome row (`t:'th'`) has units − 2 inner units; the
   Arcadia triplex (`t:'mf'`) one per full 3-unit building; a duet, a house or a custom footprint none. So a row of 3 is
@@ -1230,14 +1234,19 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   (`renderSheetHandoff()`), shown while the deal on screen is the one sent (`isSentDeal()`: same `addrWords()` street,
   same city when both have one). A blocked pop-up is not recorded as sent.
 - Sending is blocked without a street, a plan or a Base ARV, or while `moneyIssues()` has a note.
-- The sheet's locked formulas don't follow the app's math in several places: it finances 60% of land + 100% of build
-  (the app: 85% of the project since v8.36), prices survey at $1,000 / $2,000 per unit (the app: once per project) and
-  sale costs at 5% + 1%, has no custom-plans cell, and its Worst / Best are Base ∓ $10/sf. Since v8.36 both add the GC fee
-  to upgrades, run 12 / 9 / 8 months and read CoC as profit ÷ all-in. Chat 11 brings the sheet in line (the partner
-  decisions), and any new payload field bumps `v` and `HANDOFF_VERSION` together. The hand-off doesn't force the sheet to match; it records both in the snapshot. Changing the
-  template's formulas is a separate decision for the partners.
+- **Payload v2 (v8.49, Chat 11).** Since Code.gs v3.4 the template has the partner rules (loan % of project with the 1%
+  purchase closing, doc fee and property tax in its finance row, survey once per project, custom plans, heritage timing,
+  the $30k house minimum in the lot-factor helper, the profit rule, max land, opening offer, SOP-08 stress, cash at
+  closing). v2 adds `zoneTown`, `soft.customPlans`, `upgFeePct`, `lf.sopBand` / `lf.houseMin` (informational, both already
+  inside `lotFactor`), `results.offer`, `results.cash` and `arvCheck` (logged to the "ARV reasons log" sheet). The script
+  reads v1 and v2 (a v1 deal keeps the template's defaults for the new cells). The sheet's Base $/sf (B27) is set from the
+  Base ARV / unit, so inner units' 2% cut lands as an average $/sf. What still differs by design: the sheet's Worst / Best
+  are Base ∓ $10/sf (the app's ±10%), its sale costs are fixed at 5% + 1%, it adds 14% to upgrades whatever the GC fee box
+  says, and its lot-factor helper prices items at its own rates (B7 carries the app's lot factor). The snapshot lists
+  these in their own table; the Base rows must show no gap on the reference deal. Any new payload field bumps `v` and
+  `HANDOFF_VERSION` together.
 - The Apps Script source is not in this repo; a reference copy lives in Brian's project folder
-  (`New Dev UW'er 5000/Code.gs.v3-analyzer-handoff-*.gs`). The Apps Script side is changed by pasting the whole
+  (`New Dev UW'er 5000/Code.gs.v3.4-*.gs`, the latest). The Apps Script side is changed by pasting the whole
   Code.gs and publishing a **new version of the existing deployment** (Deploy › Manage deployments › edit), which
   keeps the /exec link.
 
