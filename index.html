@@ -771,7 +771,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.50 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.51 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -4246,7 +4246,7 @@ function platSketchPayload(){
     source:{pid,address:fullAddr(),zone,county,lotSf:Math.round(Math.abs(polyAreaFt(pts))),from:lot.from},
     units:'ft-dec',
     lot:{points:pts,segments,streetSides:lot.street},
-    setbacks:lot.des.map(edgeSetbackFt),
+    setbacks:lot.des.map(d=>edgeSetbackFt(d)),   // v8.51: not .map(edgeSetbackFt), whose second argument is the array index (a 0-3 ft front)
     rules};
 }
 function sketchCode(){const p=platSketchPayload();return p?b64url(JSON.stringify(p)):'';}
@@ -7647,8 +7647,11 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.50', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.51', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.51',date:'Oct 2026',name:'Sketch a subdivision sends the real front setback',items:[
+   'The sketch sent to the plat sketcher now carries the lot\u2019s real front setback (27 ft on a 2723 Dellinger N1-B lot). Since v8.39 it sent 0 to 3 ft by mistake, so the front of the sketched lots came out too deep. No deal numbers change.',
+ ]},
  {v:'8.50',date:'Oct 2026',name:'Same menu and costs as the deal sheet',items:[
    'Appraisal and insurance are per unit now, like the deal sheet: $800 and $1,400 a unit (they were $725 and $1,400 once per deal). A 3-unit row now carries $6,600 for them, not $2,125, so Max land drops a little on multi-unit deals. The survey is still once per project.',
    'The upgrade menu is the deal sheet\u2019s Upgrades tab, item for item: 44 items in the same 19 groups, same names and prices, plus a Custom line (a name and a $ per unit) for anything not listed. Open a group to tick its items.',
