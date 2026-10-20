@@ -78,7 +78,7 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   items with the tab's names (column F) and categories (`cat`, the tab's 19 groups, drawn as folded `<details>`), plus the
   tab's Custom row as `#upg-custom-name` / `#upg-custom-cost` ($ per unit, inside `upgradeMenuPerUnit()` via
   `upgCustomCost()`, so it gets the GC fee like the sheet's H89). Keep the ids of shipped items (saved deals hold them);
-  a retired id goes in `UPGRADE_ALIAS` (`matte-blk` → `brushed-ni`, the tab's one hardware line). The hand-off sends the
+  a retired id goes in `UPGRADE_ALIAS` (`matte-blk` → `brushed-ni`, the tab's one hardware line); `UPGRADE_EXCLUSIVE` keeps only LVP / hardwood, since the tab lets every item be ticked. The hand-off sends the
   Custom line as `{id:'custom'}`, which the Apps Script puts in the sheet's Custom row; every other id needs its tab name
   in Code.gs `ANALYZER_UPGRADES` (v3.5 also matches by name). Flag an item whose name or price differs from the tab.
 - **Inner units sell ~2% less per sf (v8.42, research/12 Q3, Brian 2026-10-12).** ARV / unit = $/sf × sf ×

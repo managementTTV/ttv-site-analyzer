@@ -1302,7 +1302,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <div class="card-title"><span class="dot"></span>Upgrades (per unit)</div>
         <div class="upg-grid" id="upg-grid"></div>
         <div class="fr2" style="margin-top:8px">
-          <div class="field"><label for="upg-custom-name">Custom upgrade (not on the list)</label><input type="text" id="upg-custom-name" maxlength="80" placeholder="e.g. high end finishes" oninput="calcAll()"></div>
+          <div class="field"><label for="upg-custom-name">Custom upgrade (not on the list)</label><input type="text" id="upg-custom-name" maxlength="80" placeholder="e.g. high end finishes"></div>
           <div class="field"><label for="upg-custom-cost">Custom $ / unit</label><div class="input-wrap"><span class="pfx">$</span><input type="text" inputmode="decimal" id="upg-custom-cost" value="0" oninput="calcAll()"></div></div>
         </div>
         <p class="note" style="margin-top:4px">The deal sheet&rsquo;s Upgrades tab, item for item, with its Custom row. Per unit, at menu price; the GC fee goes on top.</p>
@@ -1924,9 +1924,9 @@ const UPGRADE_ALIAS={'matte-blk':'brushed-ni'};   // v8.50: an id from before v8
 function upgCost(u,sf){return u?(u.psf?u.psf*(sf==null?sfPerUnit:sf):u.cost||0):0;}
 // v8.33 (audit M11): pairs that replace each other (one floor, one hardware finish). Ticking one unticks the other, so the
 // cost isn't counted twice.
-// v8.50: the sheet's one hardware line replaced the brushed-nickel / matte-black pair; its two shower doors, two fireplaces,
-// cedar and plain corbels, cedar and plain shutters are each one or the other too.
-const UPGRADE_EXCLUSIVE=[['lvp','hw'],['frameless','framed-shower'],['elec-fireplace','fireplace'],['corbels','corbels-std'],['cedar-shutters','shutters']];
+// v8.50: the sheet's one hardware line replaced the brushed-nickel / matte-black pair. No other pair: the sheet lets every
+// item be ticked on its own, and the menu must rebuild any sheet's total.
+const UPGRADE_EXCLUSIVE=[['lvp','hw']];
 const upgradeRival=id=>{const p=UPGRADE_EXCLUSIVE.find(x=>x.includes(id));return p?p.find(x=>x!==id):null;};
 
 // ═══════════════════ STATE ═══════════════════
