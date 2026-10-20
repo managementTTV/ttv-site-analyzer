@@ -446,9 +446,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **Writes are sequential and only on change** (one feed call per changed milestone), timed from the Drive read:
     every write is done or abandoned by 50 s (`WRITE_STOP_MS`, under `maxDuration` 60), none starts with less than
     10 s left (`WRITE_MIN_MS`), and each gets 25 s (`WRITE_TIMEOUT_MS`) or the time left, if less (v4.13; the old rule,
-    "none starts after 30 s", let a write run to 55 s yet left the cron room for only a few). The rest are reported as
-    deferred and land on the next sync, except a new email snapshot (see the digest rule below), which the cron
-    therefore writes first. Flag a change that lets a write run past `WRITE_STOP_MS`. The in-memory 10-minute memo is per function instance.
+    "none starts after 30 s", let a write run to 55 s yet left the cron room for only a few). After a write times out,
+    no more writes start in that run: aborting the request doesn't stop the feed's script, and two read-modify-writes of
+    the one Drive file must never overlap. The rest are reported as `deferred` and land on the next sync, except a new
+    email snapshot (see the digest rule below), which the cron therefore writes first and counts as `seenUnsaved` when
+    it isn't confirmed saved. Flag a change that lets a write run past `WRITE_STOP_MS` or start after a timed-out one.
+    The in-memory 10-minute memo is per function instance.
     `MAX_REFS` caps a sync at 25 records. The board queues syncs (`syncAccela()` chains) so a ref
     saved during the on-load sync never races it. The Drive read is `loadPermitState()` from
     `api/permits.js`, shared with the board's GET.
@@ -484,8 +487,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     tomorrow reports the same moves. `commitSync()` writes the new snapshots **first** (v4.13): no later sync writes
     one (the next board load carries the old one from Drive), so a snapshot left over is lost, and the next email
     repeats that day's moves. On 10/19 the old 30 s budget left LDIRL-2026-05530's snapshot behind this way. Status
-    writes can wait, because the next sync plans them again. The cron's result counts snapshots that didn't save
-    (`seenUnsaved`). Flag a change that puts other writes ahead of the snapshot writes. The very first run (no record has a snapshot) only takes them. Flag a change
+    writes can wait, because the next sync plans them again. The cron's result counts snapshots not confirmed saved
+    (`seenUnsaved`, apart from `deferred`). Flag a change that puts other writes ahead of the snapshot writes. The very first run (no record has a snapshot) only takes them. Flag a change
     that lets a board-load sync replace `seen`, writes a name into it, or alerts on an approved record's leftover
     inspection. `cityHolds(task)` in `api/accela.js` stays the one "City holds this step" rule (active, not handed
     back to us, not already Ok / Approved / Complete); the parser sets `task.cityHolds` and the board's red "N days

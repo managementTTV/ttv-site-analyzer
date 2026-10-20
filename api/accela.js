@@ -400,23 +400,33 @@ export async function commitSync({ t0, state, records, items }, { dry, stopMs = 
   const env = process.env.VERCEL_ENV;
   const dryWhy = dry ? 'dry run' : !(process.env.PERMITS_FEED_URL && process.env.PERMITS_FEED_TOKEN) ? 'write path not configured'
     : env && env !== 'production' ? `${env} deployment — only production saves` : null;
-  let wrote = 0, failed = 0, deferred = 0, seenUnsaved = 0;
+  // deferred: writes the next sync plans again. seenUnsaved: new snapshots not confirmed saved — nothing plans those again.
+  let wrote = 0, failed = 0, deferred = 0, seenUnsaved = 0, halt = null;
   // New email snapshots first. Only the morning run writes one, so a snapshot left for "the next sync" is lost: the
   // next board load carries the old one from Drive, and tomorrow's email repeats today's moves (LDIRL-2026-05530,
   // 10/19). Every other write is planned again by the next sync, so it can wait.
   const queue = [...items.filter(i => i.newSeen), ...items.filter(i => !i.newSeen)];
   for(const it of queue){                                   // one at a time: every patch rewrites the same Drive file
     if(!it.change){ it.wrote = null; continue; }
-    if(dryWhy){ it.wrote = false; it.note = dryWhy; continue; }
+    if(dryWhy){ it.wrote = false; it.note = dryWhy; if(it.newSeen) seenUnsaved++; continue; }
     const left = stopMs - (Date.now() - t0);
-    if(left < minMs){
-      it.wrote = false; deferred++;
-      if(it.newSeen) seenUnsaved++;
-      it.note = it.newSeen ? "not saved (time budget) — tomorrow's email compares against the older snapshot" : 'deferred to the next sync (time budget)';
+    if(!halt && left < minMs) halt = 'time budget';
+    if(halt){
+      it.wrote = false;
+      if(it.newSeen){ seenUnsaved++; it.note = `not saved (${halt}) — tomorrow's email compares against the older snapshot`; }
+      else{ deferred++; it.note = `deferred to the next sync (${halt})`; }
       continue;
     }
     try{ await writeFeed(state, it, Math.min(WRITE_TIMEOUT_MS, left)); it.wrote = true; wrote++; }
-    catch(e){ it.wrote = false; it.note = String(e && e.message || e) + (it.newSeen ? ' — snapshot not saved' : ''); failed++; if(it.newSeen) seenUnsaved++; }
+    catch(e){
+      // A timed-out call may still be running in the feed (aborting the request doesn't stop the script), so start no
+      // more writes this run: two read-modify-writes of the one Drive file must never overlap.
+      const timedOut = !!e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+      if(timedOut) halt = 'a write timed out';
+      it.wrote = false; failed++;
+      if(it.newSeen) seenUnsaved++;
+      it.note = String(e && e.message || e) + (timedOut ? ' — the feed may still apply it' : '') + (it.newSeen ? '; snapshot not confirmed' : '');
+    }
   }
   items.forEach(it => { delete it.upd; });
   return { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed, deferred, seenUnsaved,
