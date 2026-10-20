@@ -327,7 +327,8 @@ export function plan(state, records){
     if(!rec || !rec.ok){ item.note = rec ? rec.error : 'not looked up'; return item; }
     const acc = { ...summary(rec), owns: t.owns };   // owns: this record sets the step's status (the board locks it)
     // the email's "since the last check" snapshot rides in the block; only the morning run replaces it
-    if(c.accela && c.accela.seen) acc.seen = c.accela.seen;
+    // — and only for the same record: a milestone whose number changed (a plat resubmitted under a new LDPLAT) starts over
+    if(c.accela && c.accela.seen && c.accela.rec === t.ref) acc.seen = c.accela.seen;
     const upd = {};
     if(t.owns && acc.board && acc.board !== c.status) upd.status = acc.board;
     if(t.owns && acc.board && !c.started && acc.opened) upd.started = acc.opened;

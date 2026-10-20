@@ -131,7 +131,8 @@ export function board(state, records, today){
     // `known`: the record has a snapshot of any version, so it isn't new on the board. Only a current-version one
     // (`prev`) is compared; an older one re-baselines quietly (Elkwood, 10/20: its v2 snapshot hadn't been saved on
     // 10/19, and its v1 one read as "Now tracking" a record that had been on the board for a week).
-    const raw = c.accela && c.accela.seen && typeof c.accela.seen === 'object' ? c.accela.seen : null;
+    // A snapshot of another record (the milestone's number changed) doesn't count: plan() drops it too.
+    const raw = c.accela && c.accela.rec === t.ref && c.accela.seen && typeof c.accela.seen === 'object' ? c.accela.seen : null;
     const prev = raw && raw.v === SNAP_V ? raw : null;
     const snap = snapshot(rec, today);
     const mv = prev ? moves(prev, rec, today, bucket === 'city' || bucket === 'ours') : [];
@@ -144,7 +145,8 @@ export function board(state, records, today){
                saveSeen: !prev || mv.length > 0 || !sameSnap(prev, snap) });
   }
   // a record newly on the board (others already have snapshots) is itself a move; the very first run is quiet
-  const firstRun = out.length > 0 && out.every(r => !r.seenBefore);
+  // first run = no record has a snapshot of any version (after a SNAP_V bump, a record new on the board is still news)
+  const firstRun = out.length > 0 && out.every(r => !r.known);
   if(!firstRun) out.filter(r => !r.known).forEach(r => r.moves.push({ tone: 'info', text: `Now tracking ${r.ref} — Accela: ${r.status || 'no status'}` }));
   const projects = ((state && state.projects) || []).map(p => ({ id: p.id, addr: p.addr }));
   return { records: out, unread, firstRun, projects };
