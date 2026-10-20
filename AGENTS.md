@@ -443,9 +443,12 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **Only production saves.** A branch preview shares the live Drive file and feed, so the sync is
     report-only unless `VERCEL_ENV` is `production` (the banner says why it didn't save). Flag a
     change that lets a preview write.
-  - **Writes are sequential and only on change** (one feed call per changed milestone), and stop
-    being started after 30 s (`WRITE_BUDGET_MS`: a write can take 25 s, under `maxDuration` 60); the rest are reported as
-    deferred and land on the next sync. The in-memory 10-minute memo is per function instance.
+  - **Writes are sequential and only on change** (one feed call per changed milestone), timed from the Drive read:
+    every write is done or abandoned by 50 s (`WRITE_STOP_MS`, under `maxDuration` 60), none starts with less than
+    10 s left (`WRITE_MIN_MS`), and each gets 25 s (`WRITE_TIMEOUT_MS`) or the time left, if less (v4.13; the old rule,
+    "none starts after 30 s", let a write run to 55 s yet left the cron room for only a few). The rest are reported as
+    deferred and land on the next sync, except a new email snapshot (see the digest rule below), which the cron
+    therefore writes first. Flag a change that lets a write run past `WRITE_STOP_MS`. The in-memory 10-minute memo is per function instance.
     `MAX_REFS` caps a sync at 25 records. The board queues syncs (`syncAccela()` chains) so a ref
     saved during the on-load sync never races it. The Drive read is `loadPermitState()` from
     `api/permits.js`, shared with the board's GET.
@@ -478,13 +481,17 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     for a step's current and latest entry alike. A City due date moving is a move only on an open step. `plan()` carries `seen` over on
     every sync; only the cron replaces it, via `applySeen()` with the other writes, and only when `runReminders()`
     says `advance` (the email went out, or there was nothing to send) — a failed send keeps the old snapshots so
-    tomorrow reports the same moves. The very first run (no record has a snapshot) only takes them. Flag a change
+    tomorrow reports the same moves. `commitSync()` writes the new snapshots **first** (v4.13): no later sync writes
+    one (the next board load carries the old one from Drive), so a snapshot left over is lost, and the next email
+    repeats that day's moves. On 10/19 the old 30 s budget left LDIRL-2026-05530's snapshot behind this way. Status
+    writes can wait, because the next sync plans them again. The cron's result counts snapshots that didn't save
+    (`seenUnsaved`). Flag a change that puts other writes ahead of the snapshot writes. The very first run (no record has a snapshot) only takes them. Flag a change
     that lets a board-load sync replace `seen`, writes a name into it, or alerts on an approved record's leftover
     inspection. `cityHolds(task)` in `api/accela.js` stays the one "City holds this step" rule (active, not handed
     back to us, not already Ok / Approved / Complete); the parser sets `task.cityHolds` and the board's red "N days
     late" reads it. The cron does `prepareSync()` (one 25 s deadline for all lookups, `lookupAll(refs,
     {deadlineMs})`), then `runReminders({state, records, send:true})` **before** `commitSync()` writes
-    (`WRITE_BUDGET_MS`). Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
+    (`WRITE_STOP_MS`). Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
     Mon Oct 19: …", "Accela Oct 22: 2 records moved"); a same-day identical email isn't re-sent from the same
     instance. One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
     body opens by naming Adam and Wendell (`TAG`; no CC, since management@ already reaches them). `TITLES` mirrors the
