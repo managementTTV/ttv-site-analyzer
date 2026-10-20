@@ -128,20 +128,24 @@ export function board(state, records, today){
       return { step: k.name, assignedTo: k.current.assignedTo || null, cityDue: due, holds: cityHolds(k),
                status: k.current.status || (k.latest && k.latest.status) || null, days: due ? dayNum(due) - dayNum(today) : null };
     });
-    const prev = c.accela && c.accela.seen && typeof c.accela.seen === 'object' && c.accela.seen.v === SNAP_V ? c.accela.seen : null;
+    // `known`: the record has a snapshot of any version, so it isn't new on the board. Only a current-version one
+    // (`prev`) is compared; an older one re-baselines quietly (Elkwood, 10/20: its v2 snapshot hadn't been saved on
+    // 10/19, and its v1 one read as "Now tracking" a record that had been on the board for a week).
+    const raw = c.accela && c.accela.seen && typeof c.accela.seen === 'object' ? c.accela.seen : null;
+    const prev = raw && raw.v === SNAP_V ? raw : null;
     const snap = snapshot(rec, today);
     const mv = prev ? moves(prev, rec, today, bucket === 'city' || bucket === 'ours') : [];
     out.push({ ref: rec.ref, url: recordUrl(rec.ref), type: rec.type, status: rec.status, why: d.why, bucket, addr: t.addr,
                projectId: t.projectId, milestoneId: t.milestoneId,
                title: Object.hasOwn(TITLES, t.milestoneId) ? TITLES[t.milestoneId] : null, open,
-               moves: mv, seenBefore: !!prev, seen: snap,
+               moves: mv, seenBefore: !!prev, known: !!raw, seen: snap,
                // save a new snapshot only when something changed or moved — a quiet record keeps its old one, whose
                // date is what "went overdue since the last check" is measured from (no daily re-alert, no daily write)
                saveSeen: !prev || mv.length > 0 || !sameSnap(prev, snap) });
   }
   // a record newly on the board (others already have snapshots) is itself a move; the very first run is quiet
   const firstRun = out.length > 0 && out.every(r => !r.seenBefore);
-  if(!firstRun) out.filter(r => !r.seenBefore).forEach(r => r.moves.push({ tone: 'info', text: `Now tracking ${r.ref} — Accela: ${r.status || 'no status'}` }));
+  if(!firstRun) out.filter(r => !r.known).forEach(r => r.moves.push({ tone: 'info', text: `Now tracking ${r.ref} — Accela: ${r.status || 'no status'}` }));
   const projects = ((state && state.projects) || []).map(p => ({ id: p.id, addr: p.addr }));
   return { records: out, unread, firstRun, projects };
 }
