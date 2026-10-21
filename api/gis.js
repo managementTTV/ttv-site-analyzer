@@ -250,13 +250,15 @@ function classifyEdges(ring0, neighborRings, addrPt){
     if(pointInRing(ox,oy,ring)){ ox=mx-nx*OFFSET; oy=my-ny*OFFSET; }
     const inNeighbor = neighborRings.some(r=>pointInRing(ox,oy,r));
     const distAddr = addrPt? Math.hypot(mx-addrPt.x,my-addrPt.y) : null;
-    edges.push({ i, len_ft:Math.round(len), row:!inNeighbor, mid:[Math.round(mx),Math.round(my)], dist_addr_ft:distAddr!=null?Math.round(distAddr):null, _len:len });
+    edges.push({ i, len_ft:Math.round(len), row:!inNeighbor, mid:[Math.round(mx),Math.round(my)], dist_addr_ft:distAddr!=null?Math.round(distAddr):null, _len:Math.hypot(dx,dy) });
   }
   // v8.52 (audit #1, 11603 Clear Day Ct): the county draws a cul-de-sac bulb as short chords (there four of 6.2 ft), and
   // each one alone failed the 8-ft test, so the front fell on a side lot line. Consecutive ROW edges now form runs; a run of
   // pieces all under 8 ft that adds up to 8 ft or more is one street line (a bulb), and each piece carries its length as
   // bulb_ft. A run with an 8-ft-plus piece is as before: that piece is the street edge, its short neighbours (a corner
-  // radius) are not. row_count counts street lines: the 8-ft-plus edges, plus one per bulb.
+  // radius) are not ("8 ft or more" is the rounded len_ft, as before). row_count counts street lines: the 8-ft-plus edges,
+  // plus one per bulb. The address point picks a bulb only when no 8-ft-plus street edge exists (a run of short pieces can
+  // also be a gap between neighbours along a side line); the centerline pass (applyCenterlineFront) weighs them all.
   const runOf=Array(n).fill(-1), runs=[];
   let start=edges.findIndex((e,k)=>e.row&&!edges[(k-1+n)%n].row);   // the first edge of a run
   if(start<0&&edges.some(e=>e.row))start=0;                           // every edge is ROW: one run
@@ -268,14 +270,14 @@ function classifyEdges(ring0, neighborRings, addrPt){
     r.ft+=edges[j]._len; if(edges[j].len_ft>=8)r.long=true;
   }
   edges.forEach((e,j)=>{ const r=runs[runOf[j]]; if(r&&!r.long&&r.ft>=8)e.bulb_ft=Math.round(r.ft*10)/10; delete e._len; });
-  const rowEdges=edges.filter(streetEdge);
+  const longEdges=edges.filter(e=>e.row&&e.len_ft>=8), rowEdges=longEdges.length?longEdges:edges.filter(streetEdge);
   let front=null;
   if(rowEdges.length){
     front=(addrPt? rowEdges.slice().sort((a,b)=>a.dist_addr_ft-b.dist_addr_ft)
                  : rowEdges.slice().sort((a,b)=>(b.bulb_ft||b.len_ft)-(a.bulb_ft||a.len_ft)))[0].i;
   }
   return { edges, row:edges.map(e=>e.row), front_index:front,
-    row_count:edges.filter(e=>e.row&&e.len_ft>=8).length+runs.filter(r=>!r.long&&r.ft>=8).length };
+    row_count:longEdges.length+runs.filter(r=>!r.long&&r.ft>=8).length };
 }
 // an edge that can be the front: ROW, and 8 ft or more itself or as part of a bulb (classifyEdges)
 function streetEdge(e){ return !!(e.row&&(e.len_ft>=8||e.bulb_ft>=8)); }

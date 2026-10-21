@@ -3079,13 +3079,14 @@ function designateParcelEdges(P,row,fi){
   }
   // v8.52 (audit #1, 11603 Clear Day Ct): short ROW chords past a sharp bend that bend into the lot (the bulb bites into
   // it) and end at a non-ROW edge are the bulb too, not a corner side: a side street's corner radius bends out of the lot
-  // and runs on into a longer street edge.
+  // and runs on into a longer street edge. Up to 80 ft of chords: a longer concave run is a curving street, left to the
+  // corner walk.
   const concave=(p,q)=>s*(E[p].tx*E[q].ty-E[p].ty*E[q].tx)<0;   // the corner where edge p meets the next edge q
   for(const d of [1,-1]){
     let j=end(d);const run=[];
     for(let k=1;k<n;k++){const i=nxt(j,d);if(des[i]!=='side'||!rw(i)||E[i].L>=20)break;run.push(i);j=i;}
     const stop=nxt(j,d);
-    if(run.length>=2&&des[stop]==='side'&&!rw(stop)&&run.slice(1).every((i,k)=>d>0?concave(run[k],i):concave(i,run[k])))
+    if(run.length>=2&&run.reduce((t,i)=>t+E[i].L,0)<=80&&des[stop]==='side'&&!rw(stop)&&run.slice(1).every((i,k)=>d>0?concave(run[k],i):concave(i,run[k])))
       run.forEach(i=>{des[i]='front';});
   }
   let maxD=0;for(let j=0;j<n;j++)maxD=Math.max(maxD,dep(E[j].a),dep(E[j].b));
