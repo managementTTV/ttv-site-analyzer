@@ -17,11 +17,22 @@
 export const FILE_ID = process.env.PERMITS_FILE_ID || '1BKJf7_fDSw8nKBogxU2rD6vC5WqrbrPC';
 export const GATE_HASH = '9b748ce71c59791771ab14a3de4bb0a2822eac70555d3e292ac7160af8fa1cc6'; // keep in sync with permits.html (api/accela.js imports it)
 
+// The Drive read stops at 20 s by default. Past that, the board's GET answers 502 and the board shows its built-in
+// snapshot ("offline") instead of waiting with no end. The Accela sync (api/accela.js) passes its own, shorter limit:
+// it has 60 s for this read, its look-ups, the email and the writes.
+export const DRIVE_TIMEOUT_MS = 20 * 1000;
+
 // The Drive permit-state file, parsed and shape-checked. Shared with api/accela.js (the Accela sync).
-export async function loadPermitState(){
-  const r = await fetch(`https://drive.google.com/uc?export=download&id=${FILE_ID}`, {redirect:'follow'});
-  if(!r.ok) throw new Error('drive HTTP '+r.status);
-  const text = await r.text();
+export async function loadPermitState({ timeoutMs = DRIVE_TIMEOUT_MS } = {}){
+  let text;
+  try{
+    const r = await fetch(`https://drive.google.com/uc?export=download&id=${FILE_ID}`, {redirect:'follow', signal:AbortSignal.timeout(timeoutMs)});
+    if(!r.ok) throw new Error('drive HTTP '+r.status);
+    text = await r.text();                       // the body read counts against the same limit
+  }catch(e){
+    if(e && e.name === 'TimeoutError') throw new Error('drive read timed out after '+(timeoutMs/1000)+' s');
+    throw e;
+  }
   let data;
   try{ data = JSON.parse(text); }
   catch(_){ throw new Error('drive returned non-JSON (file sharing changed?)'); }

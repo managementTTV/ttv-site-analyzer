@@ -455,6 +455,28 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     `MAX_REFS` caps a sync at 25 records. The board queues syncs (`syncAccela()` chains) so a ref
     saved during the on-load sync never races it. The Drive read is `loadPermitState()` from
     `api/permits.js`, shared with the board's GET.
+  - **One clock from t0 (v4.14).** A sync's steps are all timed from t0, taken just before the Drive read
+    (`maxDuration` 60 counts from about there). Each step has a stop counted from t0, not from its own start, so a slow
+    step takes time from the next one and never runs past its stop:
+    - the Drive read ends by **10 s** (`DRIVE_STOP_MS`, passed to `loadPermitState({timeoutMs})`; the limit covers the
+      body too). When the read times out, the cron fails with no email and no writes, as it already did for any failed
+      Drive read: there's no state to build the email from;
+    - the Accela look-ups end by **25 s** (`LOOKUP_STOP_MS`), so they always get at least 15 s (six records took about
+      12 s on 10/19). `lookupAll()` gets what's left of it, so a slow Drive read shortens the look-ups, and the records
+      it didn't reach are reported unread, as before;
+    - the cron's email ends by **35 s** (`SEND_STOP_MS`, passed as `sendBy` to `runReminders()` and as `by` to
+      `gmailSend()`). Each Gmail call keeps its own cap (token 15 s, send 20 s), and none starts after the stop. A send
+      cut off at the stop fails like any other: the old snapshots are kept, so if Gmail delivered it anyway, tomorrow's
+      email repeats these moves;
+    - the writes end by **50 s** (`WRITE_STOP_MS`, above). An email that runs to 35 s still leaves 15 s, so at least
+      one write starts after it.
+
+    Outside a sync, `loadPermitState()` stops at 20 s (`DRIVE_TIMEOUT_MS` in `api/permits.js`), for the board's GET and
+    the reminder preview. Past it, the GET answers 502 and the board shows its built-in snapshot ("offline").
+    Before v4.14 the Drive read had no limit, the look-ups' 25 s started after it, and the Gmail calls could add 35 s, so
+    the cron could pass 60 s before `commitSync()` started. Flag a change that starts a step's stop at the step instead of
+    at t0, or that adds a network call to the sync or the cron without a limit inside its step's stop. `gmailSend()` is
+    exported, and takes `cfg`, only for the headless tests (a fake config with fetch stubbed). Flag any other caller.
   - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
     when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
     write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.
@@ -492,9 +514,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     that lets a board-load sync replace `seen`, writes a name into it, or alerts on an approved record's leftover
     inspection. `cityHolds(task)` in `api/accela.js` stays the one "City holds this step" rule (active, not handed
     back to us, not already Ok / Approved / Complete); the parser sets `task.cityHolds` and the board's red "N days
-    late" reads it. The cron does `prepareSync()` (one 25 s deadline for all lookups, `lookupAll(refs,
-    {deadlineMs})`), then `runReminders({state, records, send:true})` **before** `commitSync()` writes
-    (`WRITE_STOP_MS`). Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
+    late" reads it. The cron does `prepareSync()` (the Drive read, then one deadline for all lookups, `lookupAll(refs,
+    {deadlineMs})`, ending 25 s from t0), then `runReminders({state, records, send:true, sendBy})` **before**
+    `commitSync()` writes (`WRITE_STOP_MS`); see "One clock from t0" above. Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
     Mon Oct 19: …", "Accela Oct 22: 2 records moved"); a same-day identical email isn't re-sent from the same
     instance. One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
     body opens by naming Adam and Wendell (`TAG`; no CC, since management@ already reaches them). `TITLES` mirrors the
