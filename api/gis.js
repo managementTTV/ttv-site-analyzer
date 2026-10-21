@@ -250,16 +250,35 @@ function classifyEdges(ring0, neighborRings, addrPt){
     if(pointInRing(ox,oy,ring)){ ox=mx-nx*OFFSET; oy=my-ny*OFFSET; }
     const inNeighbor = neighborRings.some(r=>pointInRing(ox,oy,r));
     const distAddr = addrPt? Math.hypot(mx-addrPt.x,my-addrPt.y) : null;
-    edges.push({ i, len_ft:Math.round(len), row:!inNeighbor, mid:[Math.round(mx),Math.round(my)], dist_addr_ft:distAddr!=null?Math.round(distAddr):null });
+    edges.push({ i, len_ft:Math.round(len), row:!inNeighbor, mid:[Math.round(mx),Math.round(my)], dist_addr_ft:distAddr!=null?Math.round(distAddr):null, _len:len });
   }
-  const rowEdges=edges.filter(e=>e.row && e.len_ft>=8);
+  // v8.52 (audit #1, 11603 Clear Day Ct): the county draws a cul-de-sac bulb as short chords (there four of 6.2 ft), and
+  // each one alone failed the 8-ft test, so the front fell on a side lot line. Consecutive ROW edges now form runs; a run of
+  // pieces all under 8 ft that adds up to 8 ft or more is one street line (a bulb), and each piece carries its length as
+  // bulb_ft. A run with an 8-ft-plus piece is as before: that piece is the street edge, its short neighbours (a corner
+  // radius) are not. row_count counts street lines: the 8-ft-plus edges, plus one per bulb.
+  const runOf=Array(n).fill(-1), runs=[];
+  let start=edges.findIndex((e,k)=>e.row&&!edges[(k-1+n)%n].row);   // the first edge of a run
+  if(start<0&&edges.some(e=>e.row))start=0;                           // every edge is ROW: one run
+  if(start>=0)for(let k=0;k<n;k++){
+    const j=(start+k)%n;
+    if(!edges[j].row)continue;
+    if(k===0||!edges[(j-1+n)%n].row)runs.push({ft:0,long:false});
+    const r=runs[runOf[j]=runs.length-1];
+    r.ft+=edges[j]._len; if(edges[j].len_ft>=8)r.long=true;
+  }
+  edges.forEach((e,j)=>{ const r=runs[runOf[j]]; if(r&&!r.long&&r.ft>=8)e.bulb_ft=Math.round(r.ft*10)/10; delete e._len; });
+  const rowEdges=edges.filter(streetEdge);
   let front=null;
   if(rowEdges.length){
     front=(addrPt? rowEdges.slice().sort((a,b)=>a.dist_addr_ft-b.dist_addr_ft)
-                 : rowEdges.slice().sort((a,b)=>b.len_ft-a.len_ft))[0].i;
+                 : rowEdges.slice().sort((a,b)=>(b.bulb_ft||b.len_ft)-(a.bulb_ft||a.len_ft)))[0].i;
   }
-  return { edges, row:edges.map(e=>e.row), front_index:front, row_count:rowEdges.length };
+  return { edges, row:edges.map(e=>e.row), front_index:front,
+    row_count:edges.filter(e=>e.row&&e.len_ft>=8).length+runs.filter(r=>!r.long&&r.ft>=8).length };
 }
+// an edge that can be the front: ROW, and 8 ft or more itself or as part of a bulb (classifyEdges)
+function streetEdge(e){ return !!(e.row&&(e.len_ft>=8||e.bulb_ft>=8)); }
 function distPtToSeg(px,py,ax,ay,bx,by){
   const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
   if(L2===0)return Math.hypot(px-ax,py-ay);
@@ -275,8 +294,8 @@ function distPtToPaths(px,py,paths){
 // centerPaths = array of polyline paths for the ADDRESSED street near the parcel.
 function applyCenterlineFront(info, centerPaths, streetLabel){
   if(!info||!centerPaths||!centerPaths.length)return info;
-  const dists=info.edges.map(e=>({i:e.i,row:e.row,len:e.len_ft,d:distPtToPaths(e.mid[0],e.mid[1],centerPaths)}));
-  const rowNear=dists.filter(e=>e.row&&e.len>=8&&e.d<=FRONT_MAX_ROW_FT).sort((a,b)=>a.d-b.d);
+  const dists=info.edges.map(e=>({i:e.i,street:streetEdge(e),len:e.len_ft,d:distPtToPaths(e.mid[0],e.mid[1],centerPaths)}));
+  const rowNear=dists.filter(e=>e.street&&e.d<=FRONT_MAX_ROW_FT).sort((a,b)=>a.d-b.d);
   const anyNear=dists.filter(e=>e.len>=8&&e.d<=FRONT_MAX_ANY_FT).sort((a,b)=>a.d-b.d);
   let pick=null, rescued=false;
   if(rowNear.length)pick=rowNear[0];

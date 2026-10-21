@@ -1099,7 +1099,8 @@ most deals take.
   - `designateParcelEdges()` then sets:
     - front = the proxy's front edge plus the rest of the street line: ROW edges within 45° of it, and collinear
       edges. Past 45°, a run of short ROW chords is front as a cul-de-sac bulb, unless it reaches a longer street edge,
-      when it's a side street's corner radius (corner);
+      when it's a side street's corner radius (corner). Past a sharp bend too (v8.52, audit #1): two or more ROW chords
+      under 20 ft that bend into the lot (concave corners) and end at a non-ROW edge are the bulb, front, not corner;
     - rear = among the back-facing edges that reach within 30 ft of the deepest point (**ROW edges included**: alley
       and through lots), the most length facing the street, weighted by depth, plus the rest of that line (pieces that
       face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
@@ -1111,6 +1112,13 @@ most deals take.
       of the street is front (street line past a longer jog). A reached ROW piece never ends up a side;
     - each walk passes over one jog of up to 15 ft, which stays a side (the corner walk starts past a jog the front walk
       stepped over).
+  - The proxy's front (`api/gis.js` `classifyEdges`): a street edge is a ROW edge of 8 ft or more, or (v8.52, audit #1,
+    11603 Clear Day Ct) a piece of a run of consecutive ROW edges that are all under 8 ft and add up to 8 ft or more:
+    the county draws a cul-de-sac bulb as short chords (four of 6.2 ft there), and before v8.52 each failed the 8-ft
+    test, so `applyCenterlineFront` "rescued" a side lot line as the front. Such a piece carries `bulb_ft` (the run's
+    length) in `edges.detail`; `row_count` counts the 8-ft-plus edges plus one per bulb. A run that has an 8-ft-plus
+    piece is unchanged: its short pieces (a corner radius) are not street edges. Flag a change that tests each short
+    piece on its own again. Regression parcel: Clear Day Ct (PID 02758756) front = the 24.9-ft curve (edges 4-7).
   - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and
     `#edge-auto-note` says so.
   - Flag a change that goes back to one front and one rear edge, skips ROW edges as rear candidates, or makes every edge
