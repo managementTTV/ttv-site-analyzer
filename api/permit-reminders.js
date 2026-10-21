@@ -17,7 +17,7 @@
 // snapshots with its other saves (api/accela.js); a failed send leaves them, so tomorrow reports the same moves.
 // The very first run (no record has a snapshot yet) only takes them — no flood of "moves".
 //
-// Sending: the daily cron in api/accela.js calls runReminders({state, records, send:true}) after its Accela
+// Sending: the daily cron in api/accela.js calls runReminders({state, records, send:true, sendBy}) after its Accela
 // look-up and before the writes. Gmail API as management@ with a send-only token in the Vercel env var
 // GMAIL_SEND_TOKEN ({client_id, client_secret, refresh_token} JSON, minted by
 // ~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py). Only production sends.
@@ -319,7 +319,7 @@ export async function gmailSend({ to, subject, text, html }, { by = Infinity, cf
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: cfg.client_id, client_secret: cfg.client_secret, refresh_token: cfg.refresh_token, grant_type: 'refresh_token' }) })
     .catch(late('Google token refresh'));
-  const tj = await tr.json().catch(() => ({}));
+  const tj = await tr.json().catch(e => { if(e && e.name === 'TimeoutError') late('Google token refresh')(e); return {}; });
   if(!tr.ok || !tj.access_token) throw new Error('Google token refresh failed: ' + (tj.error_description || tj.error || 'HTTP ' + tr.status));
   const b = 'ttv-' + Date.now().toString(36);
   const b64 = s => Buffer.from(s, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n');

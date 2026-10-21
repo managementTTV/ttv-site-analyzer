@@ -276,7 +276,7 @@ export async function lookupAll(refs, { deadlineMs } = {}){
   const ms = deadlineMs == null ? null : Math.max(0, deadlineMs);
   const end = ms == null ? Infinity : Date.now() + ms, stop = ms == null ? null : AbortSignal.timeout(ms);
   for(let i = 0; i < uniq.length; i += 4){              // four at a time — gentle on a public portal
-    if(Date.now() >= end){
+    if(Date.now() >= end || (stop && stop.aborted)){
       uniq.slice(i).forEach(ref => { out[ref] = { ref, ok: false, url: recordUrl(ref), status: null, type: null, address: null,
         project: null, opened: null, tasks: [], related: [], error: 'not read — Accela too slow this run' }; });
       break;
