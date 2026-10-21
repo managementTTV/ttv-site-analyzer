@@ -7129,8 +7129,9 @@ function planPsf(plan){
   // priced: this plan's own number (the deal's ARV, its own comps, or a typed Base), so it can win the badge
   const out={w:P.w,b:P.b,best:P.best,src,note,typed:{},priced:src!=='fallback'};
   ['w','b','best'].forEach(k=>{const r=readCmpArv(plan.n,k);if(r.use){out[k]=r.v;out.typed[k]=true;}});
-  // a typed Base with no typed Worst/Best moves them with it, at the spread this plan had
-  if(out.typed.b&&P.b>0){if(!out.typed.w)out.w=out.b*P.w/P.b;if(!out.typed.best)out.best=out.b*P.best/P.b;}
+  // a typed Base with no typed Worst/Best moves them with it, at the spread this plan had (the deal's, before the v8.52 cap)
+  const S=src==='fallback'?D:P;
+  if(out.typed.b&&S.b>0){if(!out.typed.w)out.w=out.b*S.w/S.b;if(!out.typed.best)out.best=out.b*S.best/S.b;}
   if(out.typed.b)out.priced=true;
   return out;
 }
