@@ -74,6 +74,13 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   Upgrades tab (column G, "Fixed" or "Per SF"); per-sf items carry `psf` and are priced by `upgCost(u, sf)` = psf × the
   plan's sf (the deal's plan by default; `dealForPlan()` passes each plan's own sf). Change a price in both places
   together, or a sent deal shows an upgrade gap on the sheet's Snapshot tab. Flag a reader that uses `u.cost` directly.
+- **Upgrade menu = the Upgrades tab item for item (v8.50, side-by-side test 2026-10-20).** `UPGRADES` holds all 44 tab
+  items with the tab's names (column F) and categories (`cat`, the tab's 19 groups, drawn as folded `<details>`), plus the
+  tab's Custom row as `#upg-custom-name` / `#upg-custom-cost` ($ per unit, inside `upgradeMenuPerUnit()` via
+  `upgCustomCost()`, so it gets the GC fee like the sheet's H89). Keep the ids of shipped items (saved deals hold them);
+  a retired id goes in `UPGRADE_ALIAS` (`matte-blk` → `brushed-ni`, the tab's one hardware line); `UPGRADE_EXCLUSIVE` keeps only LVP / hardwood, since the tab lets every item be ticked. The hand-off sends the
+  Custom line as `{id:'custom'}`, which the Apps Script puts in the sheet's Custom row; every other id needs its tab name
+  in Code.gs `ANALYZER_UPGRADES` (v3.5 also matches by name). Flag an item whose name or price differs from the tab.
 - **Inner units sell ~2% less per sf (v8.42, research/12 Q3, Brian 2026-10-12).** ARV / unit = $/sf × sf ×
   `innerUnitFactor(plan, units)` = 1 − 0.02 × inner ÷ units. A townhome row (`t:'th'`) has units − 2 inner units; the
   Arcadia triplex (`t:'mf'`) one per full 3-unit building; a duet, a house or a custom footprint none. So a row of 3 is
@@ -88,9 +95,13 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   older deal doesn't move its Max land (the v8.39 `#lf-house-min` pattern). Since v8.45 every reader computes ARV / unit
   through `unitArv(psf, sf, f)`. Flag a new $/sf × sf reader that skips `unitArv()` or `arvFactorFor()`, calls
   `innerUnitFactor()` directly (it ignores the box), or a factor applied to the comps' $/sf.
-- **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap.
-  Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, appraisal, insurance, custom plans.
-  Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
+- **Scaling rule.** Per-**unit** costs scale ×N: build, upgrades, water tap, sewer tap, and (v8.50, Brian 2026-10-20,
+  as the deal sheet's Calc B10 / B11) appraisal ($800) and insurance ($1,400).
+  Per-**lot** (per-deal) costs stay singular ×1: lot factor, septic, survey, custom plans.
+  `softCostsTotal(u)` = survey + (appraisal + insurance) × u is the one reader (`calcAll`, `getReportData`, `dealForPlan`
+  at each plan's own u); Excel's All-In and Cost Build-Up multiply the per-unit inputs by Units. A file saved before v8.50
+  (no `softPerUnit`) reopens with the old $725 / $1,400 defaults as today's per-unit $800 / $1,400 and a typed amount
+  spread over its Units, with a restore note. Flag anything miscategorized (e.g. a per-lot cost multiplied by units).
 - **Lot factor stays one per deal, with a $30k floor when there's a house (v8.39, partner decisions 2026-10-09, 5b / 5c).**
   Even on a deal of several sub-lots (Dellinger's three) the lot factor is charged once (5b: per deal, as today). With a
   house to tear down (`demo-sqft` over 0) `calcLF()` lifts the total to at least `LF_HOUSE_MIN` ($30,000, Adam's minimum),
@@ -1262,6 +1273,7 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   not from input fields directly, so the sheet starts from the numbers on screen. (Max land is `getReportData().maxLand`,
   the on-screen text; the snapshot only displays it.) Per-site figures (land, lot factor, survey,
   appraisal, insurance) are sent as site totals; the Apps Script divides them by Units for the sheet's per-unit model.
+  (v8.50: appraisal and insurance are per unit on screen, so the payload sends them × Units; the shape doesn't change.)
   Its `v` must equal the script's `HANDOFF_VERSION`: changing a field's meaning means bumping both.
 - **The sheet is the deal's home after the hand-off.** The script matches an existing Underwritten sheet by street
   (+ city) and then only opens it; it never writes to an existing sheet; the address form uses the same match. A copy that fails while
@@ -1350,6 +1362,11 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
+  - **v8.50 (side-by-side fixes, 2026-10-20): Max land $252,111**, hash **`92e562fa9b24`** (main v8.49 in the same run:
+    $256,586, `1bf09d65e83e`; the county's owner field now reads TIDE & TIMBER VENTURES LLC, so main's hash moved from
+    v8.48's too). Appraisal and insurance per unit: soft costs $5,125 → $9,600 for 3 units ($3,000 survey + 3 × $2,200),
+    +$4,475, and Max land falls by exactly that (land and costs are financed alike). Loan $539,926, Base profit / unit
+    $113,710, opening offer $201,000, stress $49,080 / unit; envelope 3,309 sf, lot factor $25,850 unchanged.
   - 2723 via County GIS: 4 corners, edges `side, front, side, rear`, lot 7,145 sf, envelope **3,309 sf**, fit
     17 / 16 / 17. It was 3,327 sf with fit 10 / 14 / 26 before the envelope rebuild.
   - **v8.48 (town zoning): Max land $256,586 unchanged**, hash **`d8b21384601c`** (same as v8.46; envelope 3,309 sf).
@@ -1357,7 +1374,7 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     Neighborhood 1 article; no number in `getReportData()` moves.
   - **v8.46 (exports + state): Max land $256,586 unchanged**, hash **`d8b21384601c`**: the only change in `getReportData()` is the new
     top-level `asking` (0 on the check deal); with `asking` deleted it is v8.44's `54155a16bebc`.
-  - **Current reference (v8.42 through v8.44, re-run on a fresh page 2026-10-15 on v8.44): Max land $256,586, hash
+  - **Earlier reference (v8.42 through v8.44, re-run on a fresh page 2026-10-15 on v8.44): Max land $256,586, hash
     `54155a16bebc`.** v8.43 and v8.44 (Street Check records and trend) don't move it; the county assessor block reads "Mecklenburg County CAMA".
   - **v8.42 (inner units): Max land $256,586**, hash **`54155a16bebc`** (recorded without opening Compare builds or the
     PDF). 3 × Dayton has 1 inner unit, so Base ARV / unit is $364,315 (0.9933 × $366,760), Base profit / unit $115,320
