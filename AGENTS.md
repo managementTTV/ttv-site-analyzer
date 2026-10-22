@@ -1051,15 +1051,20 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - `renderZoneNote()` compares against the row's base zone, so the CD note survives picking the townhome row.
   - This was the suffix part of G2; v8.16 did the county part (a GIS result always sets Mecklenburg).
   Flag a zone lookup that drops the suffix note, or one that treats a CD petition's conditions as known.
-- **The N2-C base row carries `noNewLots`**: `renderSublot()` warns that lots made by a split can't hold a
-  standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+` row
-  seen with a detached plan gets the same treatment, pointing to the base row. Either way the split rows show
-  geometry only, with no checks.
+- **The N2-C base row carries `noNewLots`**: `renderSublot()` answers "No" with that text: lots made by a split can't
+  hold a standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+`
+  row seen with a detached plan is checked against its base row.
+- **"Can this lot split?" (v8.55, research/17 #4, Brian's pick A).** `renderSublot()` is ONE line: Yes / No / Can't
+  tell. No needs a known minimum that fails (area < 2 × minSF, or `widthAtFrontSetbackFt()` < 2 × minWidth); Yes needs
+  both minimums known and passing; anything unknown is Can't tell (amber), never a green check. Width is measured at the
+  front setback line from `sketchLot()`'s front run, not the sum of front edges. No lot count, no strip drawing: real
+  layouts go to Sketch a subdivision (`sublotSketch()` → `openPlatSketch()`). Flag a change that brings back equal-strip
+  splits, shows a pass for a missing minimum, or drops the townhome row view (`renderSubplot()`).
 - **Zones with no `SETBACKS` row** (a GIS or saved stub):
   - `onZoneChange()` shows the setback panel.
   - `renderZoneNote()` says the fields are blank or the previous zone's. For a zone that exists in Mecklenburg
     under another county, it says to pick Mecklenburg.
-  - The sub-lot estimate shows "?" (minimums unknown), not the "—" of a row with no minimums.
+  - "Can this lot split?" says Can't tell (minimums unknown).
   - When a saved stub reopens on its base row with setbacks that differ from that row, `_zoneRestoreNote` says so.
 
 ### Buildable envelope & plan fit (poly mode, v8.19)
