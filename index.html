@@ -4949,9 +4949,10 @@ function widthAtFrontSetbackFt(s){
   if(!best)return null;
   const A=P[best.i],B=P[(best.i+best.m)%n];
   let ux=B[0]-A[0],uy=B[1]-A[1],L=Math.hypot(ux,uy);if(L<1e-6)return null;ux/=L;uy/=L;
-  // inward normal: the side of the chord the lot's centroid is on
-  let vx=-uy,vy=ux;const cx=P.reduce((t,p)=>t+p[0],0)/n,cy=P.reduce((t,p)=>t+p[1],0)/n;
-  if((cx-A[0])*vx+(cy-A[1])*vy<0){vx=-vx;vy=-vy;}
+  // inward normal: the run goes the way the ring does, so the lot is on its left when the ring turns anticlockwise
+  // (positive shoelace area), else on its right; an average of the corners can land outside on a bowed front
+  let ar=0;for(let j=0;j<n;j++){const a=P[j],b=P[(j+1)%n];ar+=a[0]*b[1]-b[0]*a[1];}
+  let vx=-uy,vy=ux;if(ar<0){vx=-vx;vy=-vy;}
   const dep=p=>(p[0]-A[0])*vx+(p[1]-A[1])*vy,along=p=>(p[0]-A[0])*ux+(p[1]-A[1])*uy;
   let d0=0;for(let j=0;j<=best.m;j++)d0=Math.max(d0,dep(P[(best.i+j)%n]));
   const t=d0+Math.max(0,s||0),xs=[];
@@ -5136,29 +5137,33 @@ function renderSublot(){
   const zBase=zone.split(' · ')[0],baseRow=SETBACKS[(zoneKey.split('|')[0]||'')+'|'+zBase];
   const thRow=!!(sb&&(sb.mfa||sb.thRow)),row=thRow?(baseRow&&baseRow!==sb?baseRow:null):sb;
   const minW=row?(row.minWidth||0):0,minSF=row?(row.minSF||0):0;
-  // the width line sits at the front setback on screen, or the base row's when the screen holds a townhome row's
-  const sbSet=$('sb-front')&&String($('sb-front').value).trim()!=='',s=thRow&&row?(row.front||0):pv('sb-front');
-  const {area}=getParentLot(),width=area>0?widthAtFrontSetbackFt(s):null;
-  const at=thRow&&row||sbSet?`${fmtN(s)} ft back`:'at the street (front setback blank)';
+  // the width line sits at the front setback on screen, or the base row's when the screen holds a townhome row's. With
+  // none, a drawn lot's width isn't known (it changes with depth; v8.33: a blank setback doesn't count as 0). A
+  // Rectangle is as wide at any depth: its Width box.
+  const s=thRow&&row?(row.front||0):pv('sb-front'),sOK=thRow&&row?row.front>0:!!($('sb-front')&&String($('sb-front').value).trim()!=='');
+  const {area}=getParentLot();
+  const width=!(area>0)?null:lotMode==='rect'?(pv('lot-w')||null):sOK?widthAtFrontSetbackFt(s):null;
+  const at=lotMode==='rect'?'(Rectangle)':`${fmtN(s)} ft back`;
+  const noW=lotMode==='rect'?'enter the lot width':sOK?'mark the front edge on the lot':'enter the front setback';
   let verdict,why;
   if(!(area>0)||lotMode==='poly'&&polyIsPlaceholder()){verdict='?';why='enter the lot above.';}
   else if(!zoneKey){verdict='?';why='pick a zone under Address &amp; zoning.';}
   else if(row&&row.noNewLots){verdict='no';why=row.noNewLots;}
-  else if(!row||(!minW&&!minSF)){verdict='?';why=`no lot minimums for ${zBase||'this zone'} here. Check the zoning code${zone.includes('(CD)')?' and the conditional plan':''}.`;}
+  else if(!row||(!minW&&!minSF)){verdict='?';why=`no lot minimums for ${escHtml(zBase)||'this zone'} here. Check the zoning code${zone.includes('(CD)')?' and the conditional plan':''}.`;}
   else{
     const aOK=minSF>0?area>=2*minSF:null,wOK=minW>0&&width!=null?width>=2*minW:null;
     const aTxt=`${fmtN(area)} sf`+(minSF>0?`, needs 2 × ${fmtN(minSF)} sf`:''),wTxt=width!=null?`${fmtN(Math.round(width))} ft wide ${at}`+(minW>0?`, needs 2 × ${minW} ft`:''):'';
     if(aOK===false){verdict='no';why=aTxt+'.';}
     else if(wOK===false){verdict='no';why=`${wTxt}. A flag lot might still work: try it in the sketch.`;}
     else if(aOK&&wOK){verdict='yes';why=`on paper: ${aTxt}; ${wTxt}. Check access, easements and BUA in the sketch.`;}
-    else{verdict='?';why=aOK?`the area works (${aTxt}), but ${minW>0?'the width can’t be measured: mark the front edge on the lot':'there’s no minimum lot width here: check the zoning code'}.`
-      :`${wOK?wTxt+', but ':''}there’s no minimum lot area here: check the zoning code.`;}
+    else{verdict='?';why=aOK?`the area works (${aTxt}), but ${minW>0?'the width can’t be measured: '+noW:'there’s no minimum lot width here: check the zoning code'}.`
+      :`${wOK?wTxt+', but ':''}there’s no minimum lot area here: check the zoning code${minW>0&&width==null?'; to check the width, '+noW:''}.`;}
   }
   const word={yes:'Yes',no:'No','?':'Can’t tell'}[verdict],col={yes:'var(--teal-light)',no:'var(--red)','?':'var(--amber)'}[verdict];
   const canSketch=sketchReady();
   box.innerHTML=`<div style="font-size:13px;line-height:1.55"><span style="color:var(--text-mid)">Can this split?</span> `
     +`<strong style="font-family:var(--f-head);font-size:15px;color:${col}">${word}</strong> <span style="color:var(--text-mid)">— ${why}</span></div>`
-    +(thRow&&row?`<div class="note" style="margin-top:4px">Detached lots follow the base ${zBase} row.</div>`:'')
+    +(thRow&&row?`<div class="note" style="margin-top:4px">Detached lots follow the base ${escHtml(zBase)} row.</div>`:'')
     +`<div style="margin-top:8px">${canSketch?'<a href="#" onclick="sublotSketch();return false" style="font-size:12px;font-weight:600">Sketch a subdivision →</a> <span class="note">the one place to lay out real lots</span>'
       :'<span class="note">Sketch a subdivision (Lot card) lays out real lots once the lot is drawn.</span>'}</div>`;
 }
