@@ -1113,6 +1113,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hero-val" id="max-land-display">&mdash;</div>
       <div class="hero-sub" id="max-land-sub">&mdash;</div>
       <div class="hero-sub hero-offer" id="opening-offer"></div>
+      <div class="hero-sub" id="teardown-line" style="display:none;color:var(--amber);font-weight:600"></div>
       <a href="#" class="hero-edit" onclick="openProfitRule();return false">Change the profit rule</a>
     </div>
   </div>
@@ -1125,7 +1126,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="card-title"><span class="dot"></span>Live levers</div>
     <div class="lever-grid">
       <div class="field lever-land"><label for="land-cost">Land cost</label>
-        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="landInput(this);calcAll();calcScenarios()" onblur="syncLandToAsking()"></div>
+        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="" placeholder="enter land" oninput="landInput(this);calcAll();calcScenarios()" onblur="syncLandToAsking()"></div>
+        <div class="ask-gap" id="land-note"></div>
       </div>
       <div class="field"><label for="asking-price">Asking price</label>
         <div class="input-wrap"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" oninput="syncLandToAsking();calcScenarios()"></div>
@@ -2055,6 +2057,10 @@ function compStats(){
   const cap=R.length?Math.max(...R.map(r=>r.sold+r.adj)):0;
   return {n:v.length,avg,median,min,max,cap};
 }
+// v8.53 (audit #6): an ARV needs ARV_MIN_COMPS counted comps, as /api/comps (MIN_POOL). Below that the table, the PDF and
+// Excel show no Suggested ARV, and Apply median / avg asks first. On Clear Day Ct one far context sale printed $550,714.
+const ARV_MIN_COMPS=3;
+const fewCompsTxt=n=>`${n} comp${n===1?'':'s'}: not enough for an ARV (needs ${ARV_MIN_COMPS})`;
 // v8.34 (C-F3): the comps table's suggested ARV for sf square feet, capped the way /api/comps caps the county box:
 // $/sf (the median unless psf is given) × sf, but never above the highest sale in the table (SOP: never let $/sf math
 // run past a real sale). Before, the box said $767,500 on Katonah while the table, Apply median, the PDF and Excel said
@@ -2102,7 +2108,7 @@ function renderCompsSummary(R){
     else{
       const subjSf=(typeof sfPerUnit!=='undefined'?sfPerUnit:0)||0;
       const A=compArv(st,subjSf);
-      const arv=subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf${A.capped?', capped at the highest sale':''}): <b>$${Math.round(A.arv).toLocaleString()}</b>${A.capped?` = $${Math.floor(A.psf)}/sf`:''}`:'';
+      const arv=st.n<ARV_MIN_COMPS?` &nbsp;\u00b7&nbsp; <b style="color:var(--amber)">${fewCompsTxt(st.n)}</b>`:subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf${A.capped?', capped at the highest sale':''}): <b>$${Math.round(A.arv).toLocaleString()}</b>${A.capped?` = $${Math.floor(A.psf)}/sf`:''}`:'';
       sum.innerHTML=`Comps: <b>${st.n}</b>${left?` (${left} left out)`:''} &nbsp;\u00b7&nbsp; Median adj $/SF: <b>$${st.median.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Avg: <b>$${st.avg.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Range: <b>$${st.min.toFixed(0)}\u2013$${st.max.toFixed(0)}</b>${arv}`;
     }
   }
@@ -2301,6 +2307,7 @@ function applyCountyArv(){
 function applyCompsArv(stat){
   const st=compStats(), v=stat==='median'?st.median:st.avg;
   if(!(v>0)){alert(compIssues().length?'No comp can be counted yet: see the note under the comps table.':'Add at least one comp with Sq Ft and Sold price first.');return;}
+  if(st.n<ARV_MIN_COMPS&&!confirm(`${fewCompsTxt(st.n)}. Apply the ${stat==='median'?'median':'average'} ($${Math.round(v)}/sf) to Base ARV anyway?`))return;
   const A=compArv(st,sfPerUnit>0?sfPerUnit:0,v);
   const f=$('arv-b'); if(f){f.value=A.capped?Math.floor(A.psf):Math.round(A.psf); if(typeof calcScenarios==='function')calcScenarios();}
   if(A.capped&&typeof showToast==='function')showToast(`Capped at the highest sale in the table (${fmt(st.cap)}): $${Math.floor(A.psf)}/sf, not $${Math.round(v)}/sf.`);
@@ -3316,6 +3323,7 @@ function countyTaxEstimate(cama,city){
 }
 // Under the tax field: where the county figure comes from, for the parcel on screen. Display only.
 function renderTaxHint(){
+  try{renderTeardownLine();}catch(_){ }   // v8.54: the county value lands with the same lookup
   const h=$('tax-hint');if(!h)return;
   const g=window._lastGis, t=g&&countyTaxEstimate(g.cama,g.mpt&&g.mpt.city);
   if(!t){h.style.display='none';h.textContent='';return;}
@@ -5505,7 +5513,7 @@ function holdingCost(loan,term){
 }
 
 function calcFinancing(){
-  const landCost=mv('land-cost');
+  const landCost=landCostUsed();
   const lb=calcLoanBase(landCost),{loan,costBase,purchaseClosing,cash}=lb;
   const terms=getTerms(), cashHold=cashThroughHold(lb,terms.b);
 
@@ -5652,7 +5660,7 @@ document.addEventListener('focusout',e=>{if(e.target&&e.target.id)_editingFields
 
 // ═══════════════════ SCENARIOS (Page 7) ═══════════════════
 function calcScenarios(){
-  const landCost=mv('land-cost');
+  const landCost=landCostUsed();
   const basePSF=mv('arv-b');
   const {loan,purchaseClosing}=calcLoanBase(landCost);
   const salePct=pv('sale-cost-pct')/100;
@@ -5793,7 +5801,20 @@ function offerCheck(landCost){
     asking:ask,askStatus:ask>0?ruleStatusAt(ask,rule).status:null,
     stress:{profit:st.profit,term:st.term,warn:st.profit<SOP08_STRESS.floor}};
 }
+// v8.54 (audit #9): a house stands on the lot and the county values it above what Max land pays: say so, so the offer isn't
+// sent on its own. Vacant lots and a Demo box of 0 skip it; so does a parcel the county gave no value for.
+function renderTeardownLine(){
+  const t=$('teardown-line');if(!t)return;
+  const g=window._lastGis, v=g&&g.cama&&+g.cama.total_value, ms=maxLandSolve();
+  let txt='';
+  if(v>0&&g.cama.vacant!==true&&pv('demo-sqft')>0&&ms){
+    const ml=Math.max(0,Math.round(ms.maxLand));
+    if(ml<v)txt=`Existing house: county value ${fmt(v)}, Max land ${fmt(ml)}${ms.maxLand>0?`, ${fmt(v-ml)} under it`:' (the deal doesn’t work)'}. Only a distressed seller takes that.`;
+  }
+  t.textContent=txt;t.style.display=txt?'':'none';
+}
 function renderOfferLines(landCost){
+  renderLandNote();renderTeardownLine();
   const oc=offerCheck(landCost);
   const oo=$('opening-offer');
   if(oo)oo.textContent=oc&&oc.opening>0?`Opening offer ${fmt(oc.opening)} · about ${oc.pct}% under max land`:'';
@@ -5804,7 +5825,7 @@ function renderOfferLines(landCost){
     const ask=mv('asking-price');
     askEl.innerHTML='';askEl.style.color='';askEl.style.fontWeight='';
     const line=(t,col)=>{const d=document.createElement('div');d.textContent=t;d.style.fontWeight='600';if(col)d.style.color=col;askEl.appendChild(d);};
-    if(ask>0&&landCost>0&&Math.round(landCost)!==Math.round(ask)){
+    if(ask>0&&landCost>0&&!landBlank()&&Math.round(landCost)!==Math.round(ask)){
       const diff=landCost-ask;
       line(`Offer ${fmt(landCost)} = ${(landCost/ask*100).toFixed(0)}% of asking (${diff<0?'-':'+'}${fmt(Math.abs(diff))})`,diff>0?'var(--red)':'');
     }
@@ -5816,7 +5837,7 @@ function renderOfferLines(landCost){
   if(sl){
     if(!oc){sl.textContent='';sl.className='stress-line';}
     else{
-      const t=`SOP-08 stress test (ARV −10%, Base months + 3 = ${oc.stress.term}, build +15%) at this land cost: ${oc.stress.profit<0?'−'+fmt(-oc.stress.profit):fmt(oc.stress.profit)} profit per unit.`;
+      const t=`SOP-08 stress test (ARV −10%, Base months + 3 = ${oc.stress.term}, build +15%) at ${landBlank()?'Max land':'this land cost'}: ${oc.stress.profit<0?'−'+fmt(-oc.stress.profit):fmt(oc.stress.profit)} profit per unit.`;
       sl.textContent=oc.stress.warn?`⚠ ${t} That’s under the $10k per unit the SOP asks for. Max land doesn’t change; check the deal before you offer.`:t;
       sl.className='stress-line'+(oc.stress.warn?' warn':'');
     }
@@ -5826,12 +5847,33 @@ function renderOfferLines(landCost){
 // A typed land cost (markManual) is left alone, and so is a reopened deal's (restoreDeal marks it). Emptying the land
 // field hands it back to the asking price (landInput): it refills when you leave the field, not while you're typing.
 function landInput(el){if(String(el.value).trim()==='')delete el.dataset.manual;else markManual(el);}
+// v8.54 (audit #8): the land box ships empty (it used to start at a hidden $25,000, which every profit, loan, cash-at-close,
+// Compare and export figure then ran on). Blank land is priced at Max land, which the screen and the exports say; a typed 0
+// stays $0. Untouched land (nothing typed and no asking price to follow) also blocks Send to deal sheet.
+function landBlank(){const l=$('land-cost');return !l||String(l.value).trim()==='';}
+function landCostUsed(){
+  if(!landBlank())return mv('land-cost');
+  const ms=maxLandSolve();
+  return ms&&ms.maxLand>0?Math.round(ms.maxLand):0;
+}
+function landUntouched(){return !isManual('land-cost')&&!(mv('asking-price')>0);}
+function renderLandNote(){
+  const n=$('land-note');if(!n)return;
+  if(!landBlank()){n.textContent='';return;}
+  const u=landCostUsed();
+  n.textContent=u>0?`No land cost entered: the numbers use Max land (${fmt(u)}). Type the real price.`:'Enter the land cost (or an asking price).';
+  n.style.color='var(--amber)';n.style.fontWeight='600';
+}
 function syncLandToAsking(){
   const l=$('land-cost');if(!l||isManual('land-cost'))return;
   if(readMoney('asking-price').msg)return;   // mid-typing ("185,") or unreadable: leave the land where it is
   const ask=mv('asking-price');
+  // v8.54: it only hands the box back to blank if it was the asking price that filled it (a reopened old save's untyped
+  // $25,000 stays put)
+  if(!(ask>0)&&l.dataset.followed!=='1')return;
   const v=ask>0?Math.round(ask).toLocaleString('en-US'):fieldDefault(l);
   if(l.value===v)return;
+  if(ask>0)l.dataset.followed='1';else delete l.dataset.followed;
   l.value=v;calcAll();calcScenarios();
 }
 
@@ -5972,7 +6014,7 @@ function buildPlanComparison(psf){
     .sort((a,b)=>{const r=rankFit(a.f.status)-rankFit(b.f.status);if(r)return r;return (b.p.sf||0)-(a.p.sf||0);});
   for(let pi=0;slots.length<3&&pi<pool.length;pi++)slots.push({rank:null,source:'fit',plan:pool[pi].p});
   return slots.map(s=>{const pp=planPsf(s.plan),deal=dealForPlan(s.plan,pp);
-    return{...s,deal,fit:deal.fit,psf:{w:pp.w,b:pp.b,best:pp.best,src:pp.src,note:pp.typed.b?'Typed in the comparison':pp.note}};});
+    return{...s,deal,fit:deal.fit,psf:{w:pp.w,b:pp.b,best:pp.best,src:pp.src,priced:pp.priced,note:pp.typed.b?'Typed in the comparison':pp.note}};});
 }
 // v8.40: county comps for the plans sheet 4 will show; the PDF waits for them (up to 8 s) so it prices them like the modal
 function pullReportComps(){
@@ -5986,7 +6028,7 @@ function getReportData(){
   const county=($('county-sel')||{}).value||'—';
   const address=[($('addr-street')||{}).value||'',($('addr-city')||{}).value||'',
                  ($('addr-state')||{}).value||'',($('addr-zip')||{}).value||''].filter(Boolean).join(' ')||'—';
-  const landCost=mv('land-cost')||0;
+  const landCost=landCostUsed()||0;
   const u=Math.max(1,units);
 
   // ARV $/sf with auto ±10% fallback off base
@@ -6009,7 +6051,7 @@ function getReportData(){
   // Cost build-up
   const softFixed=softCostsTotal(u);
   // v8.36: upgrades with the GC fee (upgradesMenu = the menu prices); custom plans once per deal
-  const cost={land:landCost,lotFactor:lotFactor||0,tap:tapTotal||0,
+  const cost={land:landCost,landAssumed:landBlank(),lotFactor:lotFactor||0,tap:tapTotal||0,
     buildTotal:(currentPlanCost||0)*u,upgrades:upgradesPerUnit()*u,upgradesMenu:upgradeMenuPerUnit()*u,upgFeePct:gcFeePct(),
     soft:softFixed,customPlans:pv('custom-plans')||0,
     allInExLand:allInExLand||0,total:(allInExLand||0)+landCost};
@@ -6134,7 +6176,7 @@ function buildReportHTML(canvasDataUrl){
           +'<tr><td>Lot</td><td>'+(d.lotMode==='poly'?'Irregular (polygon)':(d.lotW&&d.lotD?(d.lotW+"' × "+d.lotD+"' ("+(d.lotW*d.lotD).toLocaleString()+' sf)'):'—'))+'</td></tr>'
           +'<tr><td>Buildable Area</td><td>'+(d.buildable_sf?d.buildable_sf.toLocaleString()+' sf':'—')+'</td></tr>'
           +'<tr><td>Asking Price</td><td>'+(d.asking>0?F(d.asking):'not entered')+'</td></tr>'
-          +'<tr><td>Land Cost Used</td><td>'+F(d.cost.land)+'</td></tr>'
+          +'<tr><td>Land Cost Used</td><td>'+F(d.cost.land)+(d.cost.landAssumed?' (Max land: no land cost entered)':'')+'</td></tr>'
           +'<tr><td>Units</td><td>'+d.units+'</td></tr>'
           +'<tr><td>Plan Selected</td><td>'+esc(d.plan)+'</td></tr>'
           +'<tr><td>Finished SF / Unit</td><td>'+(d.sf?d.sf.toLocaleString()+' sf':'—')+'</td></tr>'
@@ -6170,7 +6212,7 @@ function buildReportHTML(canvasDataUrl){
   /* ── SHEET 2: COST BUILD-UP + FINANCING DETAIL ── */
   const c=d.cost;
   const costRows=[
-    ['Land Cost',c.land],['Lot Factor (site work)',c.lotFactor],
+    [c.landAssumed?'Land Cost (Max land: none entered)':'Land Cost',c.land],['Lot Factor (site work)',c.lotFactor],
   ];
   (d.lfItems||[]).forEach(it=>costRows.push(['\u2514 '+it.l,it.v,'sub']));
   costRows.push(['Water Tap',c.tapWater]);costRows.push(['Sewer Tap',c.tapSewer]);
@@ -6259,7 +6301,7 @@ function buildReportHTML(canvasDataUrl){
     // v8.40: the deal's plan is "This deal" (and its shortlist rank, if it has one)
     const slotLbl=s=>s.source==='selected'?('This deal'+(s.rank?' · #'+s.rank+' Ranked':'')):s.rank?('#'+s.rank+' Ranked'):'Next-best fit';
     // v8.40 (N4.2/N4.3/N4.5): the badge needs a fit and the profit rule, and isn't given when no plan qualifies
-    const bestI=bestPlanIndex(cols.map(s=>s.deal)), noBest=bestI<0?noBadgeWhy(cols.map(s=>s.deal)):'';
+    const bestI=bestPlanIndex(cols), noBest=bestI<0?noBadgeWhy(cols):'';
     const th=cols.map((s,i)=>'<th'+(i===bestI?' class="pc-win"':'')+'>'+esc(s.plan.n)
       +'<div class="pc-slot">'+slotLbl(s)+(i===bestI?' · BEST BASE (meets rule)':'')+'</div></th>').join('');
     const row=(lbl,fn,cls)=>'<tr'+(cls?' class="'+cls+'"':'')+'><td>'+lbl+'</td>'
@@ -6301,7 +6343,7 @@ function buildReportHTML(canvasDataUrl){
   const compSummary=st.n
     ? '<div class="comp-sum"><b>'+st.n+'</b> comps &nbsp;·&nbsp; Median adj $/SF <b>$'+st.median.toFixed(0)+'</b>'
       +' &nbsp;·&nbsp; Avg <b>$'+st.avg.toFixed(0)+'</b> &nbsp;·&nbsp; Range <b>$'+st.min.toFixed(0)+'–$'+st.max.toFixed(0)+'</b>'
-      +(subjSf>0?(()=>{const A=compArv(st,subjSf);return ' &nbsp;·&nbsp; Suggested ARV (median × '+subjSf.toLocaleString()+' sf'+(A.capped?', capped at the highest sale':'')+') <b>$'+Math.round(A.arv).toLocaleString()+'</b>';})():'')+'</div>'
+      +(st.n<ARV_MIN_COMPS?' &nbsp;·&nbsp; <b>'+fewCompsTxt(st.n)+'</b>':subjSf>0?(()=>{const A=compArv(st,subjSf);return ' &nbsp;·&nbsp; Suggested ARV (median × '+subjSf.toLocaleString()+' sf'+(A.capped?', capped at the highest sale':'')+') <b>$'+Math.round(A.arv).toLocaleString()+'</b>';})():'')+'</div>'
     : '<div class="comp-sum muted">Add comps with Sq Ft and Sold price to compute blended adjusted $/SF.</div>';
   // v8.12: the comps table's notes (cells that couldn't be read, likely typos), only when there are any
   const compNotes=compIssues().map(x=>x.msg).join(' ');
@@ -6501,6 +6543,7 @@ function sendToDealSheet(){
   const block=!addrStreet()?'Enter the street address first: the deal sheet is named by it.'
     :!(($('plan-sel')||{}).value)?'Pick a plan first: the sheet prices the build from it.'
     :!(mv('arv-b')>0)?'Enter the Base ARV $/sf first.'
+    :landUntouched()?'Enter the land cost first (or an asking price for it to follow): the sheet would otherwise get a made-up land price.'
     :issues.length?'Fix the flagged inputs first. '+issues.map(i=>i.msg).join(' '):'';
   if(block){showToast(block,'warn');return;}
   // no 'noopener' feature: with it window.open always returns null, and a blocked tab must not be recorded as sent
@@ -6551,7 +6594,7 @@ function collectModelInputs(d){
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
     // same raw values the screen uses; `||6` etc. would turn a deliberate 0 into a default and move Max Land
-    land:mv('land-cost'),asking:d.asking||0,ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
+    land:landCostUsed(),landAssumed:landBlank(),asking:d.asking||0,ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
     docFee:pv('fin-doc-fee'),annTax:pv('fin-tax'),salePct:pv('sale-cost-pct')/100,
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
@@ -6637,7 +6680,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   inp('survey','Survey (once per project)',M.survey,MONEY); inp('appr','Appraisal / Unit',M.appraisal,MONEY); inp('ins','Insurance (carry) / Unit',M.insurance,MONEY);
   inp('plans','Custom Plans (architect / engineer)',M.customPlans,MONEY);
   sec('FINANCING'); inp('ltc','Loan % of Project Cost',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
-  sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('ask','Asking Price (reference; 0 = not entered)',M.asking,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
+  sec('EXIT'); inp('land',M.landAssumed?'Land Cost (Max land: none entered)':'Land Cost',M.land,MONEY); inp('ask','Asking Price (reference; 0 = not entered)',M.asking,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
   // v8.13: a note beside each term cell, like the rule cells', when it isn't used as typed (Scenarios row 16 applies
   // the default and the 1-month floor) or is over the app's max; a text term like "12 mo" is otherwise silent
   ['termW','termB','termBest'].forEach(k=>{const x=IN[k], c=wsI.getCell(x.replace('B','C'));
@@ -6841,7 +6884,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
     rr++; const stat=(lbl,formula,hi)=>{const r=rr++;wco.mergeCells('C'+r+':D'+r);const lc=wco.getCell('C'+r);lc.value=lbl;lc.font={bold:true,name:'Arial'};lc.alignment={horizontal:'right'};const c=wco.getCell('E'+r);c.value={formula};c.numFmt=MONEY2;if(hi)c.font={bold:true,color:{argb:GREEN},name:'Arial'};};
     stat('Median $/SF',`MEDIAN(${rng})`); stat('Average $/SF',`AVERAGE(${rng})`); stat('Min $/SF',`MIN(${rng})`); stat('Max $/SF',`MAX(${rng})`);
     // v8.34 (C-F3): capped like the app, at the highest Sold $ + Adjustments (every row here is a counted comp)
-    const sr=rr++;wco.mergeCells('C'+sr+':D'+sr);const slc=wco.getCell('C'+sr);slc.value='Suggested ARV (median, capped)';slc.font={bold:true,name:'Arial'};slc.alignment={horizontal:'right'};const c=wco.getCell('E'+sr);c.value={formula:`MIN(MEDIAN(${rng})*${I('sf')},SUMPRODUCT(MAX(C${first}:C${last}+D${first}:D${last})))`};c.numFmt=MONEY;c.font={bold:true,color:{argb:GREEN},name:'Arial'};
+    const sr=rr++;wco.mergeCells('C'+sr+':D'+sr);const slc=wco.getCell('C'+sr);slc.value='Suggested ARV (median, capped)';slc.font={bold:true,name:'Arial'};slc.alignment={horizontal:'right'};const c=wco.getCell('E'+sr);c.value={formula:`IF(COUNT(${rng})<${ARV_MIN_COMPS},"Not enough comps (needs ${ARV_MIN_COMPS})",MIN(MEDIAN(${rng})*${I('sf')},SUMPRODUCT(MAX(C${first}:C${last}+D${first}:D${last}))))`};c.numFmt=MONEY;c.font={bold:true,color:{argb:GREEN},name:'Arial'};
     }
     if(compNotes.length){
       const t='Check comps: '+compNotes.join(' '), nr=++rr; rr++;
@@ -7019,7 +7062,7 @@ function fitStatus(fpW,fpD,garage){
 // Holds land, lot factor, soft costs, tap fee/unit, upgrades/unit and all financing
 // (loan %, rate, points, doc fee, tax, term) constant; loan SIZE and ARV vary by plan.
 function dealForPlan(plan,psf,U){
-  const landCost=mv('land-cost');
+  const landCost=landCostUsed();
   const softFixed=pv('custom-plans');   // v8.50: + survey, appraisal and insurance at this plan's units, below
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
@@ -7114,38 +7157,50 @@ function planPsf(plan){
       P={w:e.psf*kw,b:e.psf,best:e.psf*kb};src='comps';
       note=`County comps: ${e.n} ${noun} sale${e.n===1?'':'s'}, $${Math.round(e.psf)}/sf at ${plan.sf.toLocaleString()} sf${e.capped?' (capped at the highest sale)':''}${e.conf?', '+e.conf+' confidence':''}`;
     }else{
-      P=D;src='fallback';
+      // v8.53 (audit #7): the deal's $/sf × this plan's sf, capped like compArv() at the deal comps' highest sale. On Clear
+      // Day Ct, Galloway's 3,203 sf at the deal's $/sf sold for $887k on a street of ~$270k homes; the top comp was $680k.
+      const cap=compStats().cap, capPsf=cap>0&&plan.sf>0?cap/plan.sf:0, capped=capPsf>0&&Math.max(D.w,D.b,D.best)>capPsf;
+      P=capped?{w:Math.min(D.w,capPsf),b:Math.min(D.b,capPsf),best:Math.min(D.best,capPsf)}:D;src='fallback';
       const why=q.why||(!e?'comps not pulled yet':e.state==='loading'?'comps still loading':e.state==='none'?`no ${noun} comps near this lot`
         :e.state==='wide'?`too few ${noun} comps near this lot (the county search had to take any product)`:'county records didn’t answer');
-      note=`${why[0].toUpperCase()+why.slice(1)}: the deal’s $/sf is used. Check it.`;
+      note=`${why[0].toUpperCase()+why.slice(1)}: the deal’s $/sf is used${capped?`, capped at the deal comps’ highest sale (${fmt(cap)})`:''}. Check it.`;
     }
   }
-  const out={w:P.w,b:P.b,best:P.best,src,note,typed:{}};
+  // priced: this plan's own number (the deal's ARV, its own comps, or a typed Base), so it can win the badge
+  const out={w:P.w,b:P.b,best:P.best,src,note,typed:{},priced:src!=='fallback'};
   ['w','b','best'].forEach(k=>{const r=readCmpArv(plan.n,k);if(r.use){out[k]=r.v;out.typed[k]=true;}});
-  // a typed Base with no typed Worst/Best moves them with it, at the spread this plan had
-  if(out.typed.b&&P.b>0){if(!out.typed.w)out.w=out.b*P.w/P.b;if(!out.typed.best)out.best=out.b*P.best/P.b;}
+  // a typed Base with no typed Worst/Best moves them with it, at the spread this plan had (the deal's, before the v8.53 cap)
+  const S=src==='fallback'?D:P;
+  if(out.typed.b&&S.b>0){if(!out.typed.w)out.w=out.b*S.w/S.b;if(!out.typed.best)out.best=out.b*S.best/S.b;}
+  if(out.typed.b)out.priced=true;
   return out;
 }
 // v8.40 (audit N4.2/N4.3/N4.5): the badge goes to the plan with the most Base profit among those that fit the lot at the
 // deal's Units ('fits' or 'tight') and meet the profit rule. None qualifies (every plan loses money, misses the rule or
 // doesn't fit): no badge. It used to be the highest Base total, whatever the fit or the rule, even below $0.
-function bestPlanIndex(deals){
+// v8.53 (audit #7): and only a plan priced on its own number (psf.priced): one on the deal's $/sf fallback can't win.
+// cols: [{deal, psf}] (planPsf()'s answer, or the PDF's copy of it)
+const fitsLot=d=>d.fit.status==='fits'||d.fit.status==='tight';
+const meetsRule=d=>d.scen.b.arv>0&&d.scen.b.total>0&&d.rule&&d.rule.pass&&fitsLot(d);
+function bestPlanIndex(cols){
   let bi=-1,bv=-Infinity;
-  deals.forEach((d,i)=>{const s=d.scen.b;
-    if(s.arv>0&&s.total>0&&d.rule&&d.rule.pass&&(d.fit.status==='fits'||d.fit.status==='tight')&&s.total>bv){bv=s.total;bi=i;}});
+  cols.forEach((c,i)=>{const d=c.deal;
+    if(c.psf.priced&&meetsRule(d)&&d.scen.b.total>bv){bv=d.scen.b.total;bi=i;}});
   return bi;
 }
-function noBadgeWhy(deals){
+function noBadgeWhy(cols){
+  const deals=cols.map(c=>c.deal);
   const priced=deals.filter(d=>d.scen.b.arv>0);
   if(!priced.length)return'';
   if(priced.every(d=>d.scen.b.total<=0))return'No best pick: every plan loses money in the Base case.';
-  const fit=priced.filter(d=>d.fit.status==='fits'||d.fit.status==='tight');
+  const fit=priced.filter(fitsLot);
   if(!fit.length){
     // no verdict isn't "too large": blank setbacks (fitStatus 'nosb') or no lot drawn / no footprint ('na')
     if(priced.some(d=>d.fit.status==='nosb'))return'No best pick: enter the setbacks first, so the plans can be fit-checked.';
     if(priced.every(d=>d.fit.status==='na'))return'No best pick: draw the lot first, so the plans can be fit-checked.';
     return'No best pick: none of these plans fits the lot at the deal’s Units.';
   }
+  if(deals.some(meetsRule))return'No best pick: the plans that fit and meet the profit rule have no comps of their own, so they’re priced on the deal’s $/sf. Type a Base $/sf for them to rank them.';
   return'No best pick: no plan that fits the lot meets the profit rule ('+profitRuleLabels(getProfitRule()).text+').';
 }
 const fitWord=f=>f.status==='fits'?(f.rotated?'Fits (rotated)':'✓ Fits'):f.status==='tight'?'Tight — verify':f.status==='no'?'✗ Too large':f.status==='nosb'?'Setbacks missing':'No footprint data';
@@ -7207,7 +7262,7 @@ function renderCompare(){
   const body=$('cmp-body');if(!body)return;
   const cc=$('cmp-constants'), T=getTerms(), U=Math.max(1,pv('units'));
   if(cc){
-    cc.innerHTML='Held constant — Land '+fmt(mv('land-cost'))+' · Lot Factor '+fmt(lotFactor)+' · Upgrades '+fmt(upgradesPerUnit())+'/unit · Loan '+pv('ltc-pct')+'% of project · Rate '+pv('fin-rate')+'% · Term '+T.w+'/'+T.b+'/'+T.best
+    cc.innerHTML='Held constant — Land '+fmt(landCostUsed())+(landBlank()?' (Max land: none entered)':'')+' · Lot Factor '+fmt(lotFactor)+' · Upgrades '+fmt(upgradesPerUnit())+'/unit · Loan '+pv('ltc-pct')+'% of project · Rate '+pv('fin-rate')+'% · Term '+T.w+'/'+T.b+'/'+T.best
       +'. Every plan is built at the deal’s '+U+' unit'+(U===1?'':'s')+' (a duet or triplex rounds up to whole buildings). ARV $/sf: the deal’s for the deal’s plan, county comps of the same type and size for the others.';
   }
   const cols=CMP.map((n,i)=>{
@@ -7216,7 +7271,7 @@ function renderCompare(){
     return{i,plan,psf,deal:dealForPlan(plan,psf)};
   }).filter(Boolean);
   if(!cols.length){body.innerHTML='<div class="note">Pick at least one plan to compare.</div>';return;}
-  const best=bestPlanIndex(cols.map(c=>c.deal)), winI=best>=0?cols[best].i:-1;
+  const best=bestPlanIndex(cols), winI=best>=0?cols[best].i:-1;
   const wc=i=>i===winI?' class="cmp-win-col"':'';
   const money=(v)=>'<span'+(v<0?' class="cmp-neg"':'')+'>'+fmt(v)+'</span>';
   const own=c=>c.plan.n===dealPlanName()?'<span class="cmp-own">The deal’s plan</span>':'';
@@ -7257,7 +7312,7 @@ function renderCompare(){
       return r.pass?'✓ Meets':'<span class="cmp-neg">✗ Misses by '+fmt(-r.gap)+'/unit</span>';});
   });
   h+='</tbody></table>';
-  if(winI<0){const why=noBadgeWhy(cols.map(c=>c.deal));if(why)h+='<div class="note" role="status" style="margin-top:8px">'+escAttr(why)+'</div>';}
+  if(winI<0){const why=noBadgeWhy(cols);if(why)h+='<div class="note" role="status" style="margin-top:8px">'+escAttr(why)+'</div>';}
   if(arvNotes.length)h+='<div class="warn" role="status">'+escAttr(arvNotes.join(' '))+'</div>';
   body.innerHTML=h;
 }
@@ -7551,7 +7606,7 @@ function restoreDeal(d){
      // v8.39: a field added after the deal was saved (sop-band) wasn't typed either, so a lookup may fill it
      if(am)AUTO_FILL_FIELDS.forEach(id=>{const e=$(id);if(e&&(am[id]===false||!(id in am)))delete e.dataset.manual;});
      // v8.38: so does the land cost (a file from before v8.38 keeps it typed)
-     if(d.landManual===false){const e=$('land-cost');if(e)delete e.dataset.manual;}
+     if(d.landManual===false){const e=$('land-cost');if(e){delete e.dataset.manual;delete e.dataset.followed;if(mv('asking-price')>0&&Math.round(mv('land-cost'))===Math.round(mv('asking-price')))e.dataset.followed='1';}}
      renderTaxHint();}
     updateLinks();updateGISLink();   // step 1 built these before the street and ZIP were back
     updateDealPulse();
@@ -7654,6 +7709,16 @@ const RELEASE_NOTES=[
  {v:'8.55',date:'Oct 2026',name:'Can this lot split? One honest line',items:[
    'The Sub-Lotting card is now \u201cCan this lot split?\u201d: one line that says Yes, No or Can\u2019t tell, from the zone\u2019s minimum lot size and the lot\u2019s width at the front setback line. Split in 2 / Split in 3 and the strip picture are gone: they cut every lot into equal slices, showed green checks where the zone had no minimums and drew 10-ft slivers on a cul-de-sac lot. A zone with no minimums here (like R-5(CD)) says Can\u2019t tell.',
    'To lay out real lots, the line links to Sketch a subdivision, the one place for that. With a townhome plan the card still shows the townhome row: Units +/\u2212, building length against the county max and the parent-lot check. No deal numbers change.',
+ ]},
+ {v:'8.54',date:'Oct 2026',name:'No hidden land price, and a teardown check',items:[
+   'The Land cost box starts empty. It used to start at a hidden $25,000, and profit, cash on cash, the loan, cash at closing, Compare, the PDF and the deal-sheet payload all ran on that made-up price until someone typed over it. With no land typed, the screen prices the deal at Max land and says so under the box (the PDF and Excel say it too). A typed land price, or an asking price for it to follow, works as before.',
+   'Send to deal sheet now waits until the land cost is typed (or an asking price is in for it to follow).',
+   'A deal saved before this reopens exactly as saved, including a $25,000 land cost that nobody typed; that one still counts as untouched, so type the real price before you send it to the sheet.',
+   'New line under Max land when a house stands on the lot and the county values it above Max land: \u201cExisting house: county value $269,200, Max land $152,677, $116,523 under it. Only a distressed seller takes that.\u201d Vacant lots skip it.',
+ ]},
+ {v:'8.53',date:'Oct 2026',name:'No ARV from one or two comps; an honest Best plan badge',items:[
+   'Sales comps: with fewer than 3 counted comps the line above the table says “1 comp: not enough for an ARV (needs 3)” and shows no Suggested ARV (the PDF and Excel too). Apply median / avg asks you to confirm first. On 11603 Clear Day Ct one far sale used to print a $550,714 Suggested ARV.',
+   'Compare builds: a plan with no comps of its own type (priced on the deal’s $/sf) can’t get the BEST BASE PROFIT badge, and its ARV is capped at the highest sale in the deal’s comps. On Clear Day Ct, Galloway got the badge at an $887k ARV on a street of ~$270k homes. Type a Base $/sf for a plan to rank it.',
  ]},
  {v:'8.52',date:'Oct 2026',name:'Cul-de-sac lots get the right front',items:[
    'On a lot at the end of a cul-de-sac, the front is now the curve along the street. The county draws that curve as a few short pieces, and each was too short to count, so the front landed on a side lot line and the curve was marked a corner side. The setbacks, the buildable area, the plan fit and the plat sketch now start from the real front (11603 Clear Day Ct: the 25-ft curve). Other lots don\u2019t change.',

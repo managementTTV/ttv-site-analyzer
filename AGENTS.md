@@ -604,6 +604,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **One capped ARV everywhere (v8.34, C-F3).** `compStats().cap` is the highest counted Sold $ + Adjustments;
   `compArv()` caps median × sf at it. The table summary, Apply median / avg, the PDF and the Excel Comps sheet
   (`MIN(MEDIAN(...)*sf, SUMPRODUCT(MAX(C+D)))`) all use it, so on a fresh pull they say what the county box says.
+- **No ARV from fewer than 3 comps (v8.53, audit #6).** Below `ARV_MIN_COMPS` (3, = `MIN_POOL` in api/comps.js) counted
+  comps, the table summary, the PDF and the Excel Comps sheet say "N comps: not enough for an ARV (needs 3)" and show no
+  Suggested ARV, and Apply median / avg asks `confirm()` first. Flag any path that prints a suggested ARV from 1–2 comps.
   Flag a reader of `st.median * sf` that skips `compArv()`.
 - **A pull replaces the last pull (v8.34, C-F4).** Pulled rows carry `src:'county'`, `srcPid` (the parcel pulled
   for) and `cpid` (the comp's parcel). A new pull drops `src:'county'` rows (and untagged pre-v8.34 rows whose notes
@@ -1208,7 +1211,9 @@ most deals take.
     product (`rule.relaxed` has 'product'), said in the column. A $/sf typed in the
     comparison is kept by plan name for the deal and the PDF uses it. The badge (`bestPlanIndex()`) goes to the most
     Base total profit among plans that fit and meet `getProfitRule()` per unit (`dealForPlan().rule`); none qualifies =
-    no badge, and `noBadgeWhy()` says why. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
+    no badge, and `noBadgeWhy()` says why. Since v8.53 (audit #7) only a plan priced on its own number can win
+    (`planPsf().priced`: the deal's plan, its own comps, or a typed Base); a fallback plan's $/sf is capped at
+    `compStats().cap` ÷ its sf (Worst/Best too), and a typed Base on it takes the deal's spread. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
     its window first so the wait can't trip the pop-up blocker). Flag a badge that ignores the fit or the rule, or a
     compared plan priced at a catalogue unit count.
   - The plan-fit message is drawn by `onPlanChange()` and by `calcBuildable()`, so a lot, setback or corner edit
@@ -1338,6 +1343,14 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
+  - **v8.54 (no hidden land price, 2026-10-21): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (on v8.53). The only change in
+    `getReportData()` is the new `cost.landAssumed` key (false when land is typed); delete it and the hash is `66338f6bfbb2`,
+    v8.53's. Land box starts empty (`landCostUsed()`: blank = Max land, labelled; typed 0 stays $0); Send to deal sheet is
+    blocked while land is untouched (`landUntouched()`: not typed and no asking price). An old save reopens as saved, even
+    its untyped $25,000. Teardown line (`renderTeardownLine()`): shown when the county gave a value, the parcel isn't
+    vacant, Demo sq ft > 0 and Max land is under that value; 11603 Clear Day Ct: county $269,200.
+  - **v8.53 (comps + badge, 2026-10-21): Max land $252,111**, hash **`66338f6bfbb2`**: only the new
+    `planComp[].psf.priced` field moved it (left out, it is v8.50's `92e562fa9b24`, same run as main v8.51).
   - **v8.50 (side-by-side fixes, 2026-10-20): Max land $252,111**, hash **`92e562fa9b24`** (main v8.49 in the same run:
     $256,586, `1bf09d65e83e`; the county's owner field now reads TIDE & TIMBER VENTURES LLC, so main's hash moved from
     v8.48's too). Appraisal and insurance per unit: soft costs $5,125 → $9,600 for 3 units ($3,000 survey + 3 × $2,200),
