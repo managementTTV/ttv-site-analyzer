@@ -13,14 +13,14 @@
 // "Since the last check": each record's Accela block in Drive carries `seen`, a snapshot of its record status
 // and each step's state / newest entry / City due date, with no names. The cron sends first, then writes the new
 // snapshots with its other saves (api/accela.js); a failed send leaves them, so tomorrow reports the same moves.
-// The very first run (no record has a snapshot yet) only takes them — no flood of "moves".
+// The very first run (no record has a snapshot yet) reports no moves, only takes them — no flood of "moves".
 //
 // Sending: the daily cron in api/accela.js calls runReminders({state, records, send:true, sendBy}) after its Accela
 // look-up and before the writes. Gmail API as management@ with a send-only token in the Vercel env var
 // GMAIL_SEND_TOKEN ({client_id, client_secret, refresh_token} JSON, minted by
 // ~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py). Only production sends.
 // GET ?k=<gate hash>[&format=html][&date=YYYY-MM-DD][&kind=digest] — preview only (never sends, never saves);
-// kind=digest shows a weekend date's digest too.
+// kind=digest shows a weekend date's digest too (`anyDay`).
 import { GATE_HASH, loadPermitState } from './permits.js';
 import { lookupAll, recordUrl, deriveStatus, targets, cityHolds } from './accela.js';
 
@@ -192,7 +192,7 @@ function projectStand(g){
   return g.recs.some(r => r.bucket === 'approved') ? ['City records approved', PINE] : ['Closed in Accela', SLATE];
 }
 
-function shell(eyebrow, heading, intro, sectionsHtml, foot, today, preheader){
+function shell(eyebrow, heading, intro, sectionsHtml, note, today, preheader){
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:${CREAM};">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${CREAM};font-size:1px;line-height:1px;">${esc(preheader)}</div>
@@ -206,7 +206,7 @@ function shell(eyebrow, heading, intro, sectionsHtml, foot, today, preheader){
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:0 28px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${sectionsHtml}</table></td></tr>
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:14px 28px 24px;font-family:${FONT};">
 <a href="${BOARD}" style="display:inline-block;background:${NAVY};color:${CREAM};font-weight:700;font-size:13px;text-decoration:none;border-radius:6px;padding:9px 16px;">Open the permit board</a>
-<div style="font-size:11px;line-height:1.5;color:${SLATE};padding-top:12px;">${esc(foot.note)}</div>
+<div style="font-size:11px;line-height:1.5;color:${SLATE};padding-top:12px;">${esc(note)}</div>
 </td></tr></table></td></tr></table></body></html>`;
 }
 const lineHtml = (text, color, badge) => `<div style="font-family:${FONT};font-size:13px;line-height:1.5;color:${NAVY};padding:1px 0;"><span style="color:${color};font-weight:700;">●</span> ${esc(text)}${badge ? ` <span style="display:inline-block;background:${badge.color};color:${WHITE};font-size:11px;font-weight:700;border-radius:3px;padding:0 6px;">${esc(badge.text)}</span>` : ''}</div>`;
@@ -265,7 +265,7 @@ export function renderDigest(view, today){
   groups.forEach(g => { const p = projectPart(g); text.push(...p.text, ''); html += p.html; });
   const note = 'The digest comes every weekday morning, with what moved in Accela since the last one (Monday\'s covers the weekend). Steps, reviewers and due dates are the City\'s own.';
   text.push(`Permit board: ${BOARD}`, '', note);
-  return { subject, text: text.join('\n'), html: shell('Permit digest', parts.join(', ').replace(/^./, c => c.toUpperCase()), intro, html, { note }, today,
+  return { subject, text: text.join('\n'), html: shell('Permit digest', parts.join(', ').replace(/^./, c => c.toUpperCase()), intro, html, note, today,
     moved.length ? moved.map(r => `${short(r.addr)}: ${r.moves[0].text}`).join(' · ') : parts.join(' · ')) };
 }
 
@@ -319,15 +319,19 @@ export async function gmailSend({ to, subject, text, html }, { by = Infinity, cf
   return j.id;
 }
 
-// Same day + same email already sent from this instance → don't send it again (a re-delivered cron event
-// usually lands on the warm instance). Per instance only.
+// Same day + same digest already sent from this instance → don't send it again (a re-delivered cron event
+// usually lands on the warm instance). Per instance only. The key is the digest as if nothing had moved, without
+// the lines for records Accela didn't answer: a re-delivered run, after the first one saved its snapshots, sees no
+// moves, and must not read as a different email (stopgap review, PR #67).
 let lastSent = null;
+const sendKey = (view, today) => `${today}|${renderDigest({ ...view, records: view.records.map(r => ({ ...r, moves: [] })) }, today).text
+  .replace(/^.*(Couldn't read|isn't in Accela's public search).*$/gm, '')}`;
 
 // state/records: pass the cron's freshly looked-up copies; otherwise they're read here. sendBy: when the send must
-// be done (epoch ms; the cron's t0 + SEND_STOP_MS).
-// Returns `seen`: the snapshots to save, and `advance`: true when the cron should save them (the email went
-// out, or there was nothing to send). The preview never saves.
-export async function runReminders({ state, records, send = false, today, kind, sendBy } = {}){
+// be done (epoch ms; the cron's t0 + SEND_STOP_MS). anyDay: render a weekend date too (the preview's kind=digest).
+// Returns `seen`: the snapshots to save, and `advance`: true when the cron should save them (the digest went
+// out, or this instance already sent the same one today). The preview never saves.
+export async function runReminders({ state, records, send = false, today, anyDay = false, sendBy } = {}){
   today = today && isDay(today) ? today : etDate(new Date());
   state = state || await loadPermitState();
   if(!records){
@@ -335,21 +339,19 @@ export async function runReminders({ state, records, send = false, today, kind, 
     records = refs.length ? await lookupAll(refs, { deadlineMs: 25 * 1000 }) : {};
   }
   const view = board(state, records, today);
-  const weekday = DIGEST_DAYS.includes(dow(today)) || kind === 'digest';   // the preview may ask for a weekend date
-  kind = 'digest';
   const seen = view.records.filter(r => r.saveSeen).map(r => ({ projectId: r.projectId, milestoneId: r.milestoneId, seen: r.seen }));
   const movedCount = view.records.filter(r => r.moves.length).length;
-  const base = { ok: true, today, kind, to: TO, sent: false, firstRun: view.firstRun, moved: movedCount, unread: view.unread,
+  const base = { ok: true, today, to: TO, sent: false, firstRun: view.firstRun, moved: movedCount, unread: view.unread,
                  records: view.records.map(({ seen: _s, saveSeen: _v, ...r }) => r), seen, advance: false };
   // Saturday / Sunday: no email and no new snapshots (advance stays false), so Monday's digest carries the weekend
-  if(!weekday) return { ...base, note: `no digest on ${DOW[dow(today)]}: Monday's carries any moves` };
+  if(!anyDay && !DIGEST_DAYS.includes(dow(today))) return { ...base, note: `no digest on ${DOW[dow(today)]}: Monday's carries any moves` };
   if(!view.records.length && !view.unread.length) return { ...base, note: 'no City records on the board' };
   const mail = renderDigest(view, today);
   const out = { ...base, subject: mail.subject };
   if(!send) return { ...out, text: mail.text, html: mail.html };
   const env = process.env.VERCEL_ENV;
   if(env && env !== 'production'){ out.note = `${env} deployment — only production sends`; return out; }
-  const key = `${today}|${kind}|${mail.text.replace(/^.*(Couldn't read|isn't in Accela's public search).*$/gm, '')}`;
+  const key = sendKey(view, today);
   if(lastSent === key){ out.note = 'same email already sent today from this instance'; out.advance = true; return out; }
   try{ out.id = await gmailSend({ to: TO, ...mail }, { by: sendBy }); out.sent = true; out.advance = true; lastSent = key; }
   catch(e){ out.ok = false; out.error = String(e && e.message || e); }
@@ -363,10 +365,10 @@ export default async function handler(req, res){
   if((q.k || '') !== GATE_HASH){ res.status(401).json({ ok: false, error: 'unauthorized' }); return; }
   res.setHeader('Cache-Control', 'no-store');
   try{
-    const r = await runReminders({ send: false, today: q.date, kind: q.kind });
+    const r = await runReminders({ send: false, today: q.date, anyDay: q.kind === 'digest' });
     if(q.format === 'html'){
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.status(200).end(r.html || `<p style="font-family:sans-serif">No email on ${esc(r.today)} (${esc(r.kind)}) — ${esc(r.note || '')}</p>`);
+      res.status(200).end(r.html || `<p style="font-family:sans-serif">No email on ${esc(r.today)} — ${esc(r.note || '')}</p>`);
       return;
     }
     const { html, seen, ...rest } = r;

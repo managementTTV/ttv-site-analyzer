@@ -516,20 +516,21 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     entries are read in workflow order (`stepRank`: requested → received → done), never Accela's response order,
     for a step's current and latest entry alike. A City due date moving is a move only on an open step. `plan()` carries `seen` over on
     every sync; only the cron replaces it, via `applySeen()` with the other writes, and only when `runReminders()`
-    says `advance` (the email went out, or there was nothing to send) — a failed send keeps the old snapshots so
+    says `advance` (the digest went out, or this instance already sent the same one today; never on a weekend) — a failed send keeps the old snapshots so
     tomorrow reports the same moves. `commitSync()` writes the new snapshots **first** (v4.13): no later sync writes
     one (the next board load carries the old one from Drive), so a snapshot left over is lost, and the next email
     repeats that day's moves. On 10/19 the old 30 s budget left LDIRL-2026-05530's snapshot behind this way. Status
     writes can wait, because the next sync plans them again. The cron's result counts snapshots not confirmed saved
-    (`seenUnsaved`, apart from `deferred`). Flag a change that puts other writes ahead of the snapshot writes. The very first run (no record has a snapshot) only takes them. Flag a change
+    (`seenUnsaved`, apart from `deferred`). Flag a change that puts other writes ahead of the snapshot writes. The very first run (no record has a snapshot) reports no moves, only takes them. Flag a change
     that lets a board-load sync replace `seen`, writes a name into it, or alerts on an approved record's leftover
     inspection. `cityHolds(task)` in `api/accela.js` stays the one "City holds this step" rule (active, not handed
     back to us, not already Ok / Approved / Complete); the parser sets `task.cityHolds` and the board's red "N days
     late" reads it. The cron does `prepareSync()` (the Drive read, then one deadline for all lookups, `lookupAll(refs,
     {deadlineMs})`, ending 25 s from t0), then `runReminders({state, records, send:true, sendBy})` **before**
     `commitSync()` writes (`WRITE_STOP_MS`); see "One clock from t0" above. Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
-    Mon Oct 19: …"); a same-day identical email isn't re-sent from the same
-    instance. One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
+    Mon Oct 19: …"); a same-day identical digest isn't re-sent from the same
+    instance, and "identical" ignores what moved (`sendKey()`: a re-delivered run sees no moves once the first saved
+    its snapshots). One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
     body opens by naming Adam and Wendell (`TAG`; no CC, since management@ already reaches them). `TITLES` mirrors the
     `permits.html` CATALOG titles of the steps a City record sits on (context only). Sent through the Gmail API with
     the send-only token in the Vercel env var `GMAIL_SEND_TOKEN` (JSON `{client_id, client_secret, refresh_token}`
