@@ -1064,9 +1064,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   side 6/5/5/5/5, width 70/60/50/40/40, min lot 12,000 / 9,000 (§9.205(2), a split is a subdivision of 5 acres or less) /
   6,000 / 4,500 / 3,500, corner side half the front but at least 10 (old §12.102), garage 20 or the front (old Table
   12.206(3)). They are NOT the UDO translation (R-5 → N1-C); don't map a CD parcel to its N1 translation.
-  - The rows live in the analyzer only, not in `data/zoning-db.json` (the sheet's table has no R-x rows; adding them
-    is the Sheet: zoning chat's job, with a rebuild + Drive copy). The hand-off sends zone "R-5"; the sheet then says
-    the zone isn't in its table.
+  - Since 2026-10-22 (Code.gs v3.7) `data/zoning-db.json` also has these rows and the v8.57 R-xMF ones, under the same
+    keys (`Mecklenburg|R-5`, `Mecklenburg|R-8MF · townhomes 5+`), Checked 2026-10-22, so the sheet's K6 takes the
+    zone the hand-off sends. `applyZoningDb()` keeps `SETBACKS` for a key it already has (the table adds only its uses,
+    link and notes). Keep the numbers equal in both: a change goes in the `SETBACKS` row AND `verify/charlotte_legacy-cd.json`.
   - `renderZoneNote()` adds `legacyZoneNote()` (amber, verify against the petition) and, for a CD suffix, the
     petition number (`_lastGis.zpet`, from the zoning layer's `ZonePetition`; the key exists only when the county gives
     one, so other parcels report as before). `renderSublot()` adds the same verify note to its Yes / No on any CD parcel
@@ -1261,7 +1262,7 @@ After the first underwrite, a deal moves to its **locked Google Sheet** and ever
 2026-10-01). The Underwrite's **Send to deal sheet** (`sendToDealSheet()`) opens `api/deal-sheet#uw=<base64url JSON>`.
 `api/deal-sheet.js` answers 302 to `NEW_DEAL_URL?from=analyzer`, the team's **New Deal** web app (Apps Script project "UW Template -
 Formula Lock & Color Code", owned by management@, executes as management@ so the copy keeps the template's formula
-locks; access: anyone signed in with a Google account). The browser carries the `#fragment` across the redirect without
+locks; NEW_DEAL_URL is its "Anyone" deployment, see the signed-link rule below). The browser carries the `#fragment` across the redirect without
 sending it in either request (Vercel never sees the deal); the New Deal page reads it with
 `google.script.url.getLocation()` and passes it to `createDealFromAnalyzer()`, which copies the V1.1 template into Underwritten, fills the green input cells, ticks the matching
 Upgrades rows, writes the comps, and adds a locked **Analyzer Snapshot** tab (site facts, the analyzer's
@@ -1269,6 +1270,14 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
 - **`NEW_DEAL_URL` is a Vercel env var only** (set on Production only, not Preview, so a preview's Send to deal sheet shows the "not set up" page), like the permits feed: the repo is public. Flag the
   /exec link appearing in `index.html` or any committed file. `deal-sheet.js` refuses anything that isn't a
   `script.google.com/.../exec` (or `/dev`) URL and answers 501 with a set-up note when it's missing.
+- **Signed link (Code.gs v3.7, 2026-10-22).** The team-only deployment failed in a browser also signed in to another Google
+  account (Google picks the default account: "Sorry, unable to open the file"), so `NEW_DEAL_URL` is a second deployment
+  open to Anyone that takes only a link this route signs: `&t=<unix s>&n=<nonce>&s=<base64url HMAC-SHA256 of
+  "ttv-deal-sheet.<t>.<n>">`, keyed with `DEAL_SHEET_SECRET` (Vercel env var only, same value as the script property
+  `dealSheetSecret`). The script refuses an unsigned, altered, >10-minute-old or used link, and caps signed sends at 25 new
+  sheets a day; the address form stays on the team-only deployment. Flag the secret in any committed file or in
+  `index.html`, signing anywhere but the server, or a change to the signed string without the same change in Code.gs.
+  Without the secret the route sends the link unsigned (only the team-only deployment accepts that).
 - **The payload is read through the exporters' readers** (`getReportData()`, `collectModelInputs()`, `moneyIssues()`),
   not from input fields directly, so the sheet starts from the numbers on screen. (Max land is `getReportData().maxLand`,
   the on-screen text; the snapshot only displays it.) Per-site figures (land, lot factor, survey,

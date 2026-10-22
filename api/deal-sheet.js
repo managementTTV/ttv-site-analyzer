@@ -6,6 +6,13 @@
 // in the browser and passes it to its Apps Script. ?from=analyzer survives Google's sign-in redirect even when the
 // fragment doesn't, so the page can say the deal didn't come through instead of showing a blank form.
 // The web app runs as management@ and makes the locked deal sheet; see AGENTS.md "Deal-sheet hand-off".
+// Signed link: the team-only web app fails ("Sorry, unable to open the file") in a browser also signed in to another
+// Google account, so NEW_DEAL_URL is a second deployment open to anyone, which takes only a link signed here: t = now
+// (unix seconds), n = a random nonce, s = HMAC-SHA256 of "ttv-deal-sheet.<t>.<n>" keyed with DEAL_SHEET_SECRET (a Vercel
+// env var, the same value as the script property dealSheetSecret; never in the repo or the page). The script refuses a
+// link that's unsigned, older than 10 minutes or already used. Without the secret the link goes out unsigned, which only
+// the team-only deployment accepts.
+import crypto from 'node:crypto';
 const EXEC = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/(exec|dev)$/;
 
 export default function handler(req, res){
@@ -20,6 +27,13 @@ export default function handler(req, res){
       + 'web app’s /exec link (Production and Preview), then redeploy. Your deal is still in the analyzer.</p>');
     return;
   }
-  res.setHeader('Location', url + '?from=analyzer');
+  res.setHeader('Location', url + '?from=analyzer' + signedParams(String(process.env.DEAL_SHEET_SECRET || '').trim()));
   res.status(302).end();
+}
+
+function signedParams(secret){
+  if(secret.length<32)return '';   // unset (or too short to trust): unsigned, for the team-only deployment
+  const t=String(Math.floor(Date.now()/1000)), n=crypto.randomBytes(18).toString('base64url');
+  const s=crypto.createHmac('sha256',secret).update('ttv-deal-sheet.'+t+'.'+n,'utf8').digest('base64url');
+  return '&t='+t+'&n='+n+'&s='+s;
 }
