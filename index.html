@@ -771,7 +771,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.53 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.54 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1117,6 +1117,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hero-val" id="max-land-display">&mdash;</div>
       <div class="hero-sub" id="max-land-sub">&mdash;</div>
       <div class="hero-sub hero-offer" id="opening-offer"></div>
+      <div class="hero-sub" id="teardown-line" style="display:none;color:var(--amber);font-weight:600"></div>
       <a href="#" class="hero-edit" onclick="openProfitRule();return false">Change the profit rule</a>
     </div>
   </div>
@@ -1129,7 +1130,8 @@ body[data-screen="2"] .page{padding-bottom:108px}
     <div class="card-title"><span class="dot"></span>Live levers</div>
     <div class="lever-grid">
       <div class="field lever-land"><label for="land-cost">Land cost</label>
-        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="25,000" oninput="landInput(this);calcAll();calcScenarios()" onblur="syncLandToAsking()"></div>
+        <div class="land-input-big"><span class="pfx">$</span><input type="text" id="land-cost" value="" placeholder="enter land" oninput="landInput(this);calcAll();calcScenarios()" onblur="syncLandToAsking()"></div>
+        <div class="ask-gap" id="land-note"></div>
       </div>
       <div class="field"><label for="asking-price">Asking price</label>
         <div class="input-wrap"><span class="pfx">$</span><input type="text" id="asking-price" value="" placeholder="listed price" oninput="syncLandToAsking();calcScenarios()"></div>
@@ -3325,6 +3327,7 @@ function countyTaxEstimate(cama,city){
 }
 // Under the tax field: where the county figure comes from, for the parcel on screen. Display only.
 function renderTaxHint(){
+  try{renderTeardownLine();}catch(_){ }   // v8.54: the county value lands with the same lookup
   const h=$('tax-hint');if(!h)return;
   const g=window._lastGis, t=g&&countyTaxEstimate(g.cama,g.mpt&&g.mpt.city);
   if(!t){h.style.display='none';h.textContent='';return;}
@@ -5520,7 +5523,7 @@ function holdingCost(loan,term){
 }
 
 function calcFinancing(){
-  const landCost=mv('land-cost');
+  const landCost=landCostUsed();
   const lb=calcLoanBase(landCost),{loan,costBase,purchaseClosing,cash}=lb;
   const terms=getTerms(), cashHold=cashThroughHold(lb,terms.b);
 
@@ -5667,7 +5670,7 @@ document.addEventListener('focusout',e=>{if(e.target&&e.target.id)_editingFields
 
 // ═══════════════════ SCENARIOS (Page 7) ═══════════════════
 function calcScenarios(){
-  const landCost=mv('land-cost');
+  const landCost=landCostUsed();
   const basePSF=mv('arv-b');
   const {loan,purchaseClosing}=calcLoanBase(landCost);
   const salePct=pv('sale-cost-pct')/100;
@@ -5808,7 +5811,20 @@ function offerCheck(landCost){
     asking:ask,askStatus:ask>0?ruleStatusAt(ask,rule).status:null,
     stress:{profit:st.profit,term:st.term,warn:st.profit<SOP08_STRESS.floor}};
 }
+// v8.54 (audit #9): a house stands on the lot and the county values it above what Max land pays: say so, so the offer isn't
+// sent on its own. Vacant lots and a Demo box of 0 skip it; so does a parcel the county gave no value for.
+function renderTeardownLine(){
+  const t=$('teardown-line');if(!t)return;
+  const g=window._lastGis, v=g&&g.cama&&+g.cama.total_value, ms=maxLandSolve();
+  let txt='';
+  if(v>0&&g.cama.vacant!==true&&pv('demo-sqft')>0&&ms){
+    const ml=Math.max(0,Math.round(ms.maxLand));
+    if(ml<v)txt=`Existing house: county value ${fmt(v)}, Max land ${fmt(ml)}${ms.maxLand>0?`, ${fmt(v-ml)} under it`:' (the deal doesn’t work)'}. Only a distressed seller takes that.`;
+  }
+  t.textContent=txt;t.style.display=txt?'':'none';
+}
 function renderOfferLines(landCost){
+  renderLandNote();renderTeardownLine();
   const oc=offerCheck(landCost);
   const oo=$('opening-offer');
   if(oo)oo.textContent=oc&&oc.opening>0?`Opening offer ${fmt(oc.opening)} · about ${oc.pct}% under max land`:'';
@@ -5819,7 +5835,7 @@ function renderOfferLines(landCost){
     const ask=mv('asking-price');
     askEl.innerHTML='';askEl.style.color='';askEl.style.fontWeight='';
     const line=(t,col)=>{const d=document.createElement('div');d.textContent=t;d.style.fontWeight='600';if(col)d.style.color=col;askEl.appendChild(d);};
-    if(ask>0&&landCost>0&&Math.round(landCost)!==Math.round(ask)){
+    if(ask>0&&landCost>0&&!landBlank()&&Math.round(landCost)!==Math.round(ask)){
       const diff=landCost-ask;
       line(`Offer ${fmt(landCost)} = ${(landCost/ask*100).toFixed(0)}% of asking (${diff<0?'-':'+'}${fmt(Math.abs(diff))})`,diff>0?'var(--red)':'');
     }
@@ -5831,7 +5847,7 @@ function renderOfferLines(landCost){
   if(sl){
     if(!oc){sl.textContent='';sl.className='stress-line';}
     else{
-      const t=`SOP-08 stress test (ARV −10%, Base months + 3 = ${oc.stress.term}, build +15%) at this land cost: ${oc.stress.profit<0?'−'+fmt(-oc.stress.profit):fmt(oc.stress.profit)} profit per unit.`;
+      const t=`SOP-08 stress test (ARV −10%, Base months + 3 = ${oc.stress.term}, build +15%) at ${landBlank()?'Max land':'this land cost'}: ${oc.stress.profit<0?'−'+fmt(-oc.stress.profit):fmt(oc.stress.profit)} profit per unit.`;
       sl.textContent=oc.stress.warn?`⚠ ${t} That’s under the $10k per unit the SOP asks for. Max land doesn’t change; check the deal before you offer.`:t;
       sl.className='stress-line'+(oc.stress.warn?' warn':'');
     }
@@ -5841,12 +5857,33 @@ function renderOfferLines(landCost){
 // A typed land cost (markManual) is left alone, and so is a reopened deal's (restoreDeal marks it). Emptying the land
 // field hands it back to the asking price (landInput): it refills when you leave the field, not while you're typing.
 function landInput(el){if(String(el.value).trim()==='')delete el.dataset.manual;else markManual(el);}
+// v8.54 (audit #8): the land box ships empty (it used to start at a hidden $25,000, which every profit, loan, cash-at-close,
+// Compare and export figure then ran on). Blank land is priced at Max land, which the screen and the exports say; a typed 0
+// stays $0. Untouched land (nothing typed and no asking price to follow) also blocks Send to deal sheet.
+function landBlank(){const l=$('land-cost');return !l||String(l.value).trim()==='';}
+function landCostUsed(){
+  if(!landBlank())return mv('land-cost');
+  const ms=maxLandSolve();
+  return ms&&ms.maxLand>0?Math.round(ms.maxLand):0;
+}
+function landUntouched(){return !isManual('land-cost')&&!(mv('asking-price')>0);}
+function renderLandNote(){
+  const n=$('land-note');if(!n)return;
+  if(!landBlank()){n.textContent='';return;}
+  const u=landCostUsed();
+  n.textContent=u>0?`No land cost entered: the numbers use Max land (${fmt(u)}). Type the real price.`:'Enter the land cost (or an asking price).';
+  n.style.color='var(--amber)';n.style.fontWeight='600';
+}
 function syncLandToAsking(){
   const l=$('land-cost');if(!l||isManual('land-cost'))return;
   if(readMoney('asking-price').msg)return;   // mid-typing ("185,") or unreadable: leave the land where it is
   const ask=mv('asking-price');
+  // v8.54: it only hands the box back to blank if it was the asking price that filled it (a reopened old save's untyped
+  // $25,000 stays put)
+  if(!(ask>0)&&l.dataset.followed!=='1')return;
   const v=ask>0?Math.round(ask).toLocaleString('en-US'):fieldDefault(l);
   if(l.value===v)return;
+  if(ask>0)l.dataset.followed='1';else delete l.dataset.followed;
   l.value=v;calcAll();calcScenarios();
 }
 
@@ -6001,7 +6038,7 @@ function getReportData(){
   const county=($('county-sel')||{}).value||'—';
   const address=[($('addr-street')||{}).value||'',($('addr-city')||{}).value||'',
                  ($('addr-state')||{}).value||'',($('addr-zip')||{}).value||''].filter(Boolean).join(' ')||'—';
-  const landCost=mv('land-cost')||0;
+  const landCost=landCostUsed()||0;
   const u=Math.max(1,units);
 
   // ARV $/sf with auto ±10% fallback off base
@@ -6024,7 +6061,7 @@ function getReportData(){
   // Cost build-up
   const softFixed=softCostsTotal(u);
   // v8.36: upgrades with the GC fee (upgradesMenu = the menu prices); custom plans once per deal
-  const cost={land:landCost,lotFactor:lotFactor||0,tap:tapTotal||0,
+  const cost={land:landCost,landAssumed:landBlank(),lotFactor:lotFactor||0,tap:tapTotal||0,
     buildTotal:(currentPlanCost||0)*u,upgrades:upgradesPerUnit()*u,upgradesMenu:upgradeMenuPerUnit()*u,upgFeePct:gcFeePct(),
     soft:softFixed,customPlans:pv('custom-plans')||0,
     allInExLand:allInExLand||0,total:(allInExLand||0)+landCost};
@@ -6149,7 +6186,7 @@ function buildReportHTML(canvasDataUrl){
           +'<tr><td>Lot</td><td>'+(d.lotMode==='poly'?'Irregular (polygon)':(d.lotW&&d.lotD?(d.lotW+"' × "+d.lotD+"' ("+(d.lotW*d.lotD).toLocaleString()+' sf)'):'—'))+'</td></tr>'
           +'<tr><td>Buildable Area</td><td>'+(d.buildable_sf?d.buildable_sf.toLocaleString()+' sf':'—')+'</td></tr>'
           +'<tr><td>Asking Price</td><td>'+(d.asking>0?F(d.asking):'not entered')+'</td></tr>'
-          +'<tr><td>Land Cost Used</td><td>'+F(d.cost.land)+'</td></tr>'
+          +'<tr><td>Land Cost Used</td><td>'+F(d.cost.land)+(d.cost.landAssumed?' (Max land: no land cost entered)':'')+'</td></tr>'
           +'<tr><td>Units</td><td>'+d.units+'</td></tr>'
           +'<tr><td>Plan Selected</td><td>'+esc(d.plan)+'</td></tr>'
           +'<tr><td>Finished SF / Unit</td><td>'+(d.sf?d.sf.toLocaleString()+' sf':'—')+'</td></tr>'
@@ -6185,7 +6222,7 @@ function buildReportHTML(canvasDataUrl){
   /* ── SHEET 2: COST BUILD-UP + FINANCING DETAIL ── */
   const c=d.cost;
   const costRows=[
-    ['Land Cost',c.land],['Lot Factor (site work)',c.lotFactor],
+    [c.landAssumed?'Land Cost (Max land: none entered)':'Land Cost',c.land],['Lot Factor (site work)',c.lotFactor],
   ];
   (d.lfItems||[]).forEach(it=>costRows.push(['\u2514 '+it.l,it.v,'sub']));
   costRows.push(['Water Tap',c.tapWater]);costRows.push(['Sewer Tap',c.tapSewer]);
@@ -6516,6 +6553,7 @@ function sendToDealSheet(){
   const block=!addrStreet()?'Enter the street address first: the deal sheet is named by it.'
     :!(($('plan-sel')||{}).value)?'Pick a plan first: the sheet prices the build from it.'
     :!(mv('arv-b')>0)?'Enter the Base ARV $/sf first.'
+    :landUntouched()?'Enter the land cost first (or an asking price for it to follow): the sheet would otherwise get a made-up land price.'
     :issues.length?'Fix the flagged inputs first. '+issues.map(i=>i.msg).join(' '):'';
   if(block){showToast(block,'warn');return;}
   // no 'noopener' feature: with it window.open always returns null, and a blocked tab must not be recorded as sent
@@ -6566,7 +6604,7 @@ function collectModelInputs(d){
     tapWaterU:skipW?0:pv('tap-water'),tapSewerU:skipS?0:pv('tap-sewer'),septicLot:skipS?pv('septic-cost'):0,
     tapTotal:tapTotal||0,survey:pv('survey'),appraisal:pv('appraisal'),insurance:pv('insurance'),
     // same raw values the screen uses; `||6` etc. would turn a deliberate 0 into a default and move Max Land
-    land:mv('land-cost'),asking:d.asking||0,ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
+    land:landCostUsed(),landAssumed:landBlank(),asking:d.asking||0,ltc:pv('ltc-pct')/100,rate:pv('fin-rate')/100,points:pv('fin-points')/100,
     docFee:pv('fin-doc-fee'),annTax:pv('fin-tax'),salePct:pv('sale-cost-pct')/100,
     profitFloor:d.fin.profitRule.floor,profitPct:d.fin.profitRule.pct/100,
     profitFloorDefault:profitRuleDefaults().floor,profitPctDefault:profitRuleDefaults().pct/100,
@@ -6652,7 +6690,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
   inp('survey','Survey (once per project)',M.survey,MONEY); inp('appr','Appraisal / Unit',M.appraisal,MONEY); inp('ins','Insurance (carry) / Unit',M.insurance,MONEY);
   inp('plans','Custom Plans (architect / engineer)',M.customPlans,MONEY);
   sec('FINANCING'); inp('ltc','Loan % of Project Cost',M.ltc,PCT); inp('rate','Interest Rate',M.rate,PCT); inp('pts','Loan Points',M.points,PCT); inp('doc','Doc / Orig Fee',M.docFee,MONEY); inp('tax','Annual Property Tax',M.annTax,MONEY); inp('sale','Sale Costs %',M.salePct,PCT);
-  sec('EXIT'); inp('land','Land Cost',M.land,MONEY); inp('ask','Asking Price (reference; 0 = not entered)',M.asking,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
+  sec('EXIT'); inp('land',M.landAssumed?'Land Cost (Max land: none entered)':'Land Cost',M.land,MONEY); inp('ask','Asking Price (reference; 0 = not entered)',M.asking,MONEY); inp('arvB','ARV Base ($/sf)',M.arvBase,MONEY2); inp('arvW','ARV Worst ($/sf, blank=auto -10%)',M.arvWorst,MONEY2); inp('arvBest','ARV Best ($/sf, blank=auto +10%)',M.arvBest,MONEY2); inp('termW','Term Worst (mo, blank = default)',M.termW); inp('termB','Term Base (mo, blank = default)',M.termB); inp('termBest','Term Best (mo, blank = default)',M.termBest);
   // v8.13: a note beside each term cell, like the rule cells', when it isn't used as typed (Scenarios row 16 applies
   // the default and the 1-month floor) or is over the app's max; a text term like "12 mo" is otherwise silent
   ['termW','termB','termBest'].forEach(k=>{const x=IN[k], c=wsI.getCell(x.replace('B','C'));
@@ -7034,7 +7072,7 @@ function fitStatus(fpW,fpD,garage){
 // Holds land, lot factor, soft costs, tap fee/unit, upgrades/unit and all financing
 // (loan %, rate, points, doc fee, tax, term) constant; loan SIZE and ARV vary by plan.
 function dealForPlan(plan,psf,U){
-  const landCost=mv('land-cost');
+  const landCost=landCostUsed();
   const softFixed=pv('custom-plans');   // v8.50: + survey, appraisal and insurance at this plan's units, below
   const skipW=$('skip-water')&&$('skip-water').checked;
   const skipS=$('skip-sewer')&&$('skip-sewer').checked;
@@ -7234,7 +7272,7 @@ function renderCompare(){
   const body=$('cmp-body');if(!body)return;
   const cc=$('cmp-constants'), T=getTerms(), U=Math.max(1,pv('units'));
   if(cc){
-    cc.innerHTML='Held constant — Land '+fmt(mv('land-cost'))+' · Lot Factor '+fmt(lotFactor)+' · Upgrades '+fmt(upgradesPerUnit())+'/unit · Loan '+pv('ltc-pct')+'% of project · Rate '+pv('fin-rate')+'% · Term '+T.w+'/'+T.b+'/'+T.best
+    cc.innerHTML='Held constant — Land '+fmt(landCostUsed())+(landBlank()?' (Max land: none entered)':'')+' · Lot Factor '+fmt(lotFactor)+' · Upgrades '+fmt(upgradesPerUnit())+'/unit · Loan '+pv('ltc-pct')+'% of project · Rate '+pv('fin-rate')+'% · Term '+T.w+'/'+T.b+'/'+T.best
       +'. Every plan is built at the deal’s '+U+' unit'+(U===1?'':'s')+' (a duet or triplex rounds up to whole buildings). ARV $/sf: the deal’s for the deal’s plan, county comps of the same type and size for the others.';
   }
   const cols=CMP.map((n,i)=>{
@@ -7578,7 +7616,7 @@ function restoreDeal(d){
      // v8.39: a field added after the deal was saved (sop-band) wasn't typed either, so a lookup may fill it
      if(am)AUTO_FILL_FIELDS.forEach(id=>{const e=$(id);if(e&&(am[id]===false||!(id in am)))delete e.dataset.manual;});
      // v8.38: so does the land cost (a file from before v8.38 keeps it typed)
-     if(d.landManual===false){const e=$('land-cost');if(e)delete e.dataset.manual;}
+     if(d.landManual===false){const e=$('land-cost');if(e){delete e.dataset.manual;delete e.dataset.followed;if(mv('asking-price')>0&&Math.round(mv('land-cost'))===Math.round(mv('asking-price')))e.dataset.followed='1';}}
      renderTaxHint();}
     updateLinks();updateGISLink();   // step 1 built these before the street and ZIP were back
     updateDealPulse();
@@ -7676,8 +7714,14 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.53', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.54', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.54',date:'Oct 2026',name:'No hidden land price, and a teardown check',items:[
+   'The Land cost box starts empty. It used to start at a hidden $25,000, and profit, cash on cash, the loan, cash at closing, Compare, the PDF and the deal-sheet payload all ran on that made-up price until someone typed over it. With no land typed, the screen prices the deal at Max land and says so under the box (the PDF and Excel say it too). A typed land price, or an asking price for it to follow, works as before.',
+   'Send to deal sheet now waits until the land cost is typed (or an asking price is in for it to follow).',
+   'A deal saved before this reopens exactly as saved, including a $25,000 land cost that nobody typed; that one still counts as untouched, so type the real price before you send it to the sheet.',
+   'New line under Max land when a house stands on the lot and the county values it above Max land: \u201cExisting house: county value $269,200, Max land $152,677, $116,523 under it. Only a distressed seller takes that.\u201d Vacant lots skip it.',
+ ]},
  {v:'8.53',date:'Oct 2026',name:'No ARV from one or two comps; an honest Best plan badge',items:[
    'Sales comps: with fewer than 3 counted comps the line above the table says “1 comp: not enough for an ARV (needs 3)” and shows no Suggested ARV (the PDF and Excel too). Apply median / avg asks you to confirm first. On 11603 Clear Day Ct one far sale used to print a $550,714 Suggested ARV.',
    'Compare builds: a plan with no comps of its own type (priced on the deal’s $/sf) can’t get the BEST BASE PROFIT badge, and its ARV is capped at the highest sale in the deal’s comps. On Clear Day Ct, Galloway got the badge at an $887k ARV on a street of ~$270k homes. Type a Base $/sf for a plan to rank it.',

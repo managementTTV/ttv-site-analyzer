@@ -1338,6 +1338,12 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
+  - **v8.54 (no hidden land price, 2026-10-21): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (on v8.53). The only change in
+    `getReportData()` is the new `cost.landAssumed` key (false when land is typed); delete it and the hash is `66338f6bfbb2`,
+    v8.53's. Land box starts empty (`landCostUsed()`: blank = Max land, labelled; typed 0 stays $0); Send to deal sheet is
+    blocked while land is untouched (`landUntouched()`: not typed and no asking price). An old save reopens as saved, even
+    its untyped $25,000. Teardown line (`renderTeardownLine()`): shown when the county gave a value, the parcel isn't
+    vacant, Demo sq ft > 0 and Max land is under that value; 11603 Clear Day Ct: county $269,200.
   - **v8.53 (comps + badge, 2026-10-21): Max land $252,111**, hash **`66338f6bfbb2`**: only the new
     `planComp[].psf.priced` field moved it (left out, it is v8.50's `92e562fa9b24`, same run as main v8.51).
   - **v8.50 (side-by-side fixes, 2026-10-20): Max land $252,111**, hash **`92e562fa9b24`** (main v8.49 in the same run:
