@@ -1071,8 +1071,24 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     petition number (`_lastGis.zpet`, from the zoning layer's `ZonePetition`; the key exists only when the county gives
     one, so other parcels report as before). `renderSublot()` adds the same verify note to its Yes / No on any CD parcel
     (`cdZoneFor()`). The verify link opens the archived Chapter 9 (`CLT_LEGACY_CH9_URL`), not the UDO.
-  - The multi-family legacy CD zones (R-8MF(CD), R-12MF(CD)…, old §9.305) and the old county R-9 / R-12 / R-15 still
-    have no row: they stay stubs with blank setbacks. Flag a change that maps them to a single-family row.
+  - **v8.57 adds the multi-family districts** `Mecklenburg|R-8MF`, `R-12MF`, `R-17MF`, `R-22MF`, `R-43MF` (`legacy:true`,
+    `sec:'9.305'`), for the ~330 GIS polygons zoned R-8MF(CD) 105, R-12MF(CD) 135, R-17MF(CD) 68, R-22MF(CD) 22,
+    R-43MF(CD) 1 (2026-10). Old §9.305(1) has two sets, so each zone has two rows, like N2 (Brian 2026-10-22):
+    - the base row (what GIS fills) is the house / duplex–quadraplex set: front 20 (17 on a local street approved after
+      12-20-2010), rear 20, side 5, corner 10, house lot 3,500 sf / 40 ft; `minSFPlex` 6,500 / 9,500 / 11,500 sf and
+      `minWidthPlex` 55 for a 2 / 3 / 4-unit building (the townhome card's parent check uses them);
+    - `R-xMF · townhomes 5+` (`mfa:true`) is the set for a building of 5+ units ("multi-family" = more than four, old
+      §2.201) or a planned multi-family development (2+ buildings on a lot): front 30 (27), 11,500 sf / 55 ft, and the
+      deeper "adjoining single family" yards, rear 50/50/50/40/40 and side 20/20/10/10/10 (`rearNotNextToSF` 40,
+      `sidesNotNextToSF` 10/10/10/5/5 go in the note only). The §9.303(19)(f) 15-ft street option is in the note, not
+      the row.
+    - `dua` (8/12/17/22/43 units per acre, §9.305(1)(a)) is a lot minimum too: `renderSublot()` needs 43,560 / dua sf per
+      house (5,445 in R-8MF), and the townhome card warns when units × 43,560 / dua is more than the lot.
+    - The townhome card shows a pre-2023 note on any legacy row (also R-3..R-8), not the UDO parent-lot note; the
+      150-ft length cap stays as a guide. It tells the analyst to switch rows at 5 units, as for N2.
+  - Still no row (no source in the archived ordinance; they predate it): R-15MF(CD) 37, R-9MF(CD) 35, R-6MF(CD) 8,
+    R-20MF 40 and R-20MF(CD) 1, R-6MFH(CD), and the old county R-9(CD) 12 / R-12(CD) 10 / R-15(CD) 13 and R-9/12/15PUD.
+    They stay stubs with blank setbacks. Flag a change that maps them to a newer row by name (R-15MF is not R-17MF).
 - **The N2-C base row carries `noNewLots`**: `renderSublot()` answers "No" with that text: lots made by a split can't
   hold a standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+`
   row seen with a detached plan is checked against its base row.
@@ -1362,6 +1378,10 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
+  - **v8.57 (legacy multi-family CD zones, 2026-10-22): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (main v8.55
+    and branch in the same run). 2900 L D Parker Dr 28206 (R-8MF(CD), petition 2001-067, 9,629 sf): setbacks 20 / 20 / 5 /
+    10, width 40, envelope 5,286 sf, "Can this split? No — needs 2 × 5,445 sf (8 units per acre)"; main: blank setbacks,
+    "Can't tell". On the townhome row: 30 / 50 / 20 / 15, width 55.
   - **v8.56 (legacy CD zones, 2026-10-22): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (same as v8.54 / v8.55,
     main and branch in the same run). Dellinger is N1-B with no petition, so nothing in its report moved. 11603 Clear Day
     Ct (R-5(CD)): setbacks 20 / 35 / 5 / 10, width 50, envelope 3,740 sf, Seneca fits, "Can this split? No — 8,322 sf,
