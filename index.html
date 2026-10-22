@@ -771,7 +771,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.51 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.52 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -3076,6 +3076,18 @@ function designateParcelEdges(P,row,fi){
     let j=end(d),last=j;const run=[];
     for(let k=1;k<n;k++){const i=nxt(j,d);if(des[i]!=='side')break;if(rw(i)&&E[i].L<20&&ang(i,last)<35){run.push(i);last=j=i;continue;}if(rw(i))run.length=0;break;}
     run.forEach(i=>{des[i]='front';});
+  }
+  // v8.52 (audit #1, 11603 Clear Day Ct): short ROW chords past a sharp bend that bend into the lot (the bulb bites into
+  // it) and end at a non-ROW edge are the bulb too, not a corner side: a side street's corner radius bends out of the lot
+  // and runs on into a longer street edge. Up to 80 ft of chords: a longer concave run is a curving street, left to the
+  // corner walk.
+  const concave=(p,q)=>s*(E[p].tx*E[q].ty-E[p].ty*E[q].tx)<0;   // the corner where edge p meets the next edge q
+  for(const d of [1,-1]){
+    let j=end(d);const run=[];
+    for(let k=1;k<n;k++){const i=nxt(j,d);if(des[i]!=='side'||!rw(i)||E[i].L>=20)break;run.push(i);j=i;}
+    const stop=nxt(j,d);
+    if(run.length>=2&&run.reduce((t,i)=>t+E[i].L,0)<=80&&des[stop]==='side'&&!rw(stop)&&run.slice(1).every((i,k)=>d>0?concave(run[k],i):concave(i,run[k])))
+      run.forEach(i=>{des[i]='front';});
   }
   let maxD=0;for(let j=0;j<n;j++)maxD=Math.max(maxD,dep(E[j].a),dep(E[j].b));
   let rear=-1,best=0;
@@ -7647,8 +7659,11 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.51', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.52', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.52',date:'Oct 2026',name:'Cul-de-sac lots get the right front',items:[
+   'On a lot at the end of a cul-de-sac, the front is now the curve along the street. The county draws that curve as a few short pieces, and each was too short to count, so the front landed on a side lot line and the curve was marked a corner side. The setbacks, the buildable area, the plan fit and the plat sketch now start from the real front (11603 Clear Day Ct: the 25-ft curve). Other lots don\u2019t change.',
+ ]},
  {v:'8.51',date:'Oct 2026',name:'Sketch a subdivision sends the real front setback',items:[
    'The sketch sent to the plat sketcher now carries the lot\u2019s real front setback (27 ft on a 2723 Dellinger N1-B lot). Since v8.39 it sent 0 to 3 ft by mistake, so the front of the sketched lots came out too deep. No deal numbers change.',
  ]},
