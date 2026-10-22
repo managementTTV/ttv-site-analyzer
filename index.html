@@ -4324,7 +4324,8 @@ function platSketchPayload(){
   const base=zone.split(' · ')[0],row=SETBACKS[zv];
   const rules={preset:county==='Mecklenburg'&&/^N1-[A-E]$/.test(base)?'charlotte-'+base.toLowerCase():'custom'};
   // a townhome row's lot standards are the parent parcel's (Table 5-1 fn 1), so the unit lots carry no minimums
-  if(row)Object.assign(rules,row.mfa?{minLotArea:0,minLotWidth:0,minFrontage:0}:{minLotArea:row.minSF,minLotWidth:row.minWidth,minFrontage:row.minWidth});
+  // (v8.57: a legacy MF zone's density cap is a lot minimum too, as in renderSublot())
+  if(row)Object.assign(rules,row.mfa?{minLotArea:0,minLotWidth:0,minFrontage:0}:{minLotArea:Math.max(row.minSF,row.dua?Math.ceil(43560/row.dua):0),minLotWidth:row.minWidth,minFrontage:row.minWidth});
   Object.assign(rules,{frontSetback:pv('sb-front'),sideSetback:pv('sb-sides'),rearSetback:pv('sb-rear')});
   // no PID on a lot the analyzer flags as another parcel's (_gisMismatch): the sketch would carry this PID on its outline
   const g=window._lastGis,pid=!_gisMismatch&&g&&g.addrSig===gisAddressSignature()&&g.pid||'';
@@ -5169,7 +5170,8 @@ function renderSubplot(p){
   const {frontage,area}=getParentLot();
   const zoneKey=($('zone-sel')||{}).value||'';
   const sb=SETBACKS[zoneKey]||null;let minW=pv('sb-minw')||(sb?sb.minWidth:0)||0,minSF=sb?(sb.minSF||0):0;
-  if(sb&&sb.minSFPlex&&u>=2&&u<=4){minW=Math.max(minW,sb.minWidthPlex);minSF=sb.minSFPlex[u-2];}   // v8.57: a legacy MF zone's duplex-quadraplex lot
+  // v8.57: a legacy MF zone's duplex-quadraplex lot; 5+ units is a multi-family lot, the same 11,500 sf / 55 ft as a quadraplex
+  if(sb&&sb.minSFPlex&&u>=2){minW=Math.max(minW,sb.minWidthPlex);minSF=sb.minSFPlex[Math.min(u,4)-2];}
   const denSF=sb&&sb.dua?Math.ceil(u*43560/sb.dua):0;minSF=Math.max(minSF,denSF);   // v8.57: and its density cap (units per acre)
   const parentOK=(rules.sublotParentOnly&&frontage&&area)?((minW>0?frontage>=minW:true)&&(minSF>0?area>=minSF:true)):null;
   const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'var(--red)'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
