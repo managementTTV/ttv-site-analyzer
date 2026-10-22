@@ -2061,6 +2061,10 @@ function compStats(){
   const cap=R.length?Math.max(...R.map(r=>r.sold+r.adj)):0;
   return {n:v.length,avg,median,min,max,cap};
 }
+// v8.53 (audit #6): an ARV needs ARV_MIN_COMPS counted comps, as /api/comps (MIN_POOL). Below that the table, the PDF and
+// Excel show no Suggested ARV, and Apply median / avg asks first. On Clear Day Ct one far context sale printed $550,714.
+const ARV_MIN_COMPS=3;
+const fewCompsTxt=n=>`${n} comp${n===1?'':'s'}: not enough for an ARV (needs ${ARV_MIN_COMPS})`;
 // v8.34 (C-F3): the comps table's suggested ARV for sf square feet, capped the way /api/comps caps the county box:
 // $/sf (the median unless psf is given) × sf, but never above the highest sale in the table (SOP: never let $/sf math
 // run past a real sale). Before, the box said $767,500 on Katonah while the table, Apply median, the PDF and Excel said
@@ -2108,7 +2112,7 @@ function renderCompsSummary(R){
     else{
       const subjSf=(typeof sfPerUnit!=='undefined'?sfPerUnit:0)||0;
       const A=compArv(st,subjSf);
-      const arv=subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf${A.capped?', capped at the highest sale':''}): <b>$${Math.round(A.arv).toLocaleString()}</b>${A.capped?` = $${Math.floor(A.psf)}/sf`:''}`:'';
+      const arv=st.n<ARV_MIN_COMPS?` &nbsp;\u00b7&nbsp; <b style="color:var(--amber)">${fewCompsTxt(st.n)}</b>`:subjSf>0?` &nbsp;\u00b7&nbsp; Suggested ARV (median \u00d7 ${subjSf.toLocaleString()} sf${A.capped?', capped at the highest sale':''}): <b>$${Math.round(A.arv).toLocaleString()}</b>${A.capped?` = $${Math.floor(A.psf)}/sf`:''}`:'';
       sum.innerHTML=`Comps: <b>${st.n}</b>${left?` (${left} left out)`:''} &nbsp;\u00b7&nbsp; Median adj $/SF: <b>$${st.median.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Avg: <b>$${st.avg.toFixed(0)}</b> &nbsp;\u00b7&nbsp; Range: <b>$${st.min.toFixed(0)}\u2013$${st.max.toFixed(0)}</b>${arv}`;
     }
   }
@@ -2307,6 +2311,7 @@ function applyCountyArv(){
 function applyCompsArv(stat){
   const st=compStats(), v=stat==='median'?st.median:st.avg;
   if(!(v>0)){alert(compIssues().length?'No comp can be counted yet: see the note under the comps table.':'Add at least one comp with Sq Ft and Sold price first.');return;}
+  if(st.n<ARV_MIN_COMPS&&!confirm(`${fewCompsTxt(st.n)}. Apply the ${stat==='median'?'median':'average'} ($${Math.round(v)}/sf) to Base ARV anyway?`))return;
   const A=compArv(st,sfPerUnit>0?sfPerUnit:0,v);
   const f=$('arv-b'); if(f){f.value=A.capped?Math.floor(A.psf):Math.round(A.psf); if(typeof calcScenarios==='function')calcScenarios();}
   if(A.capped&&typeof showToast==='function')showToast(`Capped at the highest sale in the table (${fmt(st.cap)}): $${Math.floor(A.psf)}/sf, not $${Math.round(v)}/sf.`);
@@ -3078,6 +3083,18 @@ function designateParcelEdges(P,row,fi){
     let j=end(d),last=j;const run=[];
     for(let k=1;k<n;k++){const i=nxt(j,d);if(des[i]!=='side')break;if(rw(i)&&E[i].L<20&&ang(i,last)<35){run.push(i);last=j=i;continue;}if(rw(i))run.length=0;break;}
     run.forEach(i=>{des[i]='front';});
+  }
+  // v8.52 (audit #1, 11603 Clear Day Ct): short ROW chords past a sharp bend that bend into the lot (the bulb bites into
+  // it) and end at a non-ROW edge are the bulb too, not a corner side: a side street's corner radius bends out of the lot
+  // and runs on into a longer street edge. Up to 80 ft of chords: a longer concave run is a curving street, left to the
+  // corner walk.
+  const concave=(p,q)=>s*(E[p].tx*E[q].ty-E[p].ty*E[q].tx)<0;   // the corner where edge p meets the next edge q
+  for(const d of [1,-1]){
+    let j=end(d);const run=[];
+    for(let k=1;k<n;k++){const i=nxt(j,d);if(des[i]!=='side'||!rw(i)||E[i].L>=20)break;run.push(i);j=i;}
+    const stop=nxt(j,d);
+    if(run.length>=2&&run.reduce((t,i)=>t+E[i].L,0)<=80&&des[stop]==='side'&&!rw(stop)&&run.slice(1).every((i,k)=>d>0?concave(run[k],i):concave(i,run[k])))
+      run.forEach(i=>{des[i]='front';});
   }
   let maxD=0;for(let j=0;j<n;j++)maxD=Math.max(maxD,dep(E[j].a),dep(E[j].b));
   let rear=-1,best=0;
@@ -6007,7 +6024,7 @@ function buildPlanComparison(psf){
     .sort((a,b)=>{const r=rankFit(a.f.status)-rankFit(b.f.status);if(r)return r;return (b.p.sf||0)-(a.p.sf||0);});
   for(let pi=0;slots.length<3&&pi<pool.length;pi++)slots.push({rank:null,source:'fit',plan:pool[pi].p});
   return slots.map(s=>{const pp=planPsf(s.plan),deal=dealForPlan(s.plan,pp);
-    return{...s,deal,fit:deal.fit,psf:{w:pp.w,b:pp.b,best:pp.best,src:pp.src,note:pp.typed.b?'Typed in the comparison':pp.note}};});
+    return{...s,deal,fit:deal.fit,psf:{w:pp.w,b:pp.b,best:pp.best,src:pp.src,priced:pp.priced,note:pp.typed.b?'Typed in the comparison':pp.note}};});
 }
 // v8.40: county comps for the plans sheet 4 will show; the PDF waits for them (up to 8 s) so it prices them like the modal
 function pullReportComps(){
@@ -6294,7 +6311,7 @@ function buildReportHTML(canvasDataUrl){
     // v8.40: the deal's plan is "This deal" (and its shortlist rank, if it has one)
     const slotLbl=s=>s.source==='selected'?('This deal'+(s.rank?' · #'+s.rank+' Ranked':'')):s.rank?('#'+s.rank+' Ranked'):'Next-best fit';
     // v8.40 (N4.2/N4.3/N4.5): the badge needs a fit and the profit rule, and isn't given when no plan qualifies
-    const bestI=bestPlanIndex(cols.map(s=>s.deal)), noBest=bestI<0?noBadgeWhy(cols.map(s=>s.deal)):'';
+    const bestI=bestPlanIndex(cols), noBest=bestI<0?noBadgeWhy(cols):'';
     const th=cols.map((s,i)=>'<th'+(i===bestI?' class="pc-win"':'')+'>'+esc(s.plan.n)
       +'<div class="pc-slot">'+slotLbl(s)+(i===bestI?' · BEST BASE (meets rule)':'')+'</div></th>').join('');
     const row=(lbl,fn,cls)=>'<tr'+(cls?' class="'+cls+'"':'')+'><td>'+lbl+'</td>'
@@ -6336,7 +6353,7 @@ function buildReportHTML(canvasDataUrl){
   const compSummary=st.n
     ? '<div class="comp-sum"><b>'+st.n+'</b> comps &nbsp;·&nbsp; Median adj $/SF <b>$'+st.median.toFixed(0)+'</b>'
       +' &nbsp;·&nbsp; Avg <b>$'+st.avg.toFixed(0)+'</b> &nbsp;·&nbsp; Range <b>$'+st.min.toFixed(0)+'–$'+st.max.toFixed(0)+'</b>'
-      +(subjSf>0?(()=>{const A=compArv(st,subjSf);return ' &nbsp;·&nbsp; Suggested ARV (median × '+subjSf.toLocaleString()+' sf'+(A.capped?', capped at the highest sale':'')+') <b>$'+Math.round(A.arv).toLocaleString()+'</b>';})():'')+'</div>'
+      +(st.n<ARV_MIN_COMPS?' &nbsp;·&nbsp; <b>'+fewCompsTxt(st.n)+'</b>':subjSf>0?(()=>{const A=compArv(st,subjSf);return ' &nbsp;·&nbsp; Suggested ARV (median × '+subjSf.toLocaleString()+' sf'+(A.capped?', capped at the highest sale':'')+') <b>$'+Math.round(A.arv).toLocaleString()+'</b>';})():'')+'</div>'
     : '<div class="comp-sum muted">Add comps with Sq Ft and Sold price to compute blended adjusted $/SF.</div>';
   // v8.12: the comps table's notes (cells that couldn't be read, likely typos), only when there are any
   const compNotes=compIssues().map(x=>x.msg).join(' ');
@@ -6877,7 +6894,7 @@ function buildModelWorkbook(ExcelJS, M, logoBuf){
     rr++; const stat=(lbl,formula,hi)=>{const r=rr++;wco.mergeCells('C'+r+':D'+r);const lc=wco.getCell('C'+r);lc.value=lbl;lc.font={bold:true,name:'Arial'};lc.alignment={horizontal:'right'};const c=wco.getCell('E'+r);c.value={formula};c.numFmt=MONEY2;if(hi)c.font={bold:true,color:{argb:GREEN},name:'Arial'};};
     stat('Median $/SF',`MEDIAN(${rng})`); stat('Average $/SF',`AVERAGE(${rng})`); stat('Min $/SF',`MIN(${rng})`); stat('Max $/SF',`MAX(${rng})`);
     // v8.34 (C-F3): capped like the app, at the highest Sold $ + Adjustments (every row here is a counted comp)
-    const sr=rr++;wco.mergeCells('C'+sr+':D'+sr);const slc=wco.getCell('C'+sr);slc.value='Suggested ARV (median, capped)';slc.font={bold:true,name:'Arial'};slc.alignment={horizontal:'right'};const c=wco.getCell('E'+sr);c.value={formula:`MIN(MEDIAN(${rng})*${I('sf')},SUMPRODUCT(MAX(C${first}:C${last}+D${first}:D${last})))`};c.numFmt=MONEY;c.font={bold:true,color:{argb:GREEN},name:'Arial'};
+    const sr=rr++;wco.mergeCells('C'+sr+':D'+sr);const slc=wco.getCell('C'+sr);slc.value='Suggested ARV (median, capped)';slc.font={bold:true,name:'Arial'};slc.alignment={horizontal:'right'};const c=wco.getCell('E'+sr);c.value={formula:`IF(COUNT(${rng})<${ARV_MIN_COMPS},"Not enough comps (needs ${ARV_MIN_COMPS})",MIN(MEDIAN(${rng})*${I('sf')},SUMPRODUCT(MAX(C${first}:C${last}+D${first}:D${last}))))`};c.numFmt=MONEY;c.font={bold:true,color:{argb:GREEN},name:'Arial'};
     }
     if(compNotes.length){
       const t='Check comps: '+compNotes.join(' '), nr=++rr; rr++;
@@ -7150,38 +7167,50 @@ function planPsf(plan){
       P={w:e.psf*kw,b:e.psf,best:e.psf*kb};src='comps';
       note=`County comps: ${e.n} ${noun} sale${e.n===1?'':'s'}, $${Math.round(e.psf)}/sf at ${plan.sf.toLocaleString()} sf${e.capped?' (capped at the highest sale)':''}${e.conf?', '+e.conf+' confidence':''}`;
     }else{
-      P=D;src='fallback';
+      // v8.53 (audit #7): the deal's $/sf × this plan's sf, capped like compArv() at the deal comps' highest sale. On Clear
+      // Day Ct, Galloway's 3,203 sf at the deal's $/sf sold for $887k on a street of ~$270k homes; the top comp was $680k.
+      const cap=compStats().cap, capPsf=cap>0&&plan.sf>0?cap/plan.sf:0, capped=capPsf>0&&Math.max(D.w,D.b,D.best)>capPsf;
+      P=capped?{w:Math.min(D.w,capPsf),b:Math.min(D.b,capPsf),best:Math.min(D.best,capPsf)}:D;src='fallback';
       const why=q.why||(!e?'comps not pulled yet':e.state==='loading'?'comps still loading':e.state==='none'?`no ${noun} comps near this lot`
         :e.state==='wide'?`too few ${noun} comps near this lot (the county search had to take any product)`:'county records didn’t answer');
-      note=`${why[0].toUpperCase()+why.slice(1)}: the deal’s $/sf is used. Check it.`;
+      note=`${why[0].toUpperCase()+why.slice(1)}: the deal’s $/sf is used${capped?`, capped at the deal comps’ highest sale (${fmt(cap)})`:''}. Check it.`;
     }
   }
-  const out={w:P.w,b:P.b,best:P.best,src,note,typed:{}};
+  // priced: this plan's own number (the deal's ARV, its own comps, or a typed Base), so it can win the badge
+  const out={w:P.w,b:P.b,best:P.best,src,note,typed:{},priced:src!=='fallback'};
   ['w','b','best'].forEach(k=>{const r=readCmpArv(plan.n,k);if(r.use){out[k]=r.v;out.typed[k]=true;}});
-  // a typed Base with no typed Worst/Best moves them with it, at the spread this plan had
-  if(out.typed.b&&P.b>0){if(!out.typed.w)out.w=out.b*P.w/P.b;if(!out.typed.best)out.best=out.b*P.best/P.b;}
+  // a typed Base with no typed Worst/Best moves them with it, at the spread this plan had (the deal's, before the v8.53 cap)
+  const S=src==='fallback'?D:P;
+  if(out.typed.b&&S.b>0){if(!out.typed.w)out.w=out.b*S.w/S.b;if(!out.typed.best)out.best=out.b*S.best/S.b;}
+  if(out.typed.b)out.priced=true;
   return out;
 }
 // v8.40 (audit N4.2/N4.3/N4.5): the badge goes to the plan with the most Base profit among those that fit the lot at the
 // deal's Units ('fits' or 'tight') and meet the profit rule. None qualifies (every plan loses money, misses the rule or
 // doesn't fit): no badge. It used to be the highest Base total, whatever the fit or the rule, even below $0.
-function bestPlanIndex(deals){
+// v8.53 (audit #7): and only a plan priced on its own number (psf.priced): one on the deal's $/sf fallback can't win.
+// cols: [{deal, psf}] (planPsf()'s answer, or the PDF's copy of it)
+const fitsLot=d=>d.fit.status==='fits'||d.fit.status==='tight';
+const meetsRule=d=>d.scen.b.arv>0&&d.scen.b.total>0&&d.rule&&d.rule.pass&&fitsLot(d);
+function bestPlanIndex(cols){
   let bi=-1,bv=-Infinity;
-  deals.forEach((d,i)=>{const s=d.scen.b;
-    if(s.arv>0&&s.total>0&&d.rule&&d.rule.pass&&(d.fit.status==='fits'||d.fit.status==='tight')&&s.total>bv){bv=s.total;bi=i;}});
+  cols.forEach((c,i)=>{const d=c.deal;
+    if(c.psf.priced&&meetsRule(d)&&d.scen.b.total>bv){bv=d.scen.b.total;bi=i;}});
   return bi;
 }
-function noBadgeWhy(deals){
+function noBadgeWhy(cols){
+  const deals=cols.map(c=>c.deal);
   const priced=deals.filter(d=>d.scen.b.arv>0);
   if(!priced.length)return'';
   if(priced.every(d=>d.scen.b.total<=0))return'No best pick: every plan loses money in the Base case.';
-  const fit=priced.filter(d=>d.fit.status==='fits'||d.fit.status==='tight');
+  const fit=priced.filter(fitsLot);
   if(!fit.length){
     // no verdict isn't "too large": blank setbacks (fitStatus 'nosb') or no lot drawn / no footprint ('na')
     if(priced.some(d=>d.fit.status==='nosb'))return'No best pick: enter the setbacks first, so the plans can be fit-checked.';
     if(priced.every(d=>d.fit.status==='na'))return'No best pick: draw the lot first, so the plans can be fit-checked.';
     return'No best pick: none of these plans fits the lot at the deal’s Units.';
   }
+  if(deals.some(meetsRule))return'No best pick: the plans that fit and meet the profit rule have no comps of their own, so they’re priced on the deal’s $/sf. Type a Base $/sf for them to rank them.';
   return'No best pick: no plan that fits the lot meets the profit rule ('+profitRuleLabels(getProfitRule()).text+').';
 }
 const fitWord=f=>f.status==='fits'?(f.rotated?'Fits (rotated)':'✓ Fits'):f.status==='tight'?'Tight — verify':f.status==='no'?'✗ Too large':f.status==='nosb'?'Setbacks missing':'No footprint data';
@@ -7252,7 +7281,7 @@ function renderCompare(){
     return{i,plan,psf,deal:dealForPlan(plan,psf)};
   }).filter(Boolean);
   if(!cols.length){body.innerHTML='<div class="note">Pick at least one plan to compare.</div>';return;}
-  const best=bestPlanIndex(cols.map(c=>c.deal)), winI=best>=0?cols[best].i:-1;
+  const best=bestPlanIndex(cols), winI=best>=0?cols[best].i:-1;
   const wc=i=>i===winI?' class="cmp-win-col"':'';
   const money=(v)=>'<span'+(v<0?' class="cmp-neg"':'')+'>'+fmt(v)+'</span>';
   const own=c=>c.plan.n===dealPlanName()?'<span class="cmp-own">The deal’s plan</span>':'';
@@ -7293,7 +7322,7 @@ function renderCompare(){
       return r.pass?'✓ Meets':'<span class="cmp-neg">✗ Misses by '+fmt(-r.gap)+'/unit</span>';});
   });
   h+='</tbody></table>';
-  if(winI<0){const why=noBadgeWhy(cols.map(c=>c.deal));if(why)h+='<div class="note" role="status" style="margin-top:8px">'+escAttr(why)+'</div>';}
+  if(winI<0){const why=noBadgeWhy(cols);if(why)h+='<div class="note" role="status" style="margin-top:8px">'+escAttr(why)+'</div>';}
   if(arvNotes.length)h+='<div class="warn" role="status">'+escAttr(arvNotes.join(' '))+'</div>';
   body.innerHTML=h;
 }
@@ -7692,6 +7721,13 @@ const RELEASE_NOTES=[
    'Send to deal sheet now waits until the land cost is typed (or an asking price is in for it to follow).',
    'A deal saved before this reopens exactly as saved, including a $25,000 land cost that nobody typed; that one still counts as untouched, so type the real price before you send it to the sheet.',
    'New line under Max land when a house stands on the lot and the county values it above Max land: \u201cExisting house: county value $269,200, Max land $152,677, $116,523 under it. Only a distressed seller takes that.\u201d Vacant lots skip it.',
+ ]},
+ {v:'8.53',date:'Oct 2026',name:'No ARV from one or two comps; an honest Best plan badge',items:[
+   'Sales comps: with fewer than 3 counted comps the line above the table says “1 comp: not enough for an ARV (needs 3)” and shows no Suggested ARV (the PDF and Excel too). Apply median / avg asks you to confirm first. On 11603 Clear Day Ct one far sale used to print a $550,714 Suggested ARV.',
+   'Compare builds: a plan with no comps of its own type (priced on the deal’s $/sf) can’t get the BEST BASE PROFIT badge, and its ARV is capped at the highest sale in the deal’s comps. On Clear Day Ct, Galloway got the badge at an $887k ARV on a street of ~$270k homes. Type a Base $/sf for a plan to rank it.',
+ ]},
+ {v:'8.52',date:'Oct 2026',name:'Cul-de-sac lots get the right front',items:[
+   'On a lot at the end of a cul-de-sac, the front is now the curve along the street. The county draws that curve as a few short pieces, and each was too short to count, so the front landed on a side lot line and the curve was marked a corner side. The setbacks, the buildable area, the plan fit and the plat sketch now start from the real front (11603 Clear Day Ct: the 25-ft curve). Other lots don\u2019t change.',
  ]},
  {v:'8.51',date:'Oct 2026',name:'Sketch a subdivision sends the real front setback',items:[
    'The sketch sent to the plat sketcher now carries the lot\u2019s real front setback (27 ft on a 2723 Dellinger N1-B lot). Since v8.39 it sent 0 to 3 ft by mistake, so the front of the sketched lots came out too deep. No deal numbers change.',

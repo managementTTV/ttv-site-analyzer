@@ -604,6 +604,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **One capped ARV everywhere (v8.34, C-F3).** `compStats().cap` is the highest counted Sold $ + Adjustments;
   `compArv()` caps median × sf at it. The table summary, Apply median / avg, the PDF and the Excel Comps sheet
   (`MIN(MEDIAN(...)*sf, SUMPRODUCT(MAX(C+D)))`) all use it, so on a fresh pull they say what the county box says.
+- **No ARV from fewer than 3 comps (v8.53, audit #6).** Below `ARV_MIN_COMPS` (3, = `MIN_POOL` in api/comps.js) counted
+  comps, the table summary, the PDF and the Excel Comps sheet say "N comps: not enough for an ARV (needs 3)" and show no
+  Suggested ARV, and Apply median / avg asks `confirm()` first. Flag any path that prints a suggested ARV from 1–2 comps.
   Flag a reader of `st.median * sf` that skips `compArv()`.
 - **A pull replaces the last pull (v8.34, C-F4).** Pulled rows carry `src:'county'`, `srcPid` (the parcel pulled
   for) and `cpid` (the comp's parcel). A new pull drops `src:'county'` rows (and untagged pre-v8.34 rows whose notes
@@ -1099,7 +1102,8 @@ most deals take.
   - `designateParcelEdges()` then sets:
     - front = the proxy's front edge plus the rest of the street line: ROW edges within 45° of it, and collinear
       edges. Past 45°, a run of short ROW chords is front as a cul-de-sac bulb, unless it reaches a longer street edge,
-      when it's a side street's corner radius (corner);
+      when it's a side street's corner radius (corner). Past a sharp bend too (v8.52, audit #1): two or more ROW chords
+      under 20 ft that bend into the lot (concave corners) and end at a non-ROW edge are the bulb, front, not corner;
     - rear = among the back-facing edges that reach within 30 ft of the deepest point (**ROW edges included**: alley
       and through lots), the most length facing the street, weighted by depth, plus the rest of that line (pieces that
       face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
@@ -1111,6 +1115,13 @@ most deals take.
       of the street is front (street line past a longer jog). A reached ROW piece never ends up a side;
     - each walk passes over one jog of up to 15 ft, which stays a side (the corner walk starts past a jog the front walk
       stepped over).
+  - The proxy's front (`api/gis.js` `classifyEdges`): a street edge is a ROW edge of 8 ft or more, or (v8.52, audit #1,
+    11603 Clear Day Ct) a piece of a run of consecutive ROW edges that are all under 8 ft and add up to 8 ft or more:
+    the county draws a cul-de-sac bulb as short chords (four of 6.2 ft there), and before v8.52 each failed the 8-ft
+    test, so `applyCenterlineFront` "rescued" a side lot line as the front. Such a piece carries `bulb_ft` (the run's
+    length) in `edges.detail`; `row_count` counts the 8-ft-plus edges plus one per bulb. A run that has an 8-ft-plus
+    piece is unchanged: its short pieces (a corner radius) are not street edges. Flag a change that tests each short
+    piece on its own again. Regression parcel: Clear Day Ct (PID 02758756) front = the 24.9-ft curve (edges 4-7).
   - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and
     `#edge-auto-note` says so.
   - Flag a change that goes back to one front and one rear edge, skips ROW edges as rear candidates, or makes every edge
@@ -1195,7 +1206,9 @@ most deals take.
     product (`rule.relaxed` has 'product'), said in the column. A $/sf typed in the
     comparison is kept by plan name for the deal and the PDF uses it. The badge (`bestPlanIndex()`) goes to the most
     Base total profit among plans that fit and meet `getProfitRule()` per unit (`dealForPlan().rule`); none qualifies =
-    no badge, and `noBadgeWhy()` says why. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
+    no badge, and `noBadgeWhy()` says why. Since v8.53 (audit #7) only a plan priced on its own number can win
+    (`planPsf().priced`: the deal's plan, its own comps, or a typed Base); a fallback plan's $/sf is capped at
+    `compStats().cap` ÷ its sf (Worst/Best too), and a typed Base on it takes the deal's spread. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
     its window first so the wait can't trip the pop-up blocker). Flag a badge that ignores the fit or the rule, or a
     compared plan priced at a catalogue unit count.
   - The plan-fit message is drawn by `onPlanChange()` and by `calcBuildable()`, so a lot, setback or corner edit
@@ -1331,6 +1344,8 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
     blocked while land is untouched (`landUntouched()`: not typed and no asking price). An old save reopens as saved, even
     its untyped $25,000. Teardown line (`renderTeardownLine()`): shown when the county gave a value, the parcel isn't
     vacant, Demo sq ft > 0 and Max land is under that value; 11603 Clear Day Ct: county $269,200.
+  - **v8.53 (comps + badge, 2026-10-21): Max land $252,111**, hash **`66338f6bfbb2`**: only the new
+    `planComp[].psf.priced` field moved it (left out, it is v8.50's `92e562fa9b24`, same run as main v8.51).
   - **v8.50 (side-by-side fixes, 2026-10-20): Max land $252,111**, hash **`92e562fa9b24`** (main v8.49 in the same run:
     $256,586, `1bf09d65e83e`; the county's owner field now reads TIDE & TIMBER VENTURES LLC, so main's hash moved from
     v8.48's too). Appraisal and insurance per unit: soft costs $5,125 → $9,600 for 3 units ($3,000 survey + 3 × $2,200),
