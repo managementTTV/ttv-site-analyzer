@@ -1084,6 +1084,10 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
       the row.
     - `dua` (8/12/17/22/43 units per acre, §9.305(1)(a)) is a lot minimum too: `renderSublot()` needs 43,560 / dua sf per
       house (5,445 in R-8MF), and the townhome card warns when units × 43,560 / dua is more than the lot.
+    - v8.57 also gives R-3..R-8 their `dua` (3/4/5/6/8; old §9.205(1)(a): "density is the first standard"), so a split
+      there needs 43,560 / dua sf per house (Clear Day Ct R-5: 2 × 8,712 sf), and R-8 its by-right plex lots
+      (`minSFPlex` 6,500 / 9,500 / 11,500, `minWidthPlex` 40). The townhome card's density warning is MF-only: an existing
+      R-8 lot's plex (or an R-3..R-6 corner duplex) is exempt (§9.205(1)(a)(iii)).
     - The townhome card shows a pre-2023 note on any legacy row (also R-3..R-8), not the UDO parent-lot note; the
       150-ft length cap stays as a guide. It tells the analyst to switch rows at 5 units, as for N2.
   - Still no row (no source in the archived ordinance; they predate it): R-15MF(CD) 37, R-9MF(CD) 35, R-6MF(CD) 8,
