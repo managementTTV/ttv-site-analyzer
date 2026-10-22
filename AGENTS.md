@@ -976,7 +976,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **UR-2/UR-3/UR-4 are defunct pre-UDO zones that are still PRESENT in the code today**
   (in both `SETBACKS` and `COUNTY_ZONES`) — a known, not-yet-done cleanup target
   (handoff §4.4, §12), *not* something already removed. Don't add them anywhere new, and
-  flag any change that reintroduces them **or that assumes they've already been deleted**.
+  flag any change that reintroduces them **or that assumes they've already been deleted**. (The v8.56 legacy R-3 to
+  R-8 rows are deliberate and separate: they serve conditional parcels, see "Legacy R-3 to R-8 rows" below.)
 - Townhome/attached plays *should* be gated by the **permitted-use matrix**, not geometry
   alone (attached is not by-right in N1-A..E). **That matrix is NOT wired into the app's
   fit or money yet.** Since v8.48 it is *shown*: `renderZoneUses()` lists the zone row's P / C / S / No for house,
@@ -1054,6 +1055,24 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - `renderZoneNote()` compares against the row's base zone, so the CD note survives picking the townhome row.
   - This was the suffix part of G2; v8.16 did the county part (a GIS result always sets Mecklenburg).
   Flag a zone lookup that drops the suffix note, or one that treats a CD petition's conditions as known.
+- **Legacy R-3 to R-8 rows are for conditional parcels (v8.56, research/17 #2).** The 2023 UDO translated the
+  conventional districts but not the conditional ones, so County GIS still zones parcels `R-3(CD)`…`R-8(CD)` (about 130
+  zoning polygons in 2026-10; 11603 Clear Day Ct is `R-5(CD)`, petition 1997-008(C)). Those parcels keep the prior
+  ordinance's base district plus the petition (the City keeps the archived ordinance "as a reference for some conditional
+  zoning districts"; old §6.201(1), §6.206). So `SETBACKS` has `Mecklenburg|R-3`…`R-8` with `legacy:true`, from old
+  §9.205(1): front = the pre-12-20-2010 / thoroughfare value (30 / 20; 27 / 17 on a newer local street), rear 45/40/35/30/20,
+  side 6/5/5/5/5, width 70/60/50/40/40, min lot 12,000 / 9,000 (§9.205(2), a split is a subdivision of 5 acres or less) /
+  6,000 / 4,500 / 3,500, corner side half the front but at least 10 (old §12.102), garage 20 or the front (old Table
+  12.206(3)). They are NOT the UDO translation (R-5 → N1-C); don't map a CD parcel to its N1 translation.
+  - The rows live in the analyzer only, not in `data/zoning-db.json` (the sheet's table has no R-x rows; adding them
+    is the Sheet: zoning chat's job, with a rebuild + Drive copy). The hand-off sends zone "R-5"; the sheet then says
+    the zone isn't in its table.
+  - `renderZoneNote()` adds `legacyZoneNote()` (amber, verify against the petition) and, for a CD suffix, the
+    petition number (`_lastGis.zpet`, from the zoning layer's `ZonePetition`; the key exists only when the county gives
+    one, so other parcels report as before). `renderSublot()` adds the same verify note to its Yes / No on any CD parcel
+    (`cdZoneFor()`). The verify link opens the archived Chapter 9 (`CLT_LEGACY_CH9_URL`), not the UDO.
+  - The multi-family legacy CD zones (R-8MF(CD), R-12MF(CD)…, old §9.305) and the old county R-9 / R-12 / R-15 still
+    have no row: they stay stubs with blank setbacks. Flag a change that maps them to a single-family row.
 - **The N2-C base row carries `noNewLots`**: `renderSublot()` answers "No" with that text: lots made by a split can't
   hold a standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+`
   row seen with a detached plan is checked against its base row.
@@ -1343,6 +1362,10 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
+  - **v8.56 (legacy CD zones, 2026-10-22): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (same as v8.54 / v8.55,
+    main and branch in the same run). Dellinger is N1-B with no petition, so nothing in its report moved. 11603 Clear Day
+    Ct (R-5(CD)): setbacks 20 / 35 / 5 / 10, width 50, envelope 3,740 sf, Seneca fits, "Can this split? No — 8,322 sf,
+    needs 2 × 6,000 sf" + the petition note (main: blank setbacks, "Fit not checked", "Can't tell").
   - **v8.54 (no hidden land price, 2026-10-21): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (on v8.53). The only change in
     `getReportData()` is the new `cost.landAssumed` key (false when land is typed); delete it and the hash is `66338f6bfbb2`,
     v8.53's. Land box starts empty (`landCostUsed()`: blank = Max land, labelled; typed 0 stays $0); Send to deal sheet is

@@ -771,7 +771,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.55 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.56 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1558,6 +1558,21 @@ const SETBACKS={
   'Mecklenburg|UR-2':{front:15,rear:20,sides:5,corner:10,minWidth:25,minSF:2500,garage:'20 ft'},
   'Mecklenburg|UR-3':{front:15,rear:20,sides:5,corner:10,minWidth:25,minSF:2500,garage:'20 ft'},
   'Mecklenburg|UR-4':{front:10,rear:15,sides:5,corner:10,minWidth:20,minSF:2000,garage:'20 ft'},
+  // v8.56 (research/17 #2): legacy single-family districts, for the conditional parcels County GIS still zones R-3(CD) to
+  // R-8(CD). The 2023 UDO translated the conventional districts (R-5 -> N1-C...) but not the conditional ones, which keep
+  // the prior ordinance's base district plus the petition's site plan and conditions (archived ordinance page: kept "as a
+  // reference for some conditional zoning districts"; old §6.201(1) parallel conditional district, §6.206 effect).
+  // Numbers: old §9.205(1) (archived Chapter 9). Front = (e1)/(e2) for streets approved before 12-20-2010 (30/20; on a
+  // local or collector street approved since, 27/17), so it's the deeper of the two. Rear and side = residential (f)/(g).
+  // Min lot = detached dwellings (c); R-3/R-4 use §9.205(2)'s 12,000 / 9,000 sf, since a split is a subdivision of 5
+  // acres or less. Corner side = half the front, at least 10 ft (old §12.102(6)-(8)). Garage = 20 ft or the district
+  // setback, whichever is greater (old Table 12.206(3)). legacy:true -> the note, the verify link and the split line's
+  // petition note.
+  'Mecklenburg|R-3':{front:30,rear:45,sides:6,corner:15,minWidth:70,minSF:12000,garage:'30 ft',legacy:true},
+  'Mecklenburg|R-4':{front:30,rear:40,sides:5,corner:15,minWidth:60,minSF:9000,garage:'30 ft',legacy:true},
+  'Mecklenburg|R-5':{front:20,rear:35,sides:5,corner:10,minWidth:50,minSF:6000,garage:'20 ft',legacy:true},
+  'Mecklenburg|R-6':{front:20,rear:30,sides:5,corner:10,minWidth:40,minSF:4500,garage:'20 ft',legacy:true},
+  'Mecklenburg|R-8':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',legacy:true},
   'Gaston|R-1':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:30000,garage:'5 ft'},
   'Gaston|R-2':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:0,garage:'6 ft'},
   'Gaston|R-3':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:0,garage:'7 ft'},
@@ -1616,7 +1631,7 @@ const ATTACHED_DEFAULT={maxBuildingLen:null,sublotParentOnly:null,
 // v8.48: keyed by zoneRulesJur(), so a town with its own code (Huntersville) doesn't get Charlotte's UDO rules
 function attachedRules(county){return ATTACHED_RULES[county]||ATTACHED_DEFAULT;}
 const COUNTY_ZONES={
-  'Mecklenburg':['N1-A','N1-B','N1-C','N1-D','N1-E','N1-F','N2-A','N2-B','N2-C','N2-A \u00b7 townhomes 5+','N2-B \u00b7 townhomes 5+','N2-C \u00b7 townhomes 5+','UR-2','UR-3','UR-4'],
+  'Mecklenburg':['N1-A','N1-B','N1-C','N1-D','N1-E','N1-F','N2-A','N2-B','N2-C','N2-A \u00b7 townhomes 5+','N2-B \u00b7 townhomes 5+','N2-C \u00b7 townhomes 5+','UR-2','UR-3','UR-4','R-3','R-4','R-5','R-6','R-8'],
   'Gaston':['R-1','R-2','R-3','RS-8','RS-12','RS-20','RMF-SF'],
   'Catawba':['R-7','R-10','R-12','R-15','R-20'],
   'Lincoln':['R-SF','R-CR','R-20','R-14','R-MR','R-MF'],
@@ -1719,6 +1734,8 @@ const COUNTY_ZONING_URL={
   'Kannapolis':'https://www.cabarruscounty.us/Government/Departments/Planning-and-Development',
   'Monroe':'https://www.unioncountync.gov/government/departments-f-p/planning-development',
 };
+// v8.56: the prior (pre-2023) Charlotte zoning ordinance, Chapter 9 (§9.205 single family), for the legacy R-x rows
+const CLT_LEGACY_CH9_URL='https://www.charlottenc.gov/files/sharedassets/city/v/1/growth-and-development/planning-and-zoning/documents/zoningord_chapter9_rev.pdf';
 const CITY_COUNTY={
   'charlotte':'Mecklenburg','cornelius':'Mecklenburg','davidson':'Mecklenburg','huntersville':'Mecklenburg',
   'matthews':'Mecklenburg','mint hill':'Mecklenburg','pineville':'Mecklenburg',
@@ -2745,7 +2762,7 @@ function buildTownOptions(){
 function buildZoneList(){
   const j=zoneJur(),sel=$('zone-sel'),zones=zoneListFor(j);
   sel.innerHTML=`<option value="">${j&&!zones?'— No zone list: enter setbacks —':'— Select Zone —'}</option>`;
-  if(zones)zones.forEach(z=>{const o=document.createElement('option');o.value=`${j}|${z}`;o.textContent=z;sel.appendChild(o);});
+  if(zones)zones.forEach(z=>{const o=document.createElement('option');o.value=`${j}|${z}`;o.textContent=z+(SETBACKS[o.value]&&SETBACKS[o.value].legacy?' (pre-2023, CD parcels)':'');sel.appendChild(o);});
   return zones;
 }
 // v8.48: a town picked (or followed from the city) is a new zone list, so the zone goes, and its setbacks with it when
@@ -2813,12 +2830,27 @@ const ZONE_SUFFIX_NOTE={
   HDO:'HDO is a historic district overlay: new construction and exterior changes need Historic District Commission approval.',
   ANDO:'ANDO is the airport noise disclosure overlay (a disclosure requirement).',
   CCO:'CCO is a cottage court overlay, with its own lot and building rules.'};
+// v8.56: the rezoning petition County GIS gives a conditional zone ("1997-008(C)" on 11603 Clear Day Ct's R-5(CD)),
+// or ''. Kept in _lastGis only when there is one, so a parcel without one reports exactly as before.
+function zonePetitionOf(d){const a=d&&d.zoning&&d.zoning.attrs;return a&&a.ZonePetition?String(a.ZonePetition).trim():'';}
+// v8.56: the GIS conditional zone behind the zone row on screen ({raw, petition}), or null: the parcel's zone has a CD
+// suffix and its base is this row's base zone
+function cdZoneFor(zone){
+  const g=window._lastGis,raw=(g&&g.zoning)||'',sx=zoneSuffix(raw),zb=String(zone||'').split(' \u00b7 ')[0];
+  return sx&&/\bCD\b/i.test(sx.suffix)&&zb&&sx.base.toUpperCase()===zb.toUpperCase()?{raw,petition:(g&&g.zpet)||''}:null;
+}
+// v8.56: what a legacy R-x row is, in the setback panel
+function legacyZoneNote(zone,sb){
+  const fr=sb.front===30?27:17;
+  return `${zone} here is Charlotte\u2019s pre-2023 ${zone} (old zoning ordinance \u00a79.205). The 2023 UDO didn\u2019t translate conditional districts, so a parcel zoned ${zone}(CD) keeps these standards plus its rezoning petition\u2019s site plan and conditions, which can change any of them. Verify against the petition. The ${sb.front} ft front is for a street approved before 12/20/2010 or a thoroughfare (${fr} ft on a local street approved since); setbacks on the recorded plat win.`;
+}
 // The setback panel's notes: the zone row's own note, plus what a GIS suffix means when the zone was mapped from one.
 let _zoneRestoreNote=null;   // v8.15: set by restoreDeal() when a saved stub zone reopened on its base row
 function renderZoneNote(){
   const el=$('zone-note');if(!el)return;
   const key=($('zone-sel')||{}).value||'', sb=SETBACKS[key], zone=key.split('|')[1]||'', county=key.split('|')[0]||'', lines=[];
   if(sb&&sb.note)lines.push(sb.note);
+  if(sb&&sb.legacy)lines.push(legacyZoneNote(zone,sb));
   const rn=_zoneRestoreNote&&_zoneRestoreNote.key===key?_zoneRestoreNote:null;
   if(rn)lines.push(rn.text);
   // the row's base zone: "N2-A · townhomes 5+" is still N2-A, so a CD / HDO note survives picking the townhome row
@@ -2839,7 +2871,8 @@ function renderZoneNote(){
   if(sx&&zone&&(sx.base.toUpperCase()===zb.toUpperCase()||(!sb&&zone.toUpperCase()===String(raw).trim().toUpperCase()))){
     const codes=[...new Set((sx.suffix.toUpperCase().match(/[A-Z]+/g)||[]))];
     lines.push(`County GIS has this parcel as \u201c${raw}\u201d`+(sb?`; the ${sx.base} standards are shown. `:'. ')
-      +codes.map(c=>ZONE_SUFFIX_NOTE[c]||`${c} is an overlay or suffix on the base zone; check its rules.`).join(' '));
+      +codes.map(c=>ZONE_SUFFIX_NOTE[c]||`${c} is an overlay or suffix on the base zone; check its rules.`).join(' ')
+      +(codes.includes('CD')&&window._lastGis&&window._lastGis.zpet?` This parcel\u2019s petition: ${window._lastGis.zpet}.`:''));
   }
   el.innerHTML='';lines.forEach(t=>{const q=document.createElement('p');q.className='warn';q.style.margin='4px 0 0';q.textContent=t;
     if(rn&&t===rn.text){const b=document.createElement('button');b.className='btn btn-ghost';b.style.cssText='margin-left:8px;padding:1px 8px;font-size:11px';
@@ -2908,7 +2941,10 @@ function onZoneChange(){
     $('zone-info').style.display='';
     const county=$('county-sel').value,zi=ZONING_DB.info[key],kj=key.split('|')[0];
     // v8.48: a zoning-table row links to its own section of the code; the county's link is for the older rows
-    if(zi&&zi.link){
+    if(sb.legacy){   // v8.56: the old ordinance, not the UDO
+      $('zone-udo-link').innerHTML=`<a class="topo-btn" href="${CLT_LEGACY_CH9_URL}" target="_blank" rel="noopener">📋 Verify in the pre-2023 Charlotte code (\u00a79.205) →</a>`;
+      $('zone-udo-link').style.display='';
+    }else if(zi&&zi.link){
       $('zone-udo-link').innerHTML=`<a class="topo-btn" href="${escAttr(zi.link)}" target="_blank" rel="noopener">📋 Verify in the ${kj==='Mecklenburg'?'Charlotte UDO':escAttr(kj)+' code'} →</a>`;
       $('zone-udo-link').style.display='';
     }else if(COUNTY_ZONING_URL[county]&&kj===county){
@@ -3225,12 +3261,14 @@ function applyGisData(d,sig){
     matched:d.parcel&&d.parcel.matched_address||null,
     area_sf:d.parcel&&d.parcel.area_sf||null,area_ac:d.parcel&&d.parcel.area_ac||null,
     zoning:d.zoning&&d.zoning.value||null,zclass:d.zoning&&d.zoning.class||null,
+    ...(zonePetitionOf(d)?{zpet:zonePetitionOf(d)}:{}),
     watershed:d.watershed&&d.watershed.pco_district||null,bua:d.watershed&&d.watershed.bua_rule||null,
     swim:d.swim_buffer?{i:!!d.swim_buffer.intersects,t:(d.swim_buffer.types||[]).slice(0,3)}:null,
     historic:d.historic?{i:!!d.historic.in_district,n:d.historic.name||null}:null,
     cama:d.cama||null,site:d.site||null};
     _gisParcel=d.parcel&&d.parcel.geometry?{gis:window._lastGis,pr:editorParcelRing(d.parcel.geometry.rings,d.parcel.edges)}:null;}catch(_){ }
   renderZoneNote();   // v8.15: now that the cache holds this parcel's zoning string (and any suffix)
+  renderSublot();     // v8.56: and the split line's CD petition note
   renderGisResult(d);
   renderTaxHint();   // v8.36: the tax note reads _lastGis, which only now holds this parcel (calcLF() ran before it)
   if(d.parcel&&d.parcel.pid)checkStreet();else hideStreetCheck();   // v8.18: not awaited, the lookup is done
@@ -5159,6 +5197,10 @@ function renderSublot(){
     else{verdict='?';why=aOK?`the area works (${aTxt}), but ${minW>0?'the width can’t be measured: '+noW:'there’s no minimum lot width here: check the zoning code'}.`
       :`${wOK?wTxt+', but ':''}there’s no minimum lot area here: check the zoning code${minW>0&&width==null?'; to check the width, '+noW:''}.`;}
   }
+  // v8.56: a conditional (CD) parcel, or a legacy row: the petition can change the minimums the answer rests on
+  {const cd=cdZoneFor(zone);
+   if(cd)why+=` <span style="color:var(--amber)">${escHtml(cd.raw)} is a conditional zone: verify against ${cd.petition?'petition '+escHtml(cd.petition):'its rezoning petition'}, which can change these minimums.</span>`;
+   else if(row&&row.legacy)why+=` <span style="color:var(--amber)">These are the pre-2023 ${escHtml(zBase)} minimums: verify against the parcel\u2019s rezoning petition.</span>`;}
   const word={yes:'Yes',no:'No','?':'Can’t tell'}[verdict],col={yes:'var(--teal-light)',no:'var(--red)','?':'var(--amber)'}[verdict];
   const canSketch=sketchReady();
   box.innerHTML=`<div style="font-size:13px;line-height:1.55"><span style="color:var(--text-mid)">Can this split?</span> `
@@ -7709,8 +7751,12 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.55', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.56', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.56',date:'Oct 2026',name:'Older conditional zones fill their setbacks',items:[
+   'Parcels County GIS zones R-3(CD), R-4(CD), R-5(CD), R-6(CD) or R-8(CD) now fill their setbacks and lot minimums. The 2023 UDO didn\u2019t translate conditional districts, so these parcels still follow the pre-2023 R-3 to R-8 rules plus their rezoning petition. Before, the setbacks stayed blank, the fit check waited, and \u201cCan this lot split?\u201d said Can\u2019t tell.',
+   'The numbers come from the old zoning ordinance (\u00a79.205): for example R-5 is 20 ft front, 35 ft rear, 5 ft sides, 10 ft corner side, 50 ft wide and 6,000 sf. The front is the one for streets approved before Dec 2010 (3 ft less on a newer local street), and a setback on the recorded plat wins.',
+   'An amber note says to verify against the petition, and shows its number from County GIS (11603 Clear Day Ct: petition 1997-008(C)). \u201cCan this lot split?\u201d carries the same note on any CD parcel. The verify link opens the old ordinance, not the UDO.']},
  {v:'8.55',date:'Oct 2026',name:'Can this lot split? One honest line',items:[
    'The Sub-Lotting card is now \u201cCan this lot split?\u201d: one line that says Yes, No or Can\u2019t tell, from the zone\u2019s minimum lot size and the lot\u2019s width at the front setback line. Split in 2 / Split in 3 and the strip picture are gone: they cut every lot into equal slices, showed green checks where the zone had no minimums and drew 10-ft slivers on a cul-de-sac lot. A zone with no minimums here (like R-5(CD)) says Can\u2019t tell.',
    'To lay out real lots, the line links to Sketch a subdivision, the one place for that. With a townhome plan the card still shows the townhome row: Units +/\u2212, building length against the county max and the parent-lot check. No deal numbers change.',
