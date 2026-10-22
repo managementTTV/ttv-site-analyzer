@@ -869,7 +869,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
         <label id="n2-abuts-row" class="note" style="display:none;align-items:center;gap:8px;margin-top:6px;cursor:pointer"><input type="checkbox" id="n2-abuts-n1" checked onchange="onAbutsN1Change()"> Site shares a lot line with a Neighborhood 1 Place Type on the 2040 Policy Map (rear 20 ft; untick for 10 ft)</label>
         <div id="zone-note" style="display:none;margin-top:6px"></div>
         <div id="zone-uses" style="display:none;margin-top:8px"></div>
-        <p class="note">Auto-filled from your setbacks sheet. Always verify against the UDO.</p>
+        <p class="note">Auto-filled from your setbacks sheet. Always verify against the zoning code.</p>
       </div>
       <div id="zone-udo-link" style="margin-top:10px;display:none"></div>
     </div>
@@ -1566,13 +1566,14 @@ const SETBACKS={
   // local or collector street approved since, 27/17), so it's the deeper of the two. Rear and side = residential (f)/(g).
   // Min lot = detached dwellings (c); R-3/R-4 use §9.205(2)'s 12,000 / 9,000 sf, since a split is a subdivision of 5
   // acres or less. Corner side = half the front, at least 10 ft (old §12.102(6)-(8)). Garage = 20 ft or the district
-  // setback, whichever is greater (old Table 12.206(3)). legacy:true -> the note, the verify link and the split line's
+  // setback, whichever is greater (old Table 12.206(3)). frontNewStreet = the (e2) front on a newer street, for the note only.
+  // legacy:true -> the note, the verify link and the split line's
   // petition note.
-  'Mecklenburg|R-3':{front:30,rear:45,sides:6,corner:15,minWidth:70,minSF:12000,garage:'30 ft',legacy:true},
-  'Mecklenburg|R-4':{front:30,rear:40,sides:5,corner:15,minWidth:60,minSF:9000,garage:'30 ft',legacy:true},
-  'Mecklenburg|R-5':{front:20,rear:35,sides:5,corner:10,minWidth:50,minSF:6000,garage:'20 ft',legacy:true},
-  'Mecklenburg|R-6':{front:20,rear:30,sides:5,corner:10,minWidth:40,minSF:4500,garage:'20 ft',legacy:true},
-  'Mecklenburg|R-8':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',legacy:true},
+  'Mecklenburg|R-3':{front:30,rear:45,sides:6,corner:15,minWidth:70,minSF:12000,garage:'30 ft',frontNewStreet:27,legacy:true},
+  'Mecklenburg|R-4':{front:30,rear:40,sides:5,corner:15,minWidth:60,minSF:9000,garage:'30 ft',frontNewStreet:27,legacy:true},
+  'Mecklenburg|R-5':{front:20,rear:35,sides:5,corner:10,minWidth:50,minSF:6000,garage:'20 ft',frontNewStreet:17,legacy:true},
+  'Mecklenburg|R-6':{front:20,rear:30,sides:5,corner:10,minWidth:40,minSF:4500,garage:'20 ft',frontNewStreet:17,legacy:true},
+  'Mecklenburg|R-8':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',frontNewStreet:17,legacy:true},
   'Gaston|R-1':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:30000,garage:'5 ft'},
   'Gaston|R-2':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:0,garage:'6 ft'},
   'Gaston|R-3':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:0,garage:'7 ft'},
@@ -2834,14 +2835,22 @@ const ZONE_SUFFIX_NOTE={
 // or ''. Kept in _lastGis only when there is one, so a parcel without one reports exactly as before.
 function zonePetitionOf(d){const a=d&&d.zoning&&d.zoning.attrs;return a&&a.ZonePetition?String(a.ZonePetition).trim():'';}
 // v8.56: the GIS conditional zone behind the zone row on screen ({raw, petition}), or null: the parcel's zone has a CD
-// suffix and its base is this row's base zone
+// suffix and its base is this row's base zone (only while the County GIS answer is still this address's)
 function cdZoneFor(zone){
-  const g=window._lastGis,raw=(g&&g.zoning)||'',sx=zoneSuffix(raw),zb=String(zone||'').split(' \u00b7 ')[0];
+  const g0=window._lastGis,g=g0&&!_gisMismatch&&g0.addrSig===gisAddressSignature()?g0:null,raw=(g&&g.zoning)||'',sx=zoneSuffix(raw),zb=String(zone||'').split(' \u00b7 ')[0];
   return sx&&/\bCD\b/i.test(sx.suffix)&&zb&&sx.base.toUpperCase()===zb.toUpperCase()?{raw,petition:(g&&g.zpet)||''}:null;
+}
+// v8.56: the split card's amber verify note: a conditional (CD) parcel, or a legacy row, whose petition can change the
+// minimums the answer rests on. '' otherwise.
+function cdSplitNote(zone,row){
+  const cd=cdZoneFor(zone),zb=String(zone||'').split(' \u00b7 ')[0];
+  if(cd)return `${escHtml(cd.raw)} is a conditional zone: verify against ${cd.petition?'petition '+escHtml(cd.petition):'its rezoning petition'}, which can change these minimums.`;
+  if(row&&row.legacy)return `These are the pre-2023 ${escHtml(zb)} minimums: verify against the parcel\u2019s rezoning petition.`;
+  return '';
 }
 // v8.56: what a legacy R-x row is, in the setback panel
 function legacyZoneNote(zone,sb){
-  const fr=sb.front===30?27:17;
+  const fr=sb.frontNewStreet;
   return `${zone} here is Charlotte\u2019s pre-2023 ${zone} (old zoning ordinance \u00a79.205). The 2023 UDO didn\u2019t translate conditional districts, so a parcel zoned ${zone}(CD) keeps these standards plus its rezoning petition\u2019s site plan and conditions, which can change any of them. Verify against the petition. The ${sb.front} ft front is for a street approved before 12/20/2010 or a thoroughfare (${fr} ft on a local street approved since); setbacks on the recorded plat win.`;
 }
 // The setback panel's notes: the zone row's own note, plus what a GIS suffix means when the zone was mapped from one.
@@ -5168,7 +5177,11 @@ function renderSubplot(p){
 }
 function renderSublot(){
   const box=$('sublot-result'); if(!box)return;
-  if(isAttachedPlan()){renderSubplot(currentPlanObj());return;}
+  if(isAttachedPlan()){renderSubplot(currentPlanObj());
+    // v8.56: the townhome row view too: a petition can bar attached units outright
+    const zk=($('zone-sel')||{}).value||'',cn=cdSplitNote(zk.split('|')[1]||'',SETBACKS[zk]);
+    if(cn)box.insertAdjacentHTML('beforeend',`<div class="note" style="margin-top:6px;color:var(--amber)">${cn}</div>`);
+    return;}
   const zoneKey=($('zone-sel')||{}).value||'',zone=zoneKey.split('|')[1]||'';
   const sb=SETBACKS[zoneKey]||null;
   // a townhome row's minimums are the parent's; detached lots from a split follow the base row
@@ -5197,10 +5210,7 @@ function renderSublot(){
     else{verdict='?';why=aOK?`the area works (${aTxt}), but ${minW>0?'the width can’t be measured: '+noW:'there’s no minimum lot width here: check the zoning code'}.`
       :`${wOK?wTxt+', but ':''}there’s no minimum lot area here: check the zoning code${minW>0&&width==null?'; to check the width, '+noW:''}.`;}
   }
-  // v8.56: a conditional (CD) parcel, or a legacy row: the petition can change the minimums the answer rests on
-  {const cd=cdZoneFor(zone);
-   if(cd)why+=` <span style="color:var(--amber)">${escHtml(cd.raw)} is a conditional zone: verify against ${cd.petition?'petition '+escHtml(cd.petition):'its rezoning petition'}, which can change these minimums.</span>`;
-   else if(row&&row.legacy)why+=` <span style="color:var(--amber)">These are the pre-2023 ${escHtml(zBase)} minimums: verify against the parcel\u2019s rezoning petition.</span>`;}
+  {const cn=cdSplitNote(zone,row);if(cn)why+=` <span style="color:var(--amber)">${cn}</span>`;}   // v8.56
   const word={yes:'Yes',no:'No','?':'Can’t tell'}[verdict],col={yes:'var(--teal-light)',no:'var(--red)','?':'var(--amber)'}[verdict];
   const canSketch=sketchReady();
   box.innerHTML=`<div style="font-size:13px;line-height:1.55"><span style="color:var(--text-mid)">Can this split?</span> `
@@ -6562,7 +6572,13 @@ function sheetHandoffPayload(){
       swim:g.swim?!!g.swim.i:null,historic:g.historic&&g.historic.i?(g.historic.n||'Yes'):'',bua:g.bua||''},
     arvCheck:arvCheckPayload(),
     comps:M.comps.map(c=>({addr:c.addr,url:c.url,sqft:c.sqft,sold:c.sold,adj:c.adj,date:c.date,dist:c.dist,mom:c.mom,notes:c.notes})),
-    notes:moneyIssues().map(i=>i.msg).concat(M.compNotes||[]).concat(arvCheckNotes()).concat(innerUnitNotes(d))};   // v8.41: the ARV verdict + reason; v8.42: inner units
+    notes:moneyIssues().map(i=>i.msg).concat(cdHandoffNotes()).concat(M.compNotes||[]).concat(arvCheckNotes()).concat(innerUnitNotes(d))};   // v8.41: the ARV verdict + reason; v8.42: inner units
+}
+// v8.56: the sheet gets the row's zone ("R-5"), so the conditional zone and its petition go as a note
+function cdHandoffNotes(){
+  const zk=($('zone-sel')||{}).value||'',zone=zk.split('|')[1]||'',cd=cdZoneFor(zone),sb=SETBACKS[zk];
+  if(!cd&&!(sb&&sb.legacy))return [];
+  return [`Zone ${cd?cd.raw:zone}${cd&&cd.petition?', petition '+cd.petition:''}: ${sb&&sb.legacy?'pre-2023 '+zone.split(' \u00b7 ')[0]+' standards':'setbacks from the base zone'}; the petition's conditions govern, verify.`];
 }
 // v8.49: the ARV check for the sheet's ARV reasons log (sessions/16-notes-for-chat-11.md). null without a county pull
 // for the deal's parcel. The notes[] lines (arvCheckNotes) still go too, for the Snapshot tab.
