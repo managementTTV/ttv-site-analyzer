@@ -1,16 +1,14 @@
-// api/permit-reminders.js — Accela digest + movement alerts  v3.1 (Brian 2026-10-19: by project)
-// Brian: "I want a Monday-Wednesday-Friday email regardless every week, then alert emails on movement on specific
-// items" — specific items = every City record on the board, any move (his pick, 2026-10-19).
-//   - Mon / Wed / Fri (Charlotte's date): the DIGEST, sent every time. One section per project on the board, by
-//     address (Brian 2026-10-19: "always broken down by project … a section for each open project address"), each
-//     with its City records: where it stands, each open step (department, reviewer, City due date, late / due
-//     soon) and what moved since the last check. A project with no City record yet still gets its section.
-//   - Other days: a MOVEMENT ALERT, only when something moved on a record since the last check: a record status
-//     change, a step's newest entry (Ok, Revisions, Fees Assessed…), a step opening with a reviewer, a City due
-//     date moving, a City-held step going overdue, a record newly on the board. Nothing moved → no email. Grouped
-//     by project too, showing only the projects and records that moved.
+// api/permit-reminders.js — the Accela permit digest  v4 (team, 2026-10-22: one email every weekday, no alerts)
+// Every weekday (Mon–Fri, Charlotte's date): the DIGEST. One section per project on the board, by address (Brian
+// 2026-10-19: "always broken down by project … a section for each open project address"), each with its City
+// records: where it stands, each open step (department, reviewer, City due date, late / due soon) and what moved
+// since the last digest (a record status change, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
+// opening with a reviewer, a City due date moving, a City-held step going overdue, a record newly on the board).
+// A project with no City record yet still gets its section. Saturday and Sunday send nothing and keep the snapshots,
+// so Monday's digest carries the weekend's moves.
 // To management@, which reaches Brian, Adam and Wendell; the email names Adam and Wendell at the top (Brian 2026-10-19).
-// v1 (10/13) used the board's own due dates; v2 (10/14) emailed only steps due or late. Both are replaced.
+// v1 (10/13) used the board's own due dates; v2 (10/14) emailed only steps due or late; v3 (10/19) sent the digest
+// Mon / Wed / Fri and a movement alert on the other days (the team dropped the alerts, 2026-10-22).
 //
 // "Since the last check": each record's Accela block in Drive carries `seen`, a snapshot of its record status
 // and each step's state / newest entry / City due date, with no names. The cron sends first, then writes the new
@@ -21,14 +19,15 @@
 // look-up and before the writes. Gmail API as management@ with a send-only token in the Vercel env var
 // GMAIL_SEND_TOKEN ({client_id, client_secret, refresh_token} JSON, minted by
 // ~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py). Only production sends.
-// GET ?k=<gate hash>[&format=html][&date=YYYY-MM-DD][&kind=digest|alert] — preview only (never sends, never saves).
+// GET ?k=<gate hash>[&format=html][&date=YYYY-MM-DD][&kind=digest] — preview only (never sends, never saves);
+// kind=digest shows a weekend date's digest too.
 import { GATE_HASH, loadPermitState } from './permits.js';
 import { lookupAll, recordUrl, deriveStatus, targets, cityHolds } from './accela.js';
 
 const FROM = 'management@tidetimberventures.com';
 const TO = process.env.REMINDER_TO || FROM;
 const BOARD = 'https://ttv-site-analyzer.vercel.app/permits.html';
-const DIGEST_DAYS = [1, 3, 5];                 // Mon, Wed, Fri
+const DIGEST_DAYS = [1, 2, 3, 4, 5];           // Mon–Fri
 const SOON_DAYS = 3;                           // the digest flags a City step due within this many days
 // Brand (ttv-branding; same values as ttv-meetings/meeting_mailer/email_html.py)
 const NAVY = '#102538', SLATE = '#5E8095', PINE = '#648370', CREAM = '#F5F0E7', WHITE = '#FFFFFF', AMBER = '#C98A1B', RED = '#B23A3A';
@@ -141,7 +140,7 @@ export function board(state, records, today){
                title: Object.hasOwn(TITLES, t.milestoneId) ? TITLES[t.milestoneId] : null, open,
                moves: mv, seenBefore: !!prev, known: !!raw, seen: snap,
                // save a new snapshot only when something changed or moved — a quiet record keeps its old one, whose
-               // date is what "went overdue since the last check" is measured from (no daily re-alert, no daily write)
+               // date is what "went overdue since the last check" is measured from (no daily repeat, no daily write)
                saveSeen: !prev || mv.length > 0 || !sameSnap(prev, snap) });
   }
   // a record newly on the board (others already have snapshots) is itself a move; the very first run is quiet
@@ -206,7 +205,6 @@ function shell(eyebrow, heading, intro, sectionsHtml, foot, today, preheader){
 </td></tr>
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:0 28px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${sectionsHtml}</table></td></tr>
 <tr><td bgcolor="${WHITE}" style="background:${WHITE};padding:14px 28px 24px;font-family:${FONT};">
-${foot.warn ? `<div style="font-size:12px;line-height:1.5;color:${AMBER};padding-bottom:12px;">${esc(foot.warn)}</div>` : ''}
 <a href="${BOARD}" style="display:inline-block;background:${NAVY};color:${CREAM};font-weight:700;font-size:13px;text-decoration:none;border-radius:6px;padding:9px 16px;">Open the permit board</a>
 <div style="font-size:11px;line-height:1.5;color:${SLATE};padding-top:12px;">${esc(foot.note)}</div>
 </td></tr></table></td></tr></table></body></html>`;
@@ -215,33 +213,33 @@ const lineHtml = (text, color, badge) => `<div style="font-family:${FONT};font-s
 const openHtml = o => lineHtml(`${o.step} — ${o.assignedTo || 'no reviewer assigned'}${o.cityDue ? ` · City due ${nice(o.cityDue)}` : ''}${!o.holds && o.status ? ` · with us: ${o.status}` : ''}`,
   o.holds ? SLATE : AMBER, o.holds && BADGE(o.days) ? { color: BADGE(o.days), text: dueText(o.days) } : null);
 
-// One City record inside its project: what it is, where it stands, its open steps (digest only) and what moved.
-function recordPart(r, withSteps){
+// One City record inside its project: what it is, where it stands, its open steps and what moved.
+function recordPart(r){
   const color = STAND[r.bucket][1];
   const name = r.title || r.type || 'City record';
   const sub = `${r.ref}${r.type && r.title ? ` · ${r.type}` : ''} · Accela: ${r.status || 'no status'}`;
   const text = [`  ${name}`, `  ${sub} · ${r.url}`, `    ${standLine(r)}`];
   let body = lineHtml(standLine(r), color);
-  if(withSteps && (r.bucket === 'city' || r.bucket === 'ours')){
+  if(r.bucket === 'city' || r.bucket === 'ours'){
     if(r.open.length){ body += r.open.map(openHtml).join(''); text.push(...r.open.map(o => `    - ${stepLine(o)}`)); }
     else if(r.bucket === 'city'){ body += lineHtml('No step open with a reviewer right now', SLATE); text.push('    - No step open with a reviewer right now'); }
   }
   if(r.moves.length){
-    body += `<div style="font-family:${FONT};font-size:11px;line-height:1.4;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:${NAVY};padding:6px 0 1px;">Moved since the last check</div>`
+    body += `<div style="font-family:${FONT};font-size:11px;line-height:1.4;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:${NAVY};padding:6px 0 1px;">Moved since the last digest</div>`
          + r.moves.map(m => lineHtml(m.text, TONE[m.tone])).join('');
-    text.push('    Moved since the last check:', ...r.moves.map(m => `    - ${m.text}`));
+    text.push('    Moved since the last digest:', ...r.moves.map(m => `    - ${m.text}`));
   }
   const html = `<div style="padding:10px 0 4px;font-family:${FONT};">
 <div style="font-size:13px;line-height:1.4;font-weight:700;color:${NAVY};">${esc(name)}</div>
 <div style="font-size:12px;line-height:1.5;color:${NAVY};padding:1px 0 3px;"><a href="${esc(r.url)}" style="color:${NAVY};font-weight:700;">${esc(r.ref)}</a>${esc(sub.slice(r.ref.length))}</div>${body}</div>`;
   return { text, html };
 }
-// A project's section: its address and place, then its records (all of them, or only the ones that moved).
-function projectPart(g, withSteps, recs){
+// A project's section: its address and place, then its records.
+function projectPart(g){
   const [stand, color] = projectStand(g);
   const text = [`${g.addr} — ${stand}`];
   let inner = '';
-  recs.forEach(r => { const p = recordPart(r, withSteps); text.push(...p.text); inner += p.html; });
+  g.recs.forEach(r => { const p = recordPart(r); text.push(...p.text); inner += p.html; });
   if(!g.recs.length && !g.unread.length){
     const t = 'No City record on the board yet — once the email listener adds its number, Accela takes over its status.';
     text.push(`  ${t}`); inner += `<div style="padding:8px 0 2px;">${lineHtml(t, SLATE)}</div>`;
@@ -264,30 +262,11 @@ export function renderDigest(view, today){
   const intro = `${TAG} — here's where each project stands with the City in Accela.`;
   const text = [`Permit digest — ${longDay(today)}`, '', intro, ''];
   let html = '';
-  groups.forEach(g => { const p = projectPart(g, true, g.recs); text.push(...p.text, ''); html += p.html; });
-  const note = 'The digest comes every Monday, Wednesday and Friday. On other days an email comes only when something moves in Accela. Steps, reviewers and due dates are the City\'s own.';
+  groups.forEach(g => { const p = projectPart(g); text.push(...p.text, ''); html += p.html; });
+  const note = 'The digest comes every weekday morning, with what moved in Accela since the last one (Monday\'s covers the weekend). Steps, reviewers and due dates are the City\'s own.';
   text.push(`Permit board: ${BOARD}`, '', note);
   return { subject, text: text.join('\n'), html: shell('Permit digest', parts.join(', ').replace(/^./, c => c.toUpperCase()), intro, html, { note }, today,
     moved.length ? moved.map(r => `${short(r.addr)}: ${r.moves[0].text}`).join(' · ') : parts.join(' · ')) };
-}
-
-export function renderAlert(view, today){
-  const moved = view.records.filter(r => r.moves.length);
-  const lateNew = moved.reduce((n, r) => n + r.moves.filter(m => m.tone === 'late').length, 0);
-  const groups = byProject(view).filter(g => g.recs.some(r => r.moves.length));
-  const what = moved.length === 1 ? `${short(moved[0].addr)} moved` : groups.length === 1 ? `${moved.length} records moved at ${short(groups[0].addr)}` : `${moved.length} records moved`;
-  const subject = `Accela ${nice(today)}: ${what}${lateNew ? ` · ${lateNew} now overdue` : ''}`;
-  const intro = `${TAG} — here's what moved in Accela since the last check.`;
-  const text = [`Accela movement — ${longDay(today)}`, '', intro, ''];
-  let html = '';
-  groups.forEach(g => { const p = projectPart(g, false, g.recs.filter(r => r.moves.length)); text.push(...p.text, ''); html += p.html; });
-  // a record Accela didn't answer for, on a project with nothing else moving, goes in the footer
-  const shown = new Set(groups.map(g => g.id));
-  const warn = view.unread.filter(u => !shown.has(u.projectId)).map(u => `${short(u.addr)}: ${unreadText(u)}`).join(' ');
-  const note = 'Sent when something moves in Accela on a City record on the board. Every project\'s full picture comes in the Monday / Wednesday / Friday digest.';
-  text.push(...(warn ? [warn, ''] : []), `Permit board: ${BOARD}`, '', note);
-  return { subject, text: text.join('\n'), html: shell('Accela movement', what.replace(/^./, c => c.toUpperCase()), intro, html, { warn, note }, today,
-    moved.map(r => `${short(r.addr)}: ${r.moves[0].text}`).join(' · ')) };
 }
 
 // RFC 2047 encoded words are capped at 75 chars: split on character boundaries into <= 45-byte chunks.
@@ -356,14 +335,16 @@ export async function runReminders({ state, records, send = false, today, kind, 
     records = refs.length ? await lookupAll(refs, { deadlineMs: 25 * 1000 }) : {};
   }
   const view = board(state, records, today);
-  kind = kind === 'digest' || kind === 'alert' ? kind : DIGEST_DAYS.includes(dow(today)) ? 'digest' : 'alert';
+  const weekday = DIGEST_DAYS.includes(dow(today)) || kind === 'digest';   // the preview may ask for a weekend date
+  kind = 'digest';
   const seen = view.records.filter(r => r.saveSeen).map(r => ({ projectId: r.projectId, milestoneId: r.milestoneId, seen: r.seen }));
   const movedCount = view.records.filter(r => r.moves.length).length;
   const base = { ok: true, today, kind, to: TO, sent: false, firstRun: view.firstRun, moved: movedCount, unread: view.unread,
                  records: view.records.map(({ seen: _s, saveSeen: _v, ...r }) => r), seen, advance: false };
-  if(kind === 'alert' && !movedCount) return { ...base, advance: !!send, note: view.firstRun ? 'first run — snapshots taken, nothing to compare yet' : 'nothing moved in Accela' };
+  // Saturday / Sunday: no email and no new snapshots (advance stays false), so Monday's digest carries the weekend
+  if(!weekday) return { ...base, note: `no digest on ${DOW[dow(today)]}: Monday's carries any moves` };
   if(!view.records.length && !view.unread.length) return { ...base, note: 'no City records on the board' };
-  const mail = kind === 'digest' ? renderDigest(view, today) : renderAlert(view, today);
+  const mail = renderDigest(view, today);
   const out = { ...base, subject: mail.subject };
   if(!send) return { ...out, text: mail.text, html: mail.html };
   const env = process.env.VERCEL_ENV;
