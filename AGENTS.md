@@ -642,6 +642,9 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **One capped ARV everywhere (v8.34, C-F3).** `compStats().cap` is the highest counted Sold $ + Adjustments;
   `compArv()` caps median × sf at it. The table summary, Apply median / avg, the PDF and the Excel Comps sheet
   (`MIN(MEDIAN(...)*sf, SUMPRODUCT(MAX(C+D)))`) all use it, so on a fresh pull they say what the county box says.
+- **No ARV from fewer than 3 comps (v8.53, audit #6).** Below `ARV_MIN_COMPS` (3, = `MIN_POOL` in api/comps.js) counted
+  comps, the table summary, the PDF and the Excel Comps sheet say "N comps: not enough for an ARV (needs 3)" and show no
+  Suggested ARV, and Apply median / avg asks `confirm()` first. Flag any path that prints a suggested ARV from 1–2 comps.
   Flag a reader of `st.median * sf` that skips `compArv()`.
 - **A pull replaces the last pull (v8.34, C-F4).** Pulled rows carry `src:'county'`, `srcPid` (the parcel pulled
   for) and `cpid` (the comp's parcel). A new pull drops `src:'county'` rows (and untagged pre-v8.34 rows whose notes
@@ -1011,7 +1014,8 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
 - **UR-2/UR-3/UR-4 are defunct pre-UDO zones that are still PRESENT in the code today**
   (in both `SETBACKS` and `COUNTY_ZONES`) — a known, not-yet-done cleanup target
   (handoff §4.4, §12), *not* something already removed. Don't add them anywhere new, and
-  flag any change that reintroduces them **or that assumes they've already been deleted**.
+  flag any change that reintroduces them **or that assumes they've already been deleted**. (The v8.56 legacy R-3 to
+  R-8 rows are deliberate and separate: they serve conditional parcels, see "Legacy R-3 to R-8 rows" below.)
 - Townhome/attached plays *should* be gated by the **permitted-use matrix**, not geometry
   alone (attached is not by-right in N1-A..E). **That matrix is NOT wired into the app's
   fit or money yet.** Since v8.48 it is *shown*: `renderZoneUses()` lists the zone row's P / C / S / No for house,
@@ -1089,15 +1093,58 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - `renderZoneNote()` compares against the row's base zone, so the CD note survives picking the townhome row.
   - This was the suffix part of G2; v8.16 did the county part (a GIS result always sets Mecklenburg).
   Flag a zone lookup that drops the suffix note, or one that treats a CD petition's conditions as known.
-- **The N2-C base row carries `noNewLots`**: `renderSublot()` warns that lots made by a split can't hold a
-  standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+` row
-  seen with a detached plan gets the same treatment, pointing to the base row. Either way the split rows show
-  geometry only, with no checks.
+- **Legacy R-3 to R-8 rows are for conditional parcels (v8.56, research/17 #2).** The 2023 UDO translated the
+  conventional districts but not the conditional ones, so County GIS still zones parcels `R-3(CD)`…`R-8(CD)` (about 130
+  zoning polygons in 2026-10; 11603 Clear Day Ct is `R-5(CD)`, petition 1997-008(C)). Those parcels keep the prior
+  ordinance's base district plus the petition (the City keeps the archived ordinance "as a reference for some conditional
+  zoning districts"; old §6.201(1), §6.206). So `SETBACKS` has `Mecklenburg|R-3`…`R-8` with `legacy:true`, from old
+  §9.205(1): front = the pre-12-20-2010 / thoroughfare value (30 / 20; 27 / 17 on a newer local street), rear 45/40/35/30/20,
+  side 6/5/5/5/5, width 70/60/50/40/40, min lot 12,000 / 9,000 (§9.205(2), a split is a subdivision of 5 acres or less) /
+  6,000 / 4,500 / 3,500, corner side half the front but at least 10 (old §12.102), garage 20 or the front (old Table
+  12.206(3)). They are NOT the UDO translation (R-5 → N1-C); don't map a CD parcel to its N1 translation.
+  - The rows live in the analyzer only, not in `data/zoning-db.json` (the sheet's table has no R-x rows; adding them
+    is the Sheet: zoning chat's job, with a rebuild + Drive copy). The hand-off sends zone "R-5"; the sheet then says
+    the zone isn't in its table.
+  - `renderZoneNote()` adds `legacyZoneNote()` (amber, verify against the petition) and, for a CD suffix, the
+    petition number (`_lastGis.zpet`, from the zoning layer's `ZonePetition`; the key exists only when the county gives
+    one, so other parcels report as before). `renderSublot()` adds the same verify note to its Yes / No on any CD parcel
+    (`cdZoneFor()`). The verify link opens the archived Chapter 9 (`CLT_LEGACY_CH9_URL`), not the UDO.
+  - **v8.57 adds the multi-family districts** `Mecklenburg|R-8MF`, `R-12MF`, `R-17MF`, `R-22MF`, `R-43MF` (`legacy:true`,
+    `sec:'9.305'`), for the ~330 GIS polygons zoned R-8MF(CD) 105, R-12MF(CD) 135, R-17MF(CD) 68, R-22MF(CD) 22,
+    R-43MF(CD) 1 (2026-10). Old §9.305(1) has two sets, so each zone has two rows, like N2 (Brian 2026-10-22):
+    - the base row (what GIS fills) is the house / duplex–quadraplex set: front 20 (17 on a local street approved after
+      12-20-2010), rear 20, side 5, corner 10, house lot 3,500 sf / 40 ft; `minSFPlex` 6,500 / 9,500 / 11,500 sf and
+      `minWidthPlex` 55 for a 2 / 3 / 4-unit building (the townhome card's parent check uses them);
+    - `R-xMF · townhomes 5+` (`mfa:true`) is the set for a building of 5+ units ("multi-family" = more than four, old
+      §2.201) or a planned multi-family development (2+ buildings on a lot): front 30 (27), 11,500 sf / 55 ft, and the
+      deeper "adjoining single family" yards, rear 50/50/50/40/40 and side 20/20/10/10/10 (`rearNotNextToSF` 40,
+      `sidesNotNextToSF` 10/10/10/5/5 go in the note only). The §9.303(19)(f) 15-ft street option is in the note, not
+      the row.
+    - `dua` (8/12/17/22/43 units per acre, §9.305(1)(a)) is a lot minimum too: `renderSublot()` needs 43,560 / dua sf per
+      house (5,445 in R-8MF), and the townhome card warns when units × 43,560 / dua is more than the lot.
+    - v8.57 also gives R-3..R-8 their `dua` (3/4/5/6/8; old §9.205(1)(a): "density is the first standard"), so a split
+      there needs 43,560 / dua sf per house (Clear Day Ct R-5: 2 × 8,712 sf), and R-8 its by-right plex lots
+      (`minSFPlex` 6,500 / 9,500 / 11,500, `minWidthPlex` 40). The townhome card's density warning is MF-only: an existing
+      R-8 lot's plex (or an R-3..R-6 corner duplex) is exempt (§9.205(1)(a)(iii)).
+    - The townhome card shows a pre-2023 note on any legacy row (also R-3..R-8), not the UDO parent-lot note; the
+      150-ft length cap stays as a guide. It tells the analyst to switch rows at 5 units, as for N2.
+  - Still no row (no source in the archived ordinance; they predate it): R-15MF(CD) 37, R-9MF(CD) 35, R-6MF(CD) 8,
+    R-20MF 40 and R-20MF(CD) 1, R-6MFH(CD), and the old county R-9(CD) 12 / R-12(CD) 10 / R-15(CD) 13 and R-9/12/15PUD.
+    They stay stubs with blank setbacks. Flag a change that maps them to a newer row by name (R-15MF is not R-17MF).
+- **The N2-C base row carries `noNewLots`**: `renderSublot()` answers "No" with that text: lots made by a split can't
+  hold a standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+`
+  row seen with a detached plan is checked against its base row.
+- **"Can this lot split?" (v8.55, research/17 #4, Brian's pick A).** `renderSublot()` is ONE line: Yes / No / Can't
+  tell. No needs a known minimum that fails (area < 2 × minSF, or `widthAtFrontSetbackFt()` < 2 × minWidth); Yes needs
+  both minimums known and passing; anything unknown is Can't tell (amber), never a green check. Width is measured at the
+  front setback line from `sketchLot()`'s front run, not the sum of front edges. No lot count, no strip drawing: real
+  layouts go to Sketch a subdivision (`sublotSketch()` → `openPlatSketch()`). Flag a change that brings back equal-strip
+  splits, shows a pass for a missing minimum, or drops the townhome row view (`renderSubplot()`).
 - **Zones with no `SETBACKS` row** (a GIS or saved stub):
   - `onZoneChange()` shows the setback panel.
   - `renderZoneNote()` says the fields are blank or the previous zone's. For a zone that exists in Mecklenburg
     under another county, it says to pick Mecklenburg.
-  - The sub-lot estimate shows "?" (minimums unknown), not the "—" of a row with no minimums.
+  - "Can this lot split?" says Can't tell (minimums unknown).
   - When a saved stub reopens on its base row with setbacks that differ from that row, `_zoneRestoreNote` says so.
 
 ### Buildable envelope & plan fit (poly mode, v8.19)
@@ -1137,7 +1184,8 @@ most deals take.
   - `designateParcelEdges()` then sets:
     - front = the proxy's front edge plus the rest of the street line: ROW edges within 45° of it, and collinear
       edges. Past 45°, a run of short ROW chords is front as a cul-de-sac bulb, unless it reaches a longer street edge,
-      when it's a side street's corner radius (corner);
+      when it's a side street's corner radius (corner). Past a sharp bend too (v8.52, audit #1): two or more ROW chords
+      under 20 ft that bend into the lot (concave corners) and end at a non-ROW edge are the bulb, front, not corner;
     - rear = among the back-facing edges that reach within 30 ft of the deepest point (**ROW edges included**: alley
       and through lots), the most length facing the street, weighted by depth, plus the rest of that line (pieces that
       face away squarely, or within 15° of the last rear piece), plus any other squarely back-facing edge 6 ft+ within
@@ -1149,6 +1197,13 @@ most deals take.
       of the street is front (street line past a longer jog). A reached ROW piece never ends up a side;
     - each walk passes over one jog of up to 15 ft, which stays a side (the corner walk starts past a jog the front walk
       stepped over).
+  - The proxy's front (`api/gis.js` `classifyEdges`): a street edge is a ROW edge of 8 ft or more, or (v8.52, audit #1,
+    11603 Clear Day Ct) a piece of a run of consecutive ROW edges that are all under 8 ft and add up to 8 ft or more:
+    the county draws a cul-de-sac bulb as short chords (four of 6.2 ft there), and before v8.52 each failed the 8-ft
+    test, so `applyCenterlineFront` "rescued" a side lot line as the front. Such a piece carries `bulb_ft` (the run's
+    length) in `edges.detail`; `row_count` counts the 8-ft-plus edges plus one per bulb. A run that has an 8-ft-plus
+    piece is unchanged: its short pieces (a corner radius) are not street edges. Flag a change that tests each short
+    piece on its own again. Regression parcel: Clear Day Ct (PID 02758756) front = the 24.9-ft curve (edges 4-7).
   - With no street edge (`front_index` null), the front is `initEdgeDesignations()`'s lowest-edge guess, and
     `#edge-auto-note` says so.
   - Flag a change that goes back to one front and one rear edge, skips ROW edges as rear candidates, or makes every edge
@@ -1233,7 +1288,9 @@ most deals take.
     product (`rule.relaxed` has 'product'), said in the column. A $/sf typed in the
     comparison is kept by plan name for the deal and the PDF uses it. The badge (`bestPlanIndex()`) goes to the most
     Base total profit among plans that fit and meet `getProfitRule()` per unit (`dealForPlan().rule`); none qualifies =
-    no badge, and `noBadgeWhy()` says why. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
+    no badge, and `noBadgeWhy()` says why. Since v8.53 (audit #7) only a plan priced on its own number can win
+    (`planPsf().priced`: the deal's plan, its own comps, or a typed Base); a fallback plan's $/sf is capped at
+    `compStats().cap` ÷ its sf (Worst/Best too), and a typed Base on it takes the deal's spread. The PDF waits up to 8 s for the compared plans' comps (`generatePDF()` opens
     its window first so the wait can't trip the pop-up blocker). Flag a badge that ignores the fit or the rule, or a
     compared plan priced at a catalogue unit count.
   - The plan-fit message is drawn by `onPlanChange()` and by `calcBuildable()`, so a lot, setback or corner edit
@@ -1363,6 +1420,22 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
+  - **v8.57 (legacy multi-family CD zones, 2026-10-22): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (main v8.55
+    and branch in the same run). 2900 L D Parker Dr 28206 (R-8MF(CD), petition 2001-067, 9,629 sf): setbacks 20 / 20 / 5 /
+    10, width 40, envelope 5,286 sf, "Can this split? No — needs 2 × 5,445 sf (8 units per acre)"; main: blank setbacks,
+    "Can't tell". On the townhome row: 30 / 50 / 20 / 15, width 55.
+  - **v8.56 (legacy CD zones, 2026-10-22): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (same as v8.54 / v8.55,
+    main and branch in the same run). Dellinger is N1-B with no petition, so nothing in its report moved. 11603 Clear Day
+    Ct (R-5(CD)): setbacks 20 / 35 / 5 / 10, width 50, envelope 3,740 sf, Seneca fits, "Can this split? No — 8,322 sf,
+    needs 2 × 6,000 sf" + the petition note (main: blank setbacks, "Fit not checked", "Can't tell").
+  - **v8.54 (no hidden land price, 2026-10-21): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (on v8.53). The only change in
+    `getReportData()` is the new `cost.landAssumed` key (false when land is typed); delete it and the hash is `66338f6bfbb2`,
+    v8.53's. Land box starts empty (`landCostUsed()`: blank = Max land, labelled; typed 0 stays $0); Send to deal sheet is
+    blocked while land is untouched (`landUntouched()`: not typed and no asking price). An old save reopens as saved, even
+    its untyped $25,000. Teardown line (`renderTeardownLine()`): shown when the county gave a value, the parcel isn't
+    vacant, Demo sq ft > 0 and Max land is under that value; 11603 Clear Day Ct: county $269,200.
+  - **v8.53 (comps + badge, 2026-10-21): Max land $252,111**, hash **`66338f6bfbb2`**: only the new
+    `planComp[].psf.priced` field moved it (left out, it is v8.50's `92e562fa9b24`, same run as main v8.51).
   - **v8.50 (side-by-side fixes, 2026-10-20): Max land $252,111**, hash **`92e562fa9b24`** (main v8.49 in the same run:
     $256,586, `1bf09d65e83e`; the county's owner field now reads TIDE & TIMBER VENTURES LLC, so main's hash moved from
     v8.48's too). Appraisal and insurance per unit: soft costs $5,125 → $9,600 for 3 units ($3,000 survey + 3 × $2,200),
