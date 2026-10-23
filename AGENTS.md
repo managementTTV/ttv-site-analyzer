@@ -491,19 +491,19 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
     when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
     write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.
-  - **Digest + movement alerts (v4.9, `api/permit-reminders.js`; Brian 2026-10-19: "a Monday-Wednesday-Friday
-    email regardless every week, then alert emails on movement on specific items" — every City record, any move).**
-    Source is Accela only, never the board's own `due` (v4.7 used it: wrong per Brian 2026-10-14). On Mon / Wed / Fri
-    (Charlotte's date, `etDate`) the **digest** always goes out: **one section per project on the board, by address,
+  - **The weekday digest (v4.15, `api/permit-reminders.js`; team feedback 2026-10-22: no movement alerts, one email
+    every weekday with all updates).** It replaces v4.9's Mon / Wed / Fri digest plus movement alerts on the other days.
+    Source is Accela only, never the board's own `due` (v4.7 used it: wrong per Brian 2026-10-14). Every weekday, Monday
+    to Friday (Charlotte's date, `etDate`, `DIGEST_DAYS`), the **digest** always goes out: **one section per project on the board, by address,
     in the board's order** (v4.11, Brian 2026-10-19: "always broken down by project … a section for each open project
     address", not grouped by approved / in progress across projects). Each section has a one-line place for the
     project (`projectStand()`: a late City step, waiting on us, in City review, couldn't read, no City records yet,
     approved) and its City records (`targets()`), open ones first, each with where it stands (`deriveStatus()`), each
     open step (department, `current.assignedTo`, City due date, a late / due-soon badge only where `cityHolds(task)`)
-    and what moved since the last check. A project with no City record still gets its section; a record Accela
-    didn't answer for shows in its own project. Other days a **movement alert** goes out only when something moved;
-    nothing moved → no email. It's grouped by project too, with only the projects and records that moved. Flag a
-    change that groups records across projects. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
+    and what moved since the last digest. A project with no City record still gets its section; a record Accela
+    didn't answer for shows in its own project. **Saturday and Sunday send nothing and keep the snapshots** (`advance`
+    false), so Monday's digest carries the weekend's moves. There is no movement alert any more: flag a change that
+    brings one back without a decision, or that groups records across projects. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
     opening, its City due date moving, a City-held step on a record still in review going overdue, or a record new
     on the board ("Now tracking"). "Since the last check" = `accela.seen` on the record's block: record status +
     per step `state|newest status|date|City due`, **no names** (it's in Drive), versioned (`SNAP_V`: bump it when a
@@ -516,25 +516,26 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     entries are read in workflow order (`stepRank`: requested → received → done), never Accela's response order,
     for a step's current and latest entry alike. A City due date moving is a move only on an open step. `plan()` carries `seen` over on
     every sync; only the cron replaces it, via `applySeen()` with the other writes, and only when `runReminders()`
-    says `advance` (the email went out, or there was nothing to send) — a failed send keeps the old snapshots so
+    says `advance` (the digest went out, or this instance already sent the same one today; never on a weekend) — a failed send keeps the old snapshots so
     tomorrow reports the same moves. `commitSync()` writes the new snapshots **first** (v4.13): no later sync writes
     one (the next board load carries the old one from Drive), so a snapshot left over is lost, and the next email
     repeats that day's moves. On 10/19 the old 30 s budget left LDIRL-2026-05530's snapshot behind this way. Status
     writes can wait, because the next sync plans them again. The cron's result counts snapshots not confirmed saved
-    (`seenUnsaved`, apart from `deferred`). Flag a change that puts other writes ahead of the snapshot writes. The very first run (no record has a snapshot) only takes them. Flag a change
+    (`seenUnsaved`, apart from `deferred`). Flag a change that puts other writes ahead of the snapshot writes. The very first run (no record has a snapshot) reports no moves, only takes them. Flag a change
     that lets a board-load sync replace `seen`, writes a name into it, or alerts on an approved record's leftover
     inspection. `cityHolds(task)` in `api/accela.js` stays the one "City holds this step" rule (active, not handed
     back to us, not already Ok / Approved / Complete); the parser sets `task.cityHolds` and the board's red "N days
     late" reads it. The cron does `prepareSync()` (the Drive read, then one deadline for all lookups, `lookupAll(refs,
     {deadlineMs})`, ending 25 s from t0), then `runReminders({state, records, send:true, sendBy})` **before**
     `commitSync()` writes (`WRITE_STOP_MS`); see "One clock from t0" above. Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
-    Mon Oct 19: …", "Accela Oct 22: 2 records moved"); a same-day identical email isn't re-sent from the same
-    instance. One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
+    Mon Oct 19: …"); a same-day identical digest isn't re-sent from the same
+    instance, and "identical" ignores what moved (`sendKey()`: a re-delivered run sees no moves once the first saved
+    its snapshots). One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
     body opens by naming Adam and Wendell (`TAG`; no CC, since management@ already reaches them). `TITLES` mirrors the
     `permits.html` CATALOG titles of the steps a City record sits on (context only). Sent through the Gmail API with
     the send-only token in the Vercel env var `GMAIL_SEND_TOKEN` (JSON `{client_id, client_secret, refresh_token}`
     for management@ — minted by `~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py`, never
-    committed). Only production sends. The route itself is preview-only (`?k=…[&format=html][&date=…][&kind=digest|alert]`):
+    committed). Only production sends. The route itself is preview-only (`?k=…[&format=html][&date=…][&kind=digest]`; `kind=digest` previews a weekend date):
     flag any change that lets the public gate hash trigger a send.
   - County building permits (`R-TH-…`) are not in Accela's public search (re-checked 2026-10-13 on
     the `MECKLENBURG` agency); they stay email-driven. Don't add County lookups without a working

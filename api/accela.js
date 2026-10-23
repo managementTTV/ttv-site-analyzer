@@ -479,7 +479,7 @@ export default async function handler(req, res){
         const { runReminders } = await import('./permit-reminders.js');
         reminders = await runReminders({ state: prep.state, records: prep.records, send: true, sendBy: prep.t0 + SEND_STOP_MS });
       }catch(e){ reminders = { ok: false, error: String(e && e.message || e) }; }
-      // The email went out (or had nothing to say): save each record's new "since the last check" snapshot
+      // The digest went out (or this instance already sent the same one today): save each record's new snapshot
       // with the other writes. A failed send keeps the old ones, so tomorrow reports the same moves.
       if(reminders && reminders.advance && Array.isArray(reminders.seen)) applySeen(prep, reminders.seen);
       if(reminders) delete reminders.seen;
