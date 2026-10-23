@@ -17,7 +17,7 @@
 // snapshots with its other saves (api/accela.js); a failed send leaves them, so tomorrow reports the same moves.
 // The very first run (no record has a snapshot yet) only takes them — no flood of "moves".
 //
-// Sending: the daily cron in api/accela.js calls runReminders({state, records, send:true}) after its Accela
+// Sending: the daily cron in api/accela.js calls runReminders({state, records, send:true, sendBy}) after its Accela
 // look-up and before the writes. Gmail API as management@ with a send-only token in the Vercel env var
 // GMAIL_SEND_TOKEN ({client_id, client_secret, refresh_token} JSON, minted by
 // ~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py). Only production sends.
@@ -301,14 +301,25 @@ function encodeWords(s){
   return words.map(w => `=?UTF-8?B?${Buffer.from(w, 'utf8').toString('base64')}?=`).join('\r\n ');
 }
 
-async function gmailSend({ to, subject, text, html }){
-  let cfg;
-  try{ cfg = JSON.parse(process.env.GMAIL_SEND_TOKEN || ''); }catch(_){ throw new Error('GMAIL_SEND_TOKEN is not set or not JSON'); }
+// by: when the whole send must be done (the cron passes its SEND_STOP_MS, so the writes after it keep their window).
+// Each call also has its own cap (token 15 s, send 20 s), and none starts once `by` has passed. A send cut off at `by`
+// fails like any other: the cron keeps the old snapshots, so if Gmail did deliver it, tomorrow repeats these moves.
+// cfg: the GMAIL_SEND_TOKEN JSON; passed in only by the headless tests (fake values, fetch stubbed). Exported for them.
+export async function gmailSend({ to, subject, text, html }, { by = Infinity, cfg } = {}){
+  if(!(by > Date.now())) throw new Error('no time left to send this run');
+  if(!cfg){ try{ cfg = JSON.parse(process.env.GMAIL_SEND_TOKEN || ''); }catch(_){ throw new Error('GMAIL_SEND_TOKEN is not set or not JSON'); } }
   if(!cfg || !cfg.client_id || !cfg.client_secret || !cfg.refresh_token) throw new Error('GMAIL_SEND_TOKEN is missing client_id / client_secret / refresh_token');
-  const tr = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', signal: AbortSignal.timeout(15000),
+  const within = (cap, what) => {
+    const ms = Math.min(cap, by - Date.now());
+    if(!(ms > 0)) throw new Error(`no time left for the ${what} this run`);
+    return AbortSignal.timeout(ms);
+  };
+  const late = what => e => { throw e && e.name === 'TimeoutError' ? new Error(`${what} timed out`) : e; };
+  const tr = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', signal: within(15000, 'Google token refresh'),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: cfg.client_id, client_secret: cfg.client_secret, refresh_token: cfg.refresh_token, grant_type: 'refresh_token' }) });
-  const tj = await tr.json().catch(() => ({}));
+    body: new URLSearchParams({ client_id: cfg.client_id, client_secret: cfg.client_secret, refresh_token: cfg.refresh_token, grant_type: 'refresh_token' }) })
+    .catch(late('Google token refresh'));
+  const tj = await tr.json().catch(e => { if(e && e.name === 'TimeoutError') late('Google token refresh')(e); return {}; });
   if(!tr.ok || !tj.access_token) throw new Error('Google token refresh failed: ' + (tj.error_description || tj.error || 'HTTP ' + tr.status));
   const b = 'ttv-' + Date.now().toString(36);
   const b64 = s => Buffer.from(s, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n');
@@ -320,9 +331,10 @@ async function gmailSend({ to, subject, text, html }){
     `--${b}`, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64(html),
     `--${b}--`, ''
   ].join('\r\n');
-  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', signal: AbortSignal.timeout(20000),
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', signal: within(20000, 'Gmail send'),
     headers: { Authorization: `Bearer ${tj.access_token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw: Buffer.from(mime, 'utf8').toString('base64url') }) });
+    body: JSON.stringify({ raw: Buffer.from(mime, 'utf8').toString('base64url') }) })
+    .catch(late('Gmail send'));
   const j = await r.json().catch(() => ({}));
   if(!r.ok) throw new Error('Gmail send failed: ' + ((j.error && j.error.message) || 'HTTP ' + r.status));
   return j.id;
@@ -332,10 +344,11 @@ async function gmailSend({ to, subject, text, html }){
 // usually lands on the warm instance). Per instance only.
 let lastSent = null;
 
-// state/records: pass the cron's freshly looked-up copies; otherwise they're read here.
+// state/records: pass the cron's freshly looked-up copies; otherwise they're read here. sendBy: when the send must
+// be done (epoch ms; the cron's t0 + SEND_STOP_MS).
 // Returns `seen`: the snapshots to save, and `advance`: true when the cron should save them (the email went
 // out, or there was nothing to send). The preview never saves.
-export async function runReminders({ state, records, send = false, today, kind } = {}){
+export async function runReminders({ state, records, send = false, today, kind, sendBy } = {}){
   today = today && isDay(today) ? today : etDate(new Date());
   state = state || await loadPermitState();
   if(!records){
@@ -357,7 +370,7 @@ export async function runReminders({ state, records, send = false, today, kind }
   if(env && env !== 'production'){ out.note = `${env} deployment — only production sends`; return out; }
   const key = `${today}|${kind}|${mail.text.replace(/^.*(Couldn't read|isn't in Accela's public search).*$/gm, '')}`;
   if(lastSent === key){ out.note = 'same email already sent today from this instance'; out.advance = true; return out; }
-  try{ out.id = await gmailSend({ to: TO, ...mail }); out.sent = true; out.advance = true; lastSent = key; }
+  try{ out.id = await gmailSend({ to: TO, ...mail }, { by: sendBy }); out.sent = true; out.advance = true; lastSent = key; }
   catch(e){ out.ok = false; out.error = String(e && e.message || e); }
   return out;
 }

@@ -26,9 +26,16 @@ const REF_RE = /\b(LD[A-Z]{2,6}|ZV|ZUP|CPB|RSVA)-(\d{4})-(\d{3,7})\b/i;
 const MAX_REFS = 25;            // one record page + two small calls each; a sync never fans out further
 const CACHE_MS = 10 * 60 * 1000; // per-instance memo so a burst of board loads costs Accela one lookup
 const MISS_MS = 2 * 60 * 1000;   // a failed / not-found lookup is retried after 2 min, not on every load
-// Feed writes, timed from the Drive read (t0 — maxDuration 60 counts from about there): every write is done or abandoned
-// by WRITE_STOP_MS, none starts with less than WRITE_MIN_MS left, and each gets at most WRITE_TIMEOUT_MS (or what's
-// left, if less). Most writes take a few seconds. The rest wait for the next sync.
+// One clock for a sync, from t0 (just before the Drive read; maxDuration 60 counts from about there). Each step has a
+// stop counted from t0, not from its own start, so a slow step takes time from the next one and never runs past its stop:
+// the Drive read ends by DRIVE_STOP_MS, the Accela look-ups by LOOKUP_STOP_MS (so they get at least 15 s; about 12 s
+// for six records on 10/19), the cron's email by SEND_STOP_MS and the feed writes by WRITE_STOP_MS. An email that takes
+// until 35 s still leaves 15 s, so at least one write starts after it.
+const DRIVE_STOP_MS = 10 * 1000;
+const LOOKUP_STOP_MS = 25 * 1000;
+const SEND_STOP_MS = 35 * 1000;
+// Feed writes: every write is done or abandoned by WRITE_STOP_MS, none starts with less than WRITE_MIN_MS left, and each
+// gets at most WRITE_TIMEOUT_MS (or what's left, if less). Most writes take a few seconds. The rest wait for the next sync.
 const WRITE_STOP_MS = 50 * 1000;
 const WRITE_MIN_MS = 10 * 1000;
 const WRITE_TIMEOUT_MS = 25 * 1000;
@@ -261,14 +268,15 @@ async function lookup(ref, stop){
   return out;
 }
 
-// deadlineMs: one limit for the whole set. A slow Accela (each request can take 20 s) must not run the cron
-// past maxDuration 60 and take the morning email with it: past the deadline, requests in flight are aborted
-// and records not started are reported unread.
+// deadlineMs: one limit for the whole set (a sync passes what's left of LOOKUP_STOP_MS). A slow Accela (each
+// request can take 20 s) must not run the cron past maxDuration 60 and take the morning email with it: past the
+// deadline, requests in flight are aborted and records not started are reported unread. 0 or less reads nothing.
 export async function lookupAll(refs, { deadlineMs } = {}){
   const uniq = [...new Set(refs)].slice(0, MAX_REFS), out = {};
-  const stop = deadlineMs ? AbortSignal.timeout(deadlineMs) : null;
+  const ms = deadlineMs == null ? null : Math.max(0, deadlineMs);
+  const end = ms == null ? Infinity : Date.now() + ms, stop = ms == null ? null : AbortSignal.timeout(ms);
   for(let i = 0; i < uniq.length; i += 4){              // four at a time — gentle on a public portal
-    if(stop && stop.aborted){
+    if(Date.now() >= end || (stop && stop.aborted)){
       uniq.slice(i).forEach(ref => { out[ref] = { ref, ok: false, url: recordUrl(ref), status: null, type: null, address: null,
         project: null, opened: null, tasks: [], related: [], error: 'not read — Accela too slow this run' }; });
       break;
@@ -368,8 +376,9 @@ async function sync({ dry }){ return commitSync(await prepareSync(), { dry }); }
 // before any write starts (a Drive re-read right after the writes can return the old file anyway).
 async function prepareSync(){
   const t0 = Date.now();
-  const state = await loadPermitState();
-  const records = await lookupAll(targets(state).map(t => t.ref), { deadlineMs: 25 * 1000 });
+  const state = await loadPermitState({ timeoutMs: DRIVE_STOP_MS });
+  // the look-ups end LOOKUP_STOP_MS from t0, not from here: a slow Drive read shortens them, never the email or the writes
+  const records = await lookupAll(targets(state).map(t => t.ref), { deadlineMs: LOOKUP_STOP_MS - (Date.now() - t0) });
   const items = plan(state, records);
   items.forEach(it => {
     const c = it.upd && state.projects.find(p => p.id === it.projectId)?.state[it.milestoneId];
@@ -460,14 +469,15 @@ export default async function handler(req, res){
     }
     if(isCron){
       // The daily morning run: look Accela up, send the due-date email from that fresh state FIRST, then save —
-      // the email can't be starved by slow feed writes inside the 60 s limit. Writes end by 50 s (WRITE_STOP_MS),
-      // the new snapshots first: a status left over is saved by the next board load, a snapshot is not.
+      // the email can't be starved by slow feed writes inside the 60 s limit. The email ends by 35 s (SEND_STOP_MS) and
+      // the writes by 50 s (WRITE_STOP_MS), the new snapshots first: a status left over is saved by the next board load,
+      // a snapshot is not.
       res.setHeader('Cache-Control', 'no-store');
       const prep = await prepareSync();
       let reminders;
       try{
         const { runReminders } = await import('./permit-reminders.js');
-        reminders = await runReminders({ state: prep.state, records: prep.records, send: true });
+        reminders = await runReminders({ state: prep.state, records: prep.records, send: true, sendBy: prep.t0 + SEND_STOP_MS });
       }catch(e){ reminders = { ok: false, error: String(e && e.message || e) }; }
       // The email went out (or had nothing to say): save each record's new "since the last check" snapshot
       // with the other writes. A failed send keeps the old ones, so tomorrow reports the same moves.
