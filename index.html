@@ -771,7 +771,7 @@ body[data-screen="2"] .page{padding-bottom:108px}
       <div class="hdr-sub">Tide &amp; Timber Ventures, LLC &mdash; Charlotte / Carolinas Market</div>
     </div>
   </div>
-  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.56 &middot; Oct 2026</div></div>
+  <div class="hdr-right"><button class="hdr-tool" onclick="downloadDealJSON()" title="Save deal to file (JSON)" aria-label="Save deal">&#128190;</button><button class="hdr-tool" onclick="$('deal-file-input').click()" title="Load deal from file" aria-label="Load deal">&#128194;</button><input type="file" id="deal-file-input" accept=".json,application/json" style="display:none" onchange="loadDealFile(this)"><div class="hdr-badge" onclick="openReleaseNotes()" title="What&rsquo;s new in this version">V8.57 &middot; Oct 2026</div></div>
 </div>
 
 <nav class="screen-nav" aria-label="Screens">
@@ -1568,12 +1568,32 @@ const SETBACKS={
   // acres or less. Corner side = half the front, at least 10 ft (old §12.102(6)-(8)). Garage = 20 ft or the district
   // setback, whichever is greater (old Table 12.206(3)). frontNewStreet = the (e2) front on a newer street, for the note only.
   // legacy:true -> the note, the verify link and the split line's
-  // petition note.
-  'Mecklenburg|R-3':{front:30,rear:45,sides:6,corner:15,minWidth:70,minSF:12000,garage:'30 ft',frontNewStreet:27,legacy:true},
-  'Mecklenburg|R-4':{front:30,rear:40,sides:5,corner:15,minWidth:60,minSF:9000,garage:'30 ft',frontNewStreet:27,legacy:true},
-  'Mecklenburg|R-5':{front:20,rear:35,sides:5,corner:10,minWidth:50,minSF:6000,garage:'20 ft',frontNewStreet:17,legacy:true},
-  'Mecklenburg|R-6':{front:20,rear:30,sides:5,corner:10,minWidth:40,minSF:4500,garage:'20 ft',frontNewStreet:17,legacy:true},
-  'Mecklenburg|R-8':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',frontNewStreet:17,legacy:true},
+  // petition note. v8.57: dua = the density cap, units per acre (§9.205(1)(a): "density is the first standard"), a lot
+  // minimum for a split; R-8's by-right duplex / triplex / quadraplex lots (§9.205(1)(c), 40 ft wide).
+  'Mecklenburg|R-3':{front:30,rear:45,sides:6,corner:15,minWidth:70,minSF:12000,garage:'30 ft',frontNewStreet:27,legacy:true,dua:3},
+  'Mecklenburg|R-4':{front:30,rear:40,sides:5,corner:15,minWidth:60,minSF:9000,garage:'30 ft',frontNewStreet:27,legacy:true,dua:4},
+  'Mecklenburg|R-5':{front:20,rear:35,sides:5,corner:10,minWidth:50,minSF:6000,garage:'20 ft',frontNewStreet:17,legacy:true,dua:5},
+  'Mecklenburg|R-6':{front:20,rear:30,sides:5,corner:10,minWidth:40,minSF:4500,garage:'20 ft',frontNewStreet:17,legacy:true,dua:6},
+  'Mecklenburg|R-8':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',frontNewStreet:17,legacy:true,dua:8,minSFPlex:[6500,9500,11500],minWidthPlex:40},
+  // v8.57: the legacy multi-family districts, for parcels County GIS zones R-8MF(CD) to R-43MF(CD) (about 330 zoning
+  // polygons in 2026-10). Numbers: old §9.305(1) (archived Chapter 9), which has one set for houses and 2-4 unit buildings
+  // and one for everything else (5+ units, or a planned multi-family development: two or more buildings on a lot, old
+  // §2.201). Brian 2026-10-22: both, like N2: the base row (what GIS fills) is the house / duplex-quadraplex set, the
+  // "· townhomes 5+" row the multi-family set. Base: front 20 ((e1), and (e2) before 12-20-2010; 17 on a newer local street),
+  // side 5, rear 20, house lot 3,500 sf / 40 ft; minSFPlex = duplex / triplex / quadraplex lots, 55 ft wide (old §9.305(1)(c),
+  // (d)). Townhomes 5+: front 30 (27), rear and side for a site next to single-family land (the deeper of the two; the
+  // *NotNextToSF values otherwise), 11,500 sf / 55 ft. dua = the density cap, units per acre (old §9.305(1)(a)). Corner and
+  // garage as for R-3..R-8. sec = the old section, for the note and the verify link.
+  'Mecklenburg|R-8MF':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',frontNewStreet:17,legacy:true,sec:'9.305',dua:8,minSFPlex:[6500,9500,11500],minWidthPlex:55},
+  'Mecklenburg|R-12MF':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',frontNewStreet:17,legacy:true,sec:'9.305',dua:12,minSFPlex:[6500,9500,11500],minWidthPlex:55},
+  'Mecklenburg|R-17MF':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',frontNewStreet:17,legacy:true,sec:'9.305',dua:17,minSFPlex:[6500,9500,11500],minWidthPlex:55},
+  'Mecklenburg|R-22MF':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',frontNewStreet:17,legacy:true,sec:'9.305',dua:22,minSFPlex:[6500,9500,11500],minWidthPlex:55},
+  'Mecklenburg|R-43MF':{front:20,rear:20,sides:5,corner:10,minWidth:40,minSF:3500,garage:'20 ft',frontNewStreet:17,legacy:true,sec:'9.305',dua:43,minSFPlex:[6500,9500,11500],minWidthPlex:55},
+  'Mecklenburg|R-8MF \u00b7 townhomes 5+':{front:30,rear:50,sides:20,corner:15,minWidth:55,minSF:11500,garage:'30 ft',frontNewStreet:27,legacy:true,sec:'9.305',dua:8,mfa:true,rearNotNextToSF:40,sidesNotNextToSF:10},
+  'Mecklenburg|R-12MF \u00b7 townhomes 5+':{front:30,rear:50,sides:20,corner:15,minWidth:55,minSF:11500,garage:'30 ft',frontNewStreet:27,legacy:true,sec:'9.305',dua:12,mfa:true,rearNotNextToSF:40,sidesNotNextToSF:10},
+  'Mecklenburg|R-17MF \u00b7 townhomes 5+':{front:30,rear:50,sides:10,corner:15,minWidth:55,minSF:11500,garage:'30 ft',frontNewStreet:27,legacy:true,sec:'9.305',dua:17,mfa:true,rearNotNextToSF:40,sidesNotNextToSF:10},
+  'Mecklenburg|R-22MF \u00b7 townhomes 5+':{front:30,rear:40,sides:10,corner:15,minWidth:55,minSF:11500,garage:'30 ft',frontNewStreet:27,legacy:true,sec:'9.305',dua:22,mfa:true,rearNotNextToSF:40,sidesNotNextToSF:5},
+  'Mecklenburg|R-43MF \u00b7 townhomes 5+':{front:30,rear:40,sides:10,corner:15,minWidth:55,minSF:11500,garage:'30 ft',frontNewStreet:27,legacy:true,sec:'9.305',dua:43,mfa:true,rearNotNextToSF:40,sidesNotNextToSF:5},
   'Gaston|R-1':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:30000,garage:'5 ft'},
   'Gaston|R-2':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:0,garage:'6 ft'},
   'Gaston|R-3':{front:30,rear:25,sides:15,corner:25,minWidth:80,minSF:0,garage:'7 ft'},
@@ -1632,7 +1652,7 @@ const ATTACHED_DEFAULT={maxBuildingLen:null,sublotParentOnly:null,
 // v8.48: keyed by zoneRulesJur(), so a town with its own code (Huntersville) doesn't get Charlotte's UDO rules
 function attachedRules(county){return ATTACHED_RULES[county]||ATTACHED_DEFAULT;}
 const COUNTY_ZONES={
-  'Mecklenburg':['N1-A','N1-B','N1-C','N1-D','N1-E','N1-F','N2-A','N2-B','N2-C','N2-A \u00b7 townhomes 5+','N2-B \u00b7 townhomes 5+','N2-C \u00b7 townhomes 5+','UR-2','UR-3','UR-4','R-3','R-4','R-5','R-6','R-8'],
+  'Mecklenburg':['N1-A','N1-B','N1-C','N1-D','N1-E','N1-F','N2-A','N2-B','N2-C','N2-A \u00b7 townhomes 5+','N2-B \u00b7 townhomes 5+','N2-C \u00b7 townhomes 5+','UR-2','UR-3','UR-4','R-3','R-4','R-5','R-6','R-8','R-8MF','R-12MF','R-17MF','R-22MF','R-43MF','R-8MF \u00b7 townhomes 5+','R-12MF \u00b7 townhomes 5+','R-17MF \u00b7 townhomes 5+','R-22MF \u00b7 townhomes 5+','R-43MF \u00b7 townhomes 5+'],
   'Gaston':['R-1','R-2','R-3','RS-8','RS-12','RS-20','RMF-SF'],
   'Catawba':['R-7','R-10','R-12','R-15','R-20'],
   'Lincoln':['R-SF','R-CR','R-20','R-14','R-MR','R-MF'],
@@ -2848,10 +2868,14 @@ function cdSplitNote(zone,row){
   if(row&&row.legacy)return `These are the pre-2023 ${escHtml(zb)} minimums: verify against the parcel\u2019s rezoning petition.`;
   return '';
 }
-// v8.56: what a legacy R-x row is, in the setback panel
+// v8.56: what a legacy R-x row is, in the setback panel (v8.57: and a multi-family one, old \u00a79.305)
 function legacyZoneNote(zone,sb){
-  const fr=sb.frontNewStreet;
-  return `${zone} here is Charlotte\u2019s pre-2023 ${zone} (old zoning ordinance \u00a79.205). The 2023 UDO didn\u2019t translate conditional districts, so a parcel zoned ${zone}(CD) keeps these standards plus its rezoning petition\u2019s site plan and conditions, which can change any of them. Verify against the petition. The ${sb.front} ft front is for a street approved before 12/20/2010 or a thoroughfare (${fr} ft on a local street approved since); setbacks on the recorded plat win.`;
+  const fr=sb.frontNewStreet,zb=zone.split(' \u00b7 ')[0];
+  let t=`${zb} here is Charlotte\u2019s pre-2023 ${zb} (old zoning ordinance \u00a7${sb.sec||'9.205'}). The 2023 UDO didn\u2019t translate conditional districts, so a parcel zoned ${zb}(CD) keeps these standards plus its rezoning petition\u2019s site plan and conditions, which can change any of them. Verify against the petition. The ${sb.front} ft front is for a street approved before 12/20/2010 or a thoroughfare (${fr} ft on a local street approved since); setbacks on the recorded plat win.`;
+  if(sb.mfa)t+=` These are the rules for a building of 5+ units, or two or more buildings on one lot (a planned multi-family development). The ${sb.rear} ft rear and ${sb.sides} ft sides are for a site next to single-family land (${sb.rearNotNextToSF} ft and ${sb.sidesNotNextToSF} ft otherwise). On a local street, buildings may sit 15 ft from the right-of-way (garages 20 ft) if they face it with a front door (old \u00a79.303(19)(f)).`;
+  else if(sb.minSFPlex)t+=` These are the rules for a house or a 2\u20134 unit building. Lot minimums: ${fmtN(sb.minSF)} sf and ${sb.minWidth} ft wide for a house; ${sb.minSFPlex.map(fmtN).join(' / ')} sf and ${sb.minWidthPlex} ft wide for a duplex / triplex / quadraplex.`+(sb.sec==='9.305'?` A building of 5+ units has deeper setbacks: pick \u201c${zb} \u00b7 townhomes 5+\u201d.`:'');
+  if(sb.dua)t+=` Density cap: ${sb.dua} units per acre (one unit per ${fmtN(Math.round(43560/sb.dua))} sf of lot, less any street right-of-way).`;
+  return t;
 }
 // The setback panel's notes: the zone row's own note, plus what a GIS suffix means when the zone was mapped from one.
 let _zoneRestoreNote=null;   // v8.15: set by restoreDeal() when a saved stub zone reopened on its base row
@@ -2951,7 +2975,7 @@ function onZoneChange(){
     const county=$('county-sel').value,zi=ZONING_DB.info[key],kj=key.split('|')[0];
     // v8.48: a zoning-table row links to its own section of the code; the county's link is for the older rows
     if(sb.legacy){   // v8.56: the old ordinance, not the UDO
-      $('zone-udo-link').innerHTML=`<a class="topo-btn" href="${CLT_LEGACY_CH9_URL}" target="_blank" rel="noopener">📋 Verify in the pre-2023 Charlotte code (\u00a79.205) →</a>`;
+      $('zone-udo-link').innerHTML=`<a class="topo-btn" href="${CLT_LEGACY_CH9_URL}" target="_blank" rel="noopener">📋 Verify in the pre-2023 Charlotte code (\u00a7${sb.sec||'9.205'}) →</a>`;
       $('zone-udo-link').style.display='';
     }else if(zi&&zi.link){
       $('zone-udo-link').innerHTML=`<a class="topo-btn" href="${escAttr(zi.link)}" target="_blank" rel="noopener">📋 Verify in the ${kj==='Mecklenburg'?'Charlotte UDO':escAttr(kj)+' code'} →</a>`;
@@ -4301,7 +4325,8 @@ function platSketchPayload(){
   const base=zone.split(' · ')[0],row=SETBACKS[zv];
   const rules={preset:county==='Mecklenburg'&&/^N1-[A-E]$/.test(base)?'charlotte-'+base.toLowerCase():'custom'};
   // a townhome row's lot standards are the parent parcel's (Table 5-1 fn 1), so the unit lots carry no minimums
-  if(row)Object.assign(rules,row.mfa?{minLotArea:0,minLotWidth:0,minFrontage:0}:{minLotArea:row.minSF,minLotWidth:row.minWidth,minFrontage:row.minWidth});
+  // (v8.57: a legacy MF zone's density cap is a lot minimum too, as in renderSublot())
+  if(row)Object.assign(rules,row.mfa?{minLotArea:0,minLotWidth:0,minFrontage:0}:{minLotArea:Math.max(row.minSF,row.dua?Math.ceil(43560/row.dua):0),minLotWidth:row.minWidth,minFrontage:row.minWidth});
   Object.assign(rules,{frontSetback:pv('sb-front'),sideSetback:pv('sb-sides'),rearSetback:pv('sb-rear')});
   // no PID on a lot the analyzer flags as another parcel's (_gisMismatch): the sketch would carry this PID on its outline
   const g=window._lastGis,pid=!_gisMismatch&&g&&g.addrSig===gisAddressSignature()&&g.pid||'';
@@ -5145,7 +5170,12 @@ function renderSubplot(p){
   const fit=buildableArea>0?fitStatus(row.w,row.d,frontGarageFor(p)):null;   // v8.31: the row the message and grid test
   const {frontage,area}=getParentLot();
   const zoneKey=($('zone-sel')||{}).value||'';
-  const sb=SETBACKS[zoneKey]||null;const minW=pv('sb-minw')||(sb?sb.minWidth:0)||0;const minSF=sb?(sb.minSF||0):0;
+  const sb=SETBACKS[zoneKey]||null;let minW=pv('sb-minw')||(sb?sb.minWidth:0)||0,minSF=sb?(sb.minSF||0):0;
+  // v8.57: a legacy MF zone's duplex-quadraplex lot; 5+ units is a multi-family lot, the same 11,500 sf / 55 ft as a quadraplex
+  if(sb&&sb.minSFPlex&&u>=2){minW=Math.max(minW,sb.minWidthPlex);minSF=sb.minSFPlex[Math.min(u,4)-2];}
+  // v8.57: and its density cap (units per acre). Not on an old single-family row: an existing R-8 lot (or an R-3..R-6
+  // corner lot's duplex) is exempt (§9.205(1)(a)(iii)), and a split is checked by renderSublot()
+  const denSF=sb&&sb.dua&&sb.sec==='9.305'?Math.ceil(u*43560/sb.dua):0;minSF=Math.max(minSF,denSF);
   const parentOK=(rules.sublotParentOnly&&frontage&&area)?((minW>0?frontage>=minW:true)&&(minSF>0?area>=minSF:true)):null;
   const chip=(ok,txt)=>`<span style="font-family:var(--f-num);font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap;color:${ok?'var(--teal-light)':'var(--red)'};background:${ok?'rgba(70,192,138,0.12)':'rgba(239,93,87,0.12)'};border:1px solid ${ok?'rgba(70,192,138,0.3)':'rgba(239,93,87,0.3)'}">${ok?'✓':'✗'} ${txt}</span>`;
   const stepper=`<div style="display:flex;align-items:center;gap:10px;margin:2px 0 8px">
@@ -5169,7 +5199,13 @@ function renderSubplot(p){
   if(n2Base&&!(sb&&sb.mfa)&&u>=5)n2note=`${u} attached units count as Multi-Family Attached (townhomes) under the UDO, which has its own N2 setbacks: pick “${n2Base} · townhomes 5+” in the zone list.`;
   else if(n2Base==='N2-C'&&sb&&sb.mfa&&u<5)n2note=u===1?'Single-family isn\u2019t permitted in N2-C.':`A ${u}-unit row is a ${['','duplex','triplex','quadraplex'][u-1]} under the UDO. In N2-C it can stand alone only on a lot of 0.5 acre or less that existed before June 1, 2023 (then pick \u201cN2-C\u201d for the N1-E standards); otherwise it has to be part of a multi-dwelling development.`;
   else if(n2Base&&sb&&sb.mfa&&u<5)n2note=`A ${u}-unit row is a ${['single-family house','duplex','triplex','quadraplex'][u-1]} under the UDO, built to the N1-E standards: pick “${n2Base}” in the zone list.`;
-  const note=`<p class="note" style="margin-top:8px">${rules.note}</p>`
+  // v8.57: the legacy multi-family zones split the same way under the old code (\u00a79.305: 5+ units is multi-family)
+  const mfBase=sb&&sb.legacy&&sb.sec==='9.305'?zoneName.split(' \u00b7 ')[0]:'';
+  if(mfBase&&!sb.mfa&&u>=5)n2note=`${u} units in one building are multi-family under the pre-2023 code, with deeper setbacks: pick \u201c${mfBase} \u00b7 townhomes 5+\u201d in the zone list.`;
+  else if(mfBase&&sb.mfa&&u<5)n2note=`A ${u}-unit building is a ${['house','duplex','triplex','quadraplex'][u-1]} under the pre-2023 code, with the house setbacks: pick \u201c${mfBase}\u201d in the zone list (keep this row for two or more buildings on one lot).`;
+  // v8.57: a legacy row is the pre-2023 code, so the UDO's parent-lot note doesn't apply as written
+  if(denSF&&area&&area<denSF)n2note+=(n2note?' ':'')+`At ${sb.dua} units per acre, ${u} units need ${fmtN(denSF)} sf of lot; this one is ${fmtN(area)} sf.`;
+  const note=`<p class="note" style="margin-top:8px">${sb&&sb.legacy?`Pre-2023 Charlotte code (old \u00a7${sb.sec||'9.205'}), not the UDO: townhomes sold by the unit are \u201cattached dwellings\u201d${sb.sec==='9.305'?', each sublot needs 400 sf of private open space per unit, and a building over 12 units is a planned multi-family development (\u00a79.303(19))':''}. The parent-lot check uses this zone\u2019s minimums and the ${maxLen||'\u2014'} ft length is the UDO\u2019s, kept as a guide. Verify both, and whether attached units are allowed, against the rezoning petition.`:rules.note}</p>`
     +(n2note?`<p class="warn" style="margin-top:6px">${n2note}</p>`:'')
     +(maxLen?'':`<p class="warn" style="margin-top:6px">No researched max building length for ${county||'this county'} yet — length flag disabled; verify locally.</p>`);
   box.innerHTML=`<div style="font-family:var(--f-num);font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Attached townhomes · subplotting</div>`
@@ -5187,7 +5223,8 @@ function renderSublot(){
   // a townhome row's minimums are the parent's; detached lots from a split follow the base row
   const zBase=zone.split(' · ')[0],baseRow=SETBACKS[(zoneKey.split('|')[0]||'')+'|'+zBase];
   const thRow=!!(sb&&(sb.mfa||sb.thRow)),row=thRow?(baseRow&&baseRow!==sb?baseRow:null):sb;
-  const minW=row?(row.minWidth||0):0,minSF=row?(row.minSF||0):0;
+  // v8.57: a legacy MF zone's density cap is a lot minimum too: one house per 43,560 / dua sf (5,445 sf in R-8MF)
+  const minW=row?(row.minWidth||0):0,minSFDen=row&&row.dua?Math.ceil(43560/row.dua):0,minSF=row?Math.max(row.minSF||0,minSFDen):0;
   // the width line sits at the front setback on screen, or the base row's when the screen holds a townhome row's. With
   // none, a drawn lot's width isn't known (it changes with depth; v8.33: a blank setback doesn't count as 0). A
   // Rectangle is as wide at any depth: its Width box.
@@ -5203,7 +5240,7 @@ function renderSublot(){
   else if(!row||(!minW&&!minSF)){verdict='?';why=`no lot minimums for ${escHtml(zBase)||'this zone'} here. Check the zoning code${zone.includes('(CD)')?' and the conditional plan':''}.`;}
   else{
     const aOK=minSF>0?area>=2*minSF:null,wOK=minW>0&&width!=null?width>=2*minW:null;
-    const aTxt=`${fmtN(area)} sf`+(minSF>0?`, needs 2 × ${fmtN(minSF)} sf`:''),wTxt=width!=null?`${fmtN(Math.round(width))} ft wide ${at}`+(minW>0?`, needs 2 × ${minW} ft`:''):'';
+    const aTxt=`${fmtN(area)} sf`+(minSF>0?`, needs 2 × ${fmtN(minSF)} sf`+(minSFDen>(row.minSF||0)?` (${row.dua} units per acre)`:''):''),wTxt=width!=null?`${fmtN(Math.round(width))} ft wide ${at}`+(minW>0?`, needs 2 × ${minW} ft`:''):'';
     if(aOK===false){verdict='no';why=aTxt+'.';}
     else if(wOK===false){verdict='no';why=`${wTxt}. A flag lot might still work: try it in the sketch.`;}
     else if(aOK&&wOK){verdict='yes';why=`on paper: ${aTxt}; ${wTxt}. Check access, easements and BUA in the sketch.`;}
@@ -7767,8 +7804,13 @@ checkResumeBanner();
 // To publish a new version: add an entry to the TOP of RELEASE_NOTES and keep
 // its `v` in sync with the header badge. The modal shows the top 3 entries and
 // auto-opens once per user when the version changes (badge click reopens it).
-const APP_VERSION='8.56', RELNOTES_KEY='ttv-analyzer-last-seen-version';
+const APP_VERSION='8.57', RELNOTES_KEY='ttv-analyzer-last-seen-version';
 const RELEASE_NOTES=[
+ {v:'8.57',date:'Oct 2026',name:'Older apartment zones fill their setbacks too',items:[
+   'Parcels County GIS zones R-8MF(CD), R-12MF(CD), R-17MF(CD), R-22MF(CD) or R-43MF(CD) now fill their setbacks and lot minimums from the pre-2023 code (\u00a79.305), with the same amber verify-the-petition note as v8.56. Before, the setbacks stayed blank and the fit check waited.',
+   'Each zone has two rows, like N2. The one GIS fills is for a house or a 2\u20134 unit building: 20 ft front, 20 ft rear, 5 ft sides. \u201cR-8MF \u00b7 townhomes 5+\u201d (and the others) is for a building of 5+ units or two or more buildings on one lot: 30 ft front, 40 ft rear and 10 ft sides, deeper next to single-family land. The townhome card says which row fits your unit count.',
+   'The density cap counts: R-8MF allows 8 units per acre, so a split there needs 5,445 sf per house, and the townhome card warns when the lot is too small for your units. A duplex, triplex or quadraplex is checked against its own lot minimum (6,500 / 9,500 / 11,500 sf, 55 ft wide).',
+   'The older single-family zones R-3(CD) to R-8(CD) get their density cap too (the old code calls it the first standard): a split in R-5 needs 8,712 sf per house, not 6,000. 11603 Clear Day Ct still says No, now with the right number.']},
  {v:'8.56',date:'Oct 2026',name:'Older conditional zones fill their setbacks',items:[
    'Parcels County GIS zones R-3(CD), R-4(CD), R-5(CD), R-6(CD) or R-8(CD) now fill their setbacks and lot minimums. The 2023 UDO didn\u2019t translate conditional districts, so these parcels still follow the pre-2023 R-3 to R-8 rules plus their rezoning petition. Before, the setbacks stayed blank, the fit check waited, and \u201cCan this lot split?\u201d said Can\u2019t tell.',
    'The numbers come from the old zoning ordinance (\u00a79.205): for example R-5 is 20 ft front, 35 ft rear, 5 ft sides, 10 ft corner side, 50 ft wide and 6,000 sf. The front is the one for streets approved before Dec 2010 (3 ft less on a newer local street), and a setback on the recorded plat wins.',
