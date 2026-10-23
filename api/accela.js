@@ -26,7 +26,12 @@ const REF_RE = /\b(LD[A-Z]{2,6}|ZV|ZUP|CPB|RSVA)-(\d{4})-(\d{3,7})\b/i;
 const MAX_REFS = 25;            // one record page + two small calls each; a sync never fans out further
 const CACHE_MS = 10 * 60 * 1000; // per-instance memo so a burst of board loads costs Accela one lookup
 const MISS_MS = 2 * 60 * 1000;   // a failed / not-found lookup is retried after 2 min, not on every load
-const WRITE_BUDGET_MS = 30 * 1000; // stop starting feed writes here (a write can take 25 s; maxDuration 60); the rest wait for the next sync
+// Feed writes, timed from the Drive read (t0 — maxDuration 60 counts from about there): every write is done or abandoned
+// by WRITE_STOP_MS, none starts with less than WRITE_MIN_MS left, and each gets at most WRITE_TIMEOUT_MS (or what's
+// left, if less). Most writes take a few seconds. The rest wait for the next sync.
+const WRITE_STOP_MS = 50 * 1000;
+const WRITE_MIN_MS = 10 * 1000;
+const WRITE_TIMEOUT_MS = 25 * 1000;
 const cache = new Map();
 
 // Which board milestones a record type may set. Accela knows City approval, never Register-of-Deeds
@@ -342,13 +347,13 @@ export function plan(state, records){
   }).concat(stale);
 }
 
-async function writeFeed(state, item){
+async function writeFeed(state, item, ms){
   const FEED_URL = process.env.PERMITS_FEED_URL, FEED_TOKEN = process.env.PERMITS_FEED_TOKEN;
   const p = state.projects.find(x => x.id === item.projectId);
   const { edited, ...cur } = p.state[item.milestoneId] || {};   // the feed stamps its own edited marker
   const changes = { ...cur, ...item.upd };
   const r = await fetch(FEED_URL, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain' },
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(ms),
     body: JSON.stringify({ token: FEED_TOKEN, editor: 'Accela',
       patch: { op: 'setMilestone', projectId: item.projectId, milestoneId: item.milestoneId, changes } }) });
   const t = await r.text();
@@ -373,8 +378,8 @@ async function prepareSync(){
   return { t0, state, records, items };
 }
 
-// Put each record's new snapshot on its Accela block, in memory and as a write for commitSync().
-function applySeen(prep, list){
+// Put each record's new snapshot on its Accela block, in memory and as a write for commitSync() (which writes these first).
+export function applySeen(prep, list){
   for(const { projectId, milestoneId, seen } of list){
     const it = prep.items.find(i => i.projectId === projectId && i.milestoneId === milestoneId && !i.cleared);
     const c = prep.state.projects.find(p => p.id === projectId)?.state[milestoneId];
@@ -384,25 +389,47 @@ function applySeen(prep, list){
     it.upd = { ...(it.upd || {}), accela: block };
     it.accela = block;
     it.change = true;
+    it.newSeen = true;
   }
 }
 
-async function commitSync({ t0, state, records, items }, { dry, budgetMs = WRITE_BUDGET_MS }){
+// stopMs / minMs: the write window (WRITE_STOP_MS / WRITE_MIN_MS); smaller values only in tests.
+export async function commitSync({ t0, state, records, items }, { dry, stopMs = WRITE_STOP_MS, minMs = WRITE_MIN_MS } = {}){
   // Only production saves: a branch preview shares the live Drive file and feed, so opening one before
   // merge must not write. Previews (and local runs without the feed vars) report what they would change.
   const env = process.env.VERCEL_ENV;
   const dryWhy = dry ? 'dry run' : !(process.env.PERMITS_FEED_URL && process.env.PERMITS_FEED_TOKEN) ? 'write path not configured'
     : env && env !== 'production' ? `${env} deployment — only production saves` : null;
-  let wrote = 0, failed = 0, deferred = 0;
-  for(const it of items){                                   // one at a time: every patch rewrites the same Drive file
+  // deferred: writes the next sync plans again. seenUnsaved: new snapshots not confirmed saved — nothing plans those again.
+  let wrote = 0, failed = 0, deferred = 0, seenUnsaved = 0, halt = null;
+  // New email snapshots first. Only the morning run writes one, so a snapshot left for "the next sync" is lost: the
+  // next board load carries the old one from Drive, and tomorrow's email repeats today's moves (LDIRL-2026-05530,
+  // 10/19). Every other write is planned again by the next sync, so it can wait.
+  const queue = [...items.filter(i => i.newSeen), ...items.filter(i => !i.newSeen)];
+  for(const it of queue){                                   // one at a time: every patch rewrites the same Drive file
     if(!it.change){ it.wrote = null; continue; }
-    if(dryWhy){ it.wrote = false; it.note = dryWhy; continue; }
-    if(Date.now() - t0 > budgetMs){ it.wrote = false; it.note = 'deferred to the next sync (time budget)'; deferred++; continue; }
-    try{ await writeFeed(state, it); it.wrote = true; wrote++; }
-    catch(e){ it.wrote = false; it.note = String(e && e.message || e); failed++; }
+    if(dryWhy){ it.wrote = false; it.note = dryWhy; if(it.newSeen) seenUnsaved++; continue; }
+    const left = stopMs - (Date.now() - t0);
+    if(!halt && left < minMs) halt = 'time budget';
+    if(halt){
+      it.wrote = false;
+      if(it.newSeen){ seenUnsaved++; it.note = `not saved (${halt}) — tomorrow's email compares against the older snapshot`; }
+      else{ deferred++; it.note = `deferred to the next sync (${halt})`; }
+      continue;
+    }
+    try{ await writeFeed(state, it, Math.min(WRITE_TIMEOUT_MS, left)); it.wrote = true; wrote++; }
+    catch(e){
+      // A timed-out call may still be running in the feed (aborting the request doesn't stop the script), so start no
+      // more writes this run: two read-modify-writes of the one Drive file must never overlap.
+      const timedOut = !!e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+      if(timedOut) halt = 'a write timed out';
+      it.wrote = false; failed++;
+      if(it.newSeen) seenUnsaved++;
+      it.note = String(e && e.message || e) + (timedOut ? ' — the feed may still apply it' : '') + (it.newSeen ? '; snapshot not confirmed' : '');
+    }
   }
   items.forEach(it => { delete it.upd; });
-  return { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed, deferred,
+  return { ok: true, checkedAt: new Date().toISOString(), dry: !!dryWhy, dryWhy, wrote, failed, deferred, seenUnsaved,
            changes: items.filter(i => i.change).length, items, records };
 }
 
@@ -433,8 +460,8 @@ export default async function handler(req, res){
     }
     if(isCron){
       // The daily morning run: look Accela up, send the due-date email from that fresh state FIRST, then save —
-      // the email can't be starved by slow feed writes inside the 60 s limit. Writes stop starting at 30 s
-      // (each can take up to 25 s); anything left is saved by the next board load.
+      // the email can't be starved by slow feed writes inside the 60 s limit. Writes end by 50 s (WRITE_STOP_MS),
+      // the new snapshots first: a status left over is saved by the next board load, a snapshot is not.
       res.setHeader('Cache-Control', 'no-store');
       const prep = await prepareSync();
       let reminders;
