@@ -454,50 +454,88 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
   - **Only production saves.** A branch preview shares the live Drive file and feed, so the sync is
     report-only unless `VERCEL_ENV` is `production` (the banner says why it didn't save). Flag a
     change that lets a preview write.
-  - **Writes are sequential and only on change** (one feed call per changed milestone), and stop
-    being started after 30 s (`WRITE_BUDGET_MS`: a write can take 25 s, under `maxDuration` 60); the rest are reported as
-    deferred and land on the next sync. The in-memory 10-minute memo is per function instance.
+  - **Writes are sequential and only on change** (one feed call per changed milestone), timed from the Drive read:
+    every write is done or abandoned by 50 s (`WRITE_STOP_MS`, under `maxDuration` 60), none starts with less than
+    10 s left (`WRITE_MIN_MS`), and each gets 25 s (`WRITE_TIMEOUT_MS`) or the time left, if less (v4.13; the old rule,
+    "none starts after 30 s", let a write run to 55 s yet left the cron room for only a few). After a write times out,
+    no more writes start in that run: aborting the request doesn't stop the feed's script, and two read-modify-writes of
+    the one Drive file must never overlap. The rest are reported as `deferred` and land on the next sync, except a new
+    email snapshot (see the digest rule below), which the cron therefore writes first and counts as `seenUnsaved` when
+    it isn't confirmed saved. Flag a change that lets a write run past `WRITE_STOP_MS` or start after a timed-out one.
+    The in-memory 10-minute memo is per function instance.
     `MAX_REFS` caps a sync at 25 records. The board queues syncs (`syncAccela()` chains) so a ref
     saved during the on-load sync never races it. The Drive read is `loadPermitState()` from
     `api/permits.js`, shared with the board's GET.
+  - **One clock from t0 (v4.14).** A sync's steps are all timed from t0, taken just before the Drive read
+    (`maxDuration` 60 counts from about there). Each step has a stop counted from t0, not from its own start, so a slow
+    step takes time from the next one and never runs past its stop:
+    - the Drive read ends by **10 s** (`DRIVE_STOP_MS`, passed to `loadPermitState({timeoutMs})`; the limit covers the
+      body too). When the read times out, the cron fails with no email and no writes, as it already did for any failed
+      Drive read: there's no state to build the email from;
+    - the Accela look-ups end by **25 s** (`LOOKUP_STOP_MS`), so they always get at least 15 s (six records took about
+      12 s on 10/19). `lookupAll()` gets what's left of it, so a slow Drive read shortens the look-ups, and the records
+      it didn't reach are reported unread, as before;
+    - the cron's email ends by **35 s** (`SEND_STOP_MS`, passed as `sendBy` to `runReminders()` and as `by` to
+      `gmailSend()`). Each Gmail call keeps its own cap (token 15 s, send 20 s), and none starts after the stop. A send
+      cut off at the stop fails like any other: the old snapshots are kept, so if Gmail delivered it anyway, tomorrow's
+      email repeats these moves;
+    - the writes end by **50 s** (`WRITE_STOP_MS`, above). An email that runs to 35 s still leaves 15 s, so at least
+      one write starts after it.
+
+    Outside a sync, `loadPermitState()` stops at 20 s (`DRIVE_TIMEOUT_MS` in `api/permits.js`), for the board's GET and
+    the reminder preview. Past it, the GET answers 502 and the board shows its built-in snapshot ("offline").
+    Before v4.14 the Drive read had no limit, the look-ups' 25 s started after it, and the Gmail calls could add 35 s, so
+    the cron could pass 60 s before `commitSync()` started. Flag a change that starts a step's stop at the step instead of
+    at t0, or that adds a network call to the sync or the cron without a limit inside its step's stop. `gmailSend()` is
+    exported, and takes `cfg`, only for the headless tests (a fake config with fetch stubbed). Flag any other caller.
   - **Sync trigger auth:** the gate hash (`?k=` / body `k`), or the cron — `Bearer CRON_SECRET`
     when that env var is set, else the `vercel-cron/` user agent. Accepted risk: a sync can only
     write what Accela publicly shows. `GATE_HASH` / `FILE_ID` are exported from `api/permits.js`.
-  - **Digest + movement alerts (v4.9, `api/permit-reminders.js`; Brian 2026-10-19: "a Monday-Wednesday-Friday
-    email regardless every week, then alert emails on movement on specific items" — every City record, any move).**
-    Source is Accela only, never the board's own `due` (v4.7 used it: wrong per Brian 2026-10-14). On Mon / Wed / Fri
-    (Charlotte's date, `etDate`) the **digest** always goes out: **one section per project on the board, by address,
+  - **The weekday digest (v4.15, `api/permit-reminders.js`; team feedback 2026-10-22: no movement alerts, one email
+    every weekday with all updates).** It replaces v4.9's Mon / Wed / Fri digest plus movement alerts on the other days.
+    Source is Accela only, never the board's own `due` (v4.7 used it: wrong per Brian 2026-10-14). Every weekday, Monday
+    to Friday (Charlotte's date, `etDate`, `DIGEST_DAYS`), the **digest** always goes out: **one section per project on the board, by address,
     in the board's order** (v4.11, Brian 2026-10-19: "always broken down by project … a section for each open project
     address", not grouped by approved / in progress across projects). Each section has a one-line place for the
     project (`projectStand()`: a late City step, waiting on us, in City review, couldn't read, no City records yet,
     approved) and its City records (`targets()`), open ones first, each with where it stands (`deriveStatus()`), each
     open step (department, `current.assignedTo`, City due date, a late / due-soon badge only where `cityHolds(task)`)
-    and what moved since the last check. A project with no City record still gets its section; a record Accela
-    didn't answer for shows in its own project. Other days a **movement alert** goes out only when something moved;
-    nothing moved → no email. It's grouped by project too, with only the projects and records that moved. Flag a
-    change that groups records across projects. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
+    and what moved since the last digest. A project with no City record still gets its section; a record Accela
+    didn't answer for shows in its own project. **Saturday and Sunday send nothing and keep the snapshots** (`advance`
+    false), so Monday's digest carries the weekend's moves. There is no movement alert any more: flag a change that
+    brings one back without a decision, or that groups records across projects. A move (`moves()`): the record's status, a step's newest entry (Ok, Revisions, Fees Assessed…), a step
     opening, its City due date moving, a City-held step on a record still in review going overdue, or a record new
     on the board ("Now tracking"). "Since the last check" = `accela.seen` on the record's block: record status +
     per step `state|newest status|date|City due`, **no names** (it's in Drive), versioned (`SNAP_V`: bump it when a
-    snapshot's meaning changes, so old ones re-baseline quietly instead of reading as moves). Same-day history
+    snapshot's meaning changes, so old ones re-baseline quietly instead of reading as moves). A record with a snapshot
+    of any version is not new on the board: only one with no snapshot at all is "Now tracking" (v4.12; on 10/20 a
+    record whose v2 snapshot hadn't been saved read its v1 one as new and sent a false "Now tracking"), and the
+    first run is the one where no record has a snapshot of any version. A snapshot belongs to its record: `plan()`
+    carries `seen` over and `board()` reads it only while the block's `rec` is the milestone's current number, so a
+    milestone whose number changed starts over (and is announced). Same-day history
     entries are read in workflow order (`stepRank`: requested → received → done), never Accela's response order,
     for a step's current and latest entry alike. A City due date moving is a move only on an open step. `plan()` carries `seen` over on
     every sync; only the cron replaces it, via `applySeen()` with the other writes, and only when `runReminders()`
-    says `advance` (the email went out, or there was nothing to send) — a failed send keeps the old snapshots so
-    tomorrow reports the same moves. The very first run (no record has a snapshot) only takes them. Flag a change
+    says `advance` (the digest went out, or this instance already sent the same one today; never on a weekend) — a failed send keeps the old snapshots so
+    tomorrow reports the same moves. `commitSync()` writes the new snapshots **first** (v4.13): no later sync writes
+    one (the next board load carries the old one from Drive), so a snapshot left over is lost, and the next email
+    repeats that day's moves. On 10/19 the old 30 s budget left LDIRL-2026-05530's snapshot behind this way. Status
+    writes can wait, because the next sync plans them again. The cron's result counts snapshots not confirmed saved
+    (`seenUnsaved`, apart from `deferred`). Flag a change that puts other writes ahead of the snapshot writes. The very first run (no record has a snapshot) reports no moves, only takes them. Flag a change
     that lets a board-load sync replace `seen`, writes a name into it, or alerts on an approved record's leftover
     inspection. `cityHolds(task)` in `api/accela.js` stays the one "City holds this step" rule (active, not handed
     back to us, not already Ok / Approved / Complete); the parser sets `task.cityHolds` and the board's red "N days
-    late" reads it. The cron does `prepareSync()` (one 25 s deadline for all lookups, `lookupAll(refs,
-    {deadlineMs})`), then `runReminders({state, records, send:true})` **before** `commitSync()` writes
-    (`WRITE_BUDGET_MS`). Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
-    Mon Oct 19: …", "Accela Oct 22: 2 records moved"); a same-day identical email isn't re-sent from the same
-    instance. One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
+    late" reads it. The cron does `prepareSync()` (the Drive read, then one deadline for all lookups, `lookupAll(refs,
+    {deadlineMs})`, ending 25 s from t0), then `runReminders({state, records, send:true, sendBy})` **before**
+    `commitSync()` writes (`WRITE_STOP_MS`); see "One clock from t0" above. Flag a change that moves the send after the writes. Subjects carry the day ("Permit digest
+    Mon Oct 19: …"); a same-day identical digest isn't re-sent from the same
+    instance, and "identical" ignores what moved (`sendKey()`: a re-delivered run sees no moves once the first saved
+    its snapshots). One email from management@ to management@ (`REMINDER_TO` overrides), which reaches Brian, Adam and Wendell; the
     body opens by naming Adam and Wendell (`TAG`; no CC, since management@ already reaches them). `TITLES` mirrors the
     `permits.html` CATALOG titles of the steps a City record sits on (context only). Sent through the Gmail API with
     the send-only token in the Vercel env var `GMAIL_SEND_TOKEN` (JSON `{client_id, client_secret, refresh_token}`
     for management@ — minted by `~/projects/ttv-meetings/meeting_mailer/authorize_permit_mailer.py`, never
-    committed). Only production sends. The route itself is preview-only (`?k=…[&format=html][&date=…][&kind=digest|alert]`):
+    committed). Only production sends. The route itself is preview-only (`?k=…[&format=html][&date=…][&kind=digest]`; `kind=digest` previews a weekend date):
     flag any change that lets the public gate hash trigger a send.
   - County building permits (`R-TH-…`) are not in Accela's public search (re-checked 2026-10-13 on
     the `MECKLENBURG` agency); they stay email-driven. Don't add County lookups without a working
@@ -1072,8 +1110,28 @@ Flag anything that violates these. They encode invariants a generic reviewer wil
     petition number (`_lastGis.zpet`, from the zoning layer's `ZonePetition`; the key exists only when the county gives
     one, so other parcels report as before). `renderSublot()` adds the same verify note to its Yes / No on any CD parcel
     (`cdZoneFor()`). The verify link opens the archived Chapter 9 (`CLT_LEGACY_CH9_URL`), not the UDO.
-  - The multi-family legacy CD zones (R-8MF(CD), R-12MF(CD)…, old §9.305) and the old county R-9 / R-12 / R-15 still
-    have no row: they stay stubs with blank setbacks. Flag a change that maps them to a single-family row.
+  - **v8.57 adds the multi-family districts** `Mecklenburg|R-8MF`, `R-12MF`, `R-17MF`, `R-22MF`, `R-43MF` (`legacy:true`,
+    `sec:'9.305'`), for the ~330 GIS polygons zoned R-8MF(CD) 105, R-12MF(CD) 135, R-17MF(CD) 68, R-22MF(CD) 22,
+    R-43MF(CD) 1 (2026-10). Old §9.305(1) has two sets, so each zone has two rows, like N2 (Brian 2026-10-22):
+    - the base row (what GIS fills) is the house / duplex–quadraplex set: front 20 (17 on a local street approved after
+      12-20-2010), rear 20, side 5, corner 10, house lot 3,500 sf / 40 ft; `minSFPlex` 6,500 / 9,500 / 11,500 sf and
+      `minWidthPlex` 55 for a 2 / 3 / 4-unit building (the townhome card's parent check uses them);
+    - `R-xMF · townhomes 5+` (`mfa:true`) is the set for a building of 5+ units ("multi-family" = more than four, old
+      §2.201) or a planned multi-family development (2+ buildings on a lot): front 30 (27), 11,500 sf / 55 ft, and the
+      deeper "adjoining single family" yards, rear 50/50/50/40/40 and side 20/20/10/10/10 (`rearNotNextToSF` 40,
+      `sidesNotNextToSF` 10/10/10/5/5 go in the note only). The §9.303(19)(f) 15-ft street option is in the note, not
+      the row.
+    - `dua` (8/12/17/22/43 units per acre, §9.305(1)(a)) is a lot minimum too: `renderSublot()` needs 43,560 / dua sf per
+      house (5,445 in R-8MF), and the townhome card warns when units × 43,560 / dua is more than the lot.
+    - v8.57 also gives R-3..R-8 their `dua` (3/4/5/6/8; old §9.205(1)(a): "density is the first standard"), so a split
+      there needs 43,560 / dua sf per house (Clear Day Ct R-5: 2 × 8,712 sf), and R-8 its by-right plex lots
+      (`minSFPlex` 6,500 / 9,500 / 11,500, `minWidthPlex` 40). The townhome card's density warning is MF-only: an existing
+      R-8 lot's plex (or an R-3..R-6 corner duplex) is exempt (§9.205(1)(a)(iii)).
+    - The townhome card shows a pre-2023 note on any legacy row (also R-3..R-8), not the UDO parent-lot note; the
+      150-ft length cap stays as a guide. It tells the analyst to switch rows at 5 units, as for N2.
+  - Still no row (no source in the archived ordinance; they predate it): R-15MF(CD) 37, R-9MF(CD) 35, R-6MF(CD) 8,
+    R-20MF 40 and R-20MF(CD) 1, R-6MFH(CD), and the old county R-9(CD) 12 / R-12(CD) 10 / R-15(CD) 13 and R-9/12/15PUD.
+    They stay stubs with blank setbacks. Flag a change that maps them to a newer row by name (R-15MF is not R-17MF).
 - **The N2-C base row carries `noNewLots`**: `renderSublot()` answers "No" with that text: lots made by a split can't
   hold a standalone house or plex there (§15.4.EE.6 / JJ.5 / GG.6; single-family not permitted). A `· townhomes 5+`
   row seen with a detached plan is checked against its base row.
@@ -1374,6 +1432,10 @@ The payload (v1) is read by that page's `projectFromImport()`; the shared contra
   note "PID 04118526 / 77,575 sf" is wrong — that PID is a neighbouring 1.78-acre parcel on
   Milhaven Ln owned by a third party.
   Reference numbers since v8.19 (loan rate default 9.75% from v8.30; the partner money rules from v8.36):
+  - **v8.57 (legacy multi-family CD zones, 2026-10-22): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (main v8.55
+    and branch in the same run). 2900 L D Parker Dr 28206 (R-8MF(CD), petition 2001-067, 9,629 sf): setbacks 20 / 20 / 5 /
+    10, width 40, envelope 5,286 sf, "Can this split? No — needs 2 × 5,445 sf (8 units per acre)"; main: blank setbacks,
+    "Can't tell". On the townhome row: 30 / 50 / 20 / 15, width 55.
   - **v8.56 (legacy CD zones, 2026-10-22): Max land $252,111 unchanged**, hash **`9dcd8bbd8e9f`** (same as v8.54 / v8.55,
     main and branch in the same run). Dellinger is N1-B with no petition, so nothing in its report moved. 11603 Clear Day
     Ct (R-5(CD)): setbacks 20 / 35 / 5 / 10, width 50, envelope 3,740 sf, Seneca fits, "Can this split? No — 8,322 sf,
