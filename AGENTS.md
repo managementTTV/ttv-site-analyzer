@@ -1333,7 +1333,10 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   open to Anyone that takes only a link this route signs: `&t=<unix s>&n=<nonce>&s=<base64url HMAC-SHA256 of
   "ttv-deal-sheet.<t>.<n>">`, keyed with `DEAL_SHEET_SECRET` (Vercel env var only, same value as the script property
   `dealSheetSecret`). The script refuses an unsigned, altered, >10-minute-old or used link, and caps signed sends at 25 new
-  sheets a day; the address form stays on the team-only deployment. Flag the secret in any committed file or in
+  sheets a day; the address form stays on the team-only deployment. The signature proves the link came from this route,
+  not who asked: the analyzer and this route are public, so anyone using the analyzer can send (accepted risk, Brian
+  2026-10-22: signed link + daily cap, no passcode). The script also guards every maintenance function (`adminOnly_()`),
+  since a page it serves can call any global function through `google.script.run`. Flag the secret in any committed file or in
   `index.html`, signing anywhere but the server, or a change to the signed string without the same change in Code.gs.
   Without the secret the route sends the link unsigned (only the team-only deployment accepts that). The route turns a
   plain `script.google.com/macros/s/…` link into `…/a/macros/tidetimberventures.com/s/…`: with the plain form Google puts

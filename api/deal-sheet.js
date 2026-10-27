@@ -35,7 +35,10 @@ export default function handler(req, res){
 }
 
 function signedParams(secret){
-  if(secret.length<32)return '';   // unset (or too short to trust): unsigned, for the team-only deployment
+  if(secret.length<32){   // unset (or too short to trust): unsigned, which only the team-only deployment accepts
+    if(secret)console.warn('DEAL_SHEET_SECRET is set but shorter than 32 characters, so deal-sheet links go out unsigned');
+    return '';
+  }
   const t=String(Math.floor(Date.now()/1000)), n=crypto.randomBytes(18).toString('base64url');
   const s=crypto.createHmac('sha256',secret).update('ttv-deal-sheet.'+t+'.'+n,'utf8').digest('base64url');
   return '&t='+t+'&n='+n+'&s='+s;
