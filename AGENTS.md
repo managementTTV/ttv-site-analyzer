@@ -1277,7 +1277,10 @@ worst/base/best, and analyzer-vs-sheet rows with the reason for each gap). Rules
   `dealSheetSecret`). The script refuses an unsigned, altered, >10-minute-old or used link, and caps signed sends at 25 new
   sheets a day; the address form stays on the team-only deployment. Flag the secret in any committed file or in
   `index.html`, signing anywhere but the server, or a change to the signed string without the same change in Code.gs.
-  Without the secret the route sends the link unsigned (only the team-only deployment accepts that).
+  Without the secret the route sends the link unsigned (only the team-only deployment accepts that). The route turns a
+  plain `script.google.com/macros/s/…` link into `…/a/macros/tidetimberventures.com/s/…`: with the plain form Google puts
+  in the browser's DEFAULT account's domain (`/a/macros/wolfdensdwellings.com/…`), which fails the same way even for an
+  "Anyone" deployment (tested 2026-10-27 in Brian's Chrome). Flag a change that drops that rewrite.
 - **The payload is read through the exporters' readers** (`getReportData()`, `collectModelInputs()`, `moneyIssues()`),
   not from input fields directly, so the sheet starts from the numbers on screen. (Max land is `getReportData().maxLand`,
   the on-screen text; the snapshot only displays it.) Per-site figures (land, lot factor, survey,

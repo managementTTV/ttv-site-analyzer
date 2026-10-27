@@ -13,12 +13,15 @@
 // link that's unsigned, older than 10 minutes or already used. Without the secret the link goes out unsigned, which only
 // the team-only deployment accepts.
 import crypto from 'node:crypto';
+const TEAM_EXEC_BASE = 'https://script.google.com/a/macros/tidetimberventures.com/s/';
 const EXEC = /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/(exec|dev)$/;
 
 export default function handler(req, res){
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  const url = String(process.env.NEW_DEAL_URL || '').trim();
+  // the team's own address form: with a plain /macros/s/ link Google swaps in the browser's DEFAULT account's domain
+  // (/a/macros/wolfdensdwellings.com/...), which can't see the script ("Sorry, unable to open the file")
+  const url = String(process.env.NEW_DEAL_URL || '').trim().replace(/^https:\/\/script\.google\.com\/macros\/s\//, TEAM_EXEC_BASE);
   if(!EXEC.test(url)){
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.status(501).end('<!doctype html><meta charset="utf-8"><title>Deal sheet link not set up</title>'
